@@ -52,6 +52,49 @@ Recommended architecture:
 
 This keeps mailbox credentials and transport concerns separated from LLM prompt logic.
 
+## Architecture Overview
+
+The system is designed as a four-stage pipeline with a human-in-the-loop approval loop before any outbound delivery.
+
+```mermaid
+flowchart TD
+    subgraph L1[Data Ingestion Layer - Continuous]
+      G[Gmail Skill]
+      F[Feishu Skill]
+      Q[Unified Event Queue<br/>Local Files or SQLite]
+      G --> Q
+      F --> Q
+    end
+
+    Q -->|Weekly trigger: Friday| W[Weekly Report Generation Layer]
+    W --> R[Agent reads weekly events]
+    R --> T[Topic clustering]
+    T --> P[Priority ranking]
+    P --> D[Draft report generation]
+
+    D --> H[Human-in-the-Loop Layer]
+    H --> RV[User review]
+    RV --> FB[Revision feedback]
+    FB --> H
+
+    RV -->|User says: Confirm| S[Delivery Layer]
+    S --> FS[Feishu group]
+    S --> EM[Email recipients]
+```
+
+Event queue schema:
+
+```json
+{ "source": "...", "author": "...", "title": "...", "content": "...", "ts": "...", "tags": ["..."] }
+```
+
+Key behavior:
+
+- Ingestion runs continuously.
+- Weekly report generation runs on schedule.
+- Draft quality is improved through iterative human feedback.
+- Outbound delivery is triggered only after explicit confirmation.
+
 ## Why This Structure Fits Real Email Work
 
 Email automation should not be rewritten per company or per person.
