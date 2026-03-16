@@ -16,6 +16,7 @@ This repository gives us a practical baseline to:
 - `.env.example`: shareable template
 - `SKILL.md`: OpenClaw skill definition draft
 - `docs/architecture.md`: universal-core and customizable-policy design
+- `docs/claude-value-skill-evaluation.md`: Claude-value style skill assessment
 - `config/policy.default.yaml`: global default rules
 - `config/profiles/`: role/persona profile overrides
 - `scripts/render_himalaya_config.sh`: generate `config.toml` from `.env`
