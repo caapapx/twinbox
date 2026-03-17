@@ -1,4 +1,4 @@
-# email-bot
+# twinbox
 
 [English Version](#english-version)
 
@@ -6,7 +6,7 @@
 
 ## 这个仓库是什么
 
-`email-bot` 不是一个通用的自动发信机器人，也不是一个打磨好的收件箱客户端演示。
+`twinbox` 不是一个通用的自动发信机器人，也不是一个打磨好的收件箱客户端演示。
 
 它是一个可自托管的基础设施，用于构建邮件 Copilot，具备以下特征：
 
@@ -114,7 +114,7 @@ Anthropic 原项目 README 架构图（已手动同步到本仓库）：
 ## 仓库结构
 
 ```text
-email-bot/
+twinbox/
 ├── README.md
 ├── SKILL.md
 ├── agent/
@@ -189,7 +189,7 @@ An OpenClaw-native, thread-centric email copilot that progressively learns a use
 
 ### What This Repository Is
 
-`email-bot` is not a generic auto-send mail bot and not a polished inbox client demo.
+`twinbox` is not a generic auto-send mail bot and not a polished inbox client demo.
 
 It is a self-hostable foundation for building an email copilot that:
 
@@ -297,7 +297,7 @@ Key differences (this repo vs Anthropic demo):
 ### Repository Map
 
 ```text
-email-bot/
+twinbox/
 ├── README.md
 ├── SKILL.md
 ├── agent/
