@@ -42,6 +42,8 @@ Things that should stay customizable:
 - digest format
 - draft style and tone
 - escalation routing
+- recurring task habits
+- user-confirmed ownership and glossary facts
 
 ## Value-First Rules
 
@@ -50,6 +52,64 @@ Things that should stay customizable:
 - Evidence before confidence: every important conclusion should point to supporting messages or thread evidence.
 - Dominant workflow before minority workflow: optimize what the mailbox mostly does first.
 - Learn only from validated useful behavior: do not turn every edit into a rule.
+- Human-supplied context is first-class input, but it must be typed, source-labeled, and time-bounded.
+
+## Supported Initialization Modes
+
+The architecture should support three equivalent entry modes:
+
+- agent-only initialization
+- guided chat or manual paste initialization
+- hybrid initialization with mailbox sync plus user-supplied materials
+
+All three should converge into the same normalized context artifacts and the same downstream inference pipeline.
+
+## Human Context Plane
+
+This is a cross-cutting input plane, not a tenant-specific hack.
+
+Purpose:
+
+- ingest work materials such as spreadsheets, documents, PDFs, screenshots, and notes
+- ingest user-declared recurring habits and calendar-like obligations
+- ingest user-confirmed facts that correct low-confidence inference
+- keep provenance so the system can explain whether something came from mail, material, or user declaration
+
+Typical inputs:
+
+- project ledgers and execution trackers
+- weekly or monthly reporting obligations
+- org-role descriptions and glossary mappings
+- corrections such as "this thread is usually CC-only" or "this sender is a system bot"
+
+Reader strategy:
+
+- prefer pluggable document readers such as spreadsheet parsers, OCR pipelines, or MCP-backed office document services
+- if a material cannot be parsed reliably, store the file manifest plus a user-provided summary instead of dropping it
+
+Normalized context fact fields:
+
+- `context_id`
+- `source_type`
+- `source_ref`
+- `fact_type`
+- `scope`
+- `applies_to`
+- `value`
+- `valid_from`
+- `valid_to`
+- `freshness`
+- `confidence`
+- `confirmed_by_user`
+- `merge_policy`
+- `evidence_refs`
+
+Merge rules:
+
+- raw mailbox facts should never be overwritten silently
+- user-confirmed facts may override low-confidence inference, but the override must stay visible
+- recurring habits and external materials may add due windows, owner hints, glossary mappings, and reporting obligations even when mail alone cannot
+- expired or stale context should reduce confidence automatically
 
 ## Seven-Layer Model
 
@@ -101,6 +161,7 @@ Canonical thread fields:
 Why this matters:
 
 - the rest of the pipeline should operate on stable thread facts, not provider quirks
+- human context should enrich this layer through references, not by bypassing the canonical model
 
 ### 3. Workflow State Layer
 
@@ -120,8 +181,45 @@ Outputs:
 - `risk_flags`
 - `state_confidence`
 - `evidence_refs`
+- `context_refs`
 
 This is often the real center of the system when recurring threads are process-shaped.
+
+### 3.5. Attention Gate
+
+Purpose:
+
+- progressively filter threads between phases so downstream layers only spend tokens on threads that matter
+- each phase narrows the attention window: full envelope set → intent-filtered → profile-filtered → lifecycle-modeled → actionable
+
+How it works:
+
+- each validation phase outputs an `attention-budget.yaml` with three thread sets: `focus`, `deprioritize`, `skip`
+- the next phase reads the previous budget and only does deep work (body sampling, draft generation) on the `focus` set
+- `skip` threads are not deleted — they stay in raw data for audit and recall
+- user corrections via `user_confirmed_fact` can promote a thread from `skip` back to `focus` at any time
+
+Attention narrowing by phase:
+
+| Phase | Gate action | Typical reduction |
+|---|---|---|
+| Phase 1 | mark noise candidates (bot notifications, empty threads, duplicate subscriptions) | ~15-25% of envelopes marked skip |
+| Phase 2 | add exclusion rules based on persona (irrelevant domains, unrelated intent types) | ~10-15% additional deprioritize |
+| Phase 3 | mark unmodeled threads (cannot fit any lifecycle flow) | ~20-30% deprioritized |
+| Phase 4 | mark low-signal threads (modeled but no actionable signal in body) | focus narrows to ~30-40% of original |
+| Phase 5 | mark draft-excluded threads (too risky, insufficient context) | draft candidates typically <10% of original |
+
+Why this matters:
+
+- without an attention gate, Phase 4 body sampling would consume tokens on all 471 envelopes
+- with the gate, Phase 4 only samples ~24-30 high-value threads, cutting token cost by 40-60%
+- the gate also improves precision: fewer noise threads means fewer false positives in urgent/pending queues
+
+Important rules:
+
+- the gate is advisory, not destructive — raw data is never modified
+- every skip decision must have a recorded reason
+- attention budgets are cumulative: each phase inherits and refines the previous budget
 
 ### 4. Value Surface Layer
 
@@ -136,6 +234,13 @@ Typical surfaces:
 - `blocked-threads`
 - `weekly-brief`
 - `project-watchlist`
+
+These surfaces may contain two kinds of urgency:
+
+- live thread urgency inferred from mail activity
+- scheduled obligation urgency inferred from normalized user context
+
+The source of urgency must remain explicit.
 
 Important rule:
 
@@ -155,6 +260,8 @@ Examples:
 - risk thresholds
 - digest sections
 - approval rules
+- recurring cadence rules
+- glossary and alias maps
 
 Important rule:
 
@@ -219,6 +326,7 @@ email-bot/
 ├── docs/
 │   ├── architecture.md
 │   └── validation/
+│       ├── context-brief.md
 │       └── instance-calibration-notes.md
 ├── scripts/
 │   ├── check_env.sh
@@ -227,9 +335,16 @@ email-bot/
 │   └── phase2_profile_inference.sh
 ├── config/
 │   ├── policy.default.yaml
+│   ├── context/
 │   ├── profiles/
 │   └── workflows/
 └── runtime/
+    ├── context/
+    │   ├── material-manifest.json
+    │   ├── material-extracts/
+    │   ├── manual-habits.yaml
+    │   ├── manual-facts.yaml
+    │   └── context-pack.json
     ├── himalaya/
     ├── validation/
     ├── state/
@@ -241,11 +356,15 @@ email-bot/
 ```text
 mail sync
 -> normalize message event
+-> ingest human and material context
+-> normalize context facts with provenance
 -> reconstruct thread
 -> infer workflow and state
--> attach evidence and confidence
+-> apply attention gate (read previous budget, classify focus/deprioritize/skip)
+-> attach evidence and confidence (focus set only for deep analysis)
 -> generate user-visible queues
--> optionally build a draft plan
+-> output updated attention-budget.yaml
+-> optionally build a draft plan (focus set only)
 -> check review threshold
 -> execute allowed action
 -> log outcome and learn from validated edits
@@ -257,8 +376,11 @@ Universal core:
 
 - sync engine
 - canonical message and thread schema
+- canonical context fact schema
 - thread reconstruction
 - workflow inference engine
+- attention gate and progressive budget
+- context merge and provenance model
 - evidence and confidence model
 - value-surface generator
 - draft runner
@@ -270,6 +392,7 @@ Customizable surface:
 - workflow dictionaries
 - priority and SLA rules
 - profile YAML
+- manual habits and confirmed facts
 - prompt fragments
 - digest templates
 - escalation routing
@@ -296,5 +419,7 @@ These matter more than the number of labels, actions, or profiles supported.
 If a requirement changes how one person sees outputs, put it in profile config.
 
 If a requirement changes how one team names or prioritizes workflows, put it in workflow or policy config.
+
+If a requirement is a user-supplied recurring task, uploaded work material, or explicit factual correction, put it in normalized context artifacts with provenance and validity metadata.
 
 If a requirement improves thread reconstruction, state inference, evidence quality, or review safety for everyone, put it in the universal core.
