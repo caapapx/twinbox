@@ -1,4 +1,4 @@
-# twinbox 📮
+# Twinbox 📮
 
 [English](README.en.md)
 
