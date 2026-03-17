@@ -30,6 +30,23 @@ This repository gives us a practical baseline to:
 4. Generated file will be at `runtime/himalaya/config.toml`.
 5. Install/attach the corresponding OpenClaw skill workflow (read/classify/draft only by default).
 
+## Preflight Smoke Test
+
+Use a single entry script for mailbox login and read-only connectivity:
+
+1. Chat-guided template output:
+   `bash scripts/preflight_mailbox_smoke.sh --chat-template`
+2. Interactive terminal fill for missing `.env` fields:
+   `bash scripts/preflight_mailbox_smoke.sh --interactive`
+3. Headless run for automation:
+   `bash scripts/preflight_mailbox_smoke.sh --headless`
+
+Outputs:
+
+- `docs/validation/preflight-mailbox-smoke-report.md`
+- `runtime/validation/preflight/mailbox-smoke.json`
+- `runtime/validation/preflight/mailbox-smoke.stderr.log`
+
 ## Safety Defaults
 
 - Use app/client password only.
