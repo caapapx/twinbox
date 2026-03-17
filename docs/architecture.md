@@ -1,147 +1,189 @@
-# Config-Driven Email Skill Architecture
+# Value-First Thread-Centric Email Copilot Architecture
 
 ## Goal
 
-Build one stable email automation core that can serve many companies, roles, and individuals without forking the implementation.
+Build one stable email collaboration copilot core that can serve many companies, roles, and individuals without forking the implementation.
 
-The key is to separate:
+After early validation, the architecture goal is no longer "generic email automation first". It is:
 
-- transport and mailbox IO
-- normalized message model
-- policy and routing rules
-- prompt/profile customization
-- action execution
-- review and observability
+- reduce missed high-priority follow-ups
+- compress long threads into user-visible queues
+- generate drafts only after read-only outputs prove useful
+- keep sending behind explicit human approval
 
-## Design Principle
+## Reality Check From Early Validation
+
+Early validation often changes the architecture priority:
+
+- some mailboxes are dominated by recurring workflow threads, not isolated messages
+- the immediate user value is usually "what should I follow up today", not "can the bot send mail"
+- thread state, evidence, and confidence often matter more than broad category coverage
+
+Run-specific evidence should live in `docs/validation/` and `runtime/validation/`, not inside this architecture file.
+
+## Design Principles
 
 Hard things that should stay universal:
 
 - mailbox connectivity
-- message parsing
+- message normalization
 - thread reconstruction
+- workflow state inference
+- evidence linking
 - idempotent sync
-- retries, timeouts, rate limiting
-- logging and audit trail
-- human approval workflow
+- logging, audit, and review workflow
 
 Things that should stay customizable:
 
-- sender priority
-- team/role-specific rules
-- reply tone and style
-- approval threshold
+- internal domain map
+- workflow dictionaries
+- sender and team priority
+- role-specific risk thresholds
 - digest format
-- escalation targets
-- ignore/archive logic
+- draft style and tone
+- escalation routing
 
-## Six-Layer Model
+## Value-First Rules
+
+- Thread over message: decisions should be made on thread context, not single-message snapshots.
+- Outputs before automation: the system must prove read-only value before drafting and sending.
+- Evidence before confidence: every important conclusion should point to supporting messages or thread evidence.
+- Dominant workflow before minority workflow: optimize what the mailbox mostly does first.
+- Learn only from validated useful behavior: do not turn every edit into a rule.
+
+## Seven-Layer Model
 
 ### 1. Transport Layer
 
 Purpose:
 
 - connect to IMAP/SMTP
-- fetch message metadata and body
-- send or save drafts
+- fetch folder, envelope, and message data
+- save drafts or send mail only through controlled gates
 
 Implementation:
 
-- `himalaya` config generated from `.env`
-- no business logic here
+- `himalaya` config rendered from `.env`
+- no workflow or business logic here
 
-### 2. Canonical Data Layer
+### 2. Canonical Event and Thread Layer
 
 Purpose:
 
-- convert provider-specific email data into one stable internal schema
+- convert provider-specific mail data into one stable message and thread model
 
-Canonical fields:
+Canonical message fields:
 
 - `message_id`
-- `thread_id`
+- `folder`
 - `from`
 - `to`
 - `cc`
 - `subject`
 - `received_at`
 - `body_text`
-- `body_html`
 - `attachments`
-- `labels`
-- `mailbox`
+- `flags`
+
+Canonical thread fields:
+
+- `thread_key`
+- `participants`
+- `last_activity_at`
+- `message_count`
+- `has_attachments`
+- `internal_external`
+- `workflow_type`
+- `state`
+- `state_confidence`
+- `evidence_refs`
 
 Why this matters:
 
-- the core pipeline should not care whether mail came from Gmail, Exchange, or another IMAP server
+- the rest of the pipeline should operate on stable thread facts, not provider quirks
 
-### 3. Policy Layer
+### 3. Workflow State Layer
 
 Purpose:
 
-- decide what the system should do for a message
-
-Inputs:
-
-- sender identity
-- domain
-- keywords
-- role profile
-- current project focus
-- risk rules
+- infer what kind of workflow a thread belongs to
+- infer which stage the thread is in now
+- infer what the system is waiting on
 
 Outputs:
 
-- priority
-- category
-- action plan
-- review requirement
+- `workflow_type`
+- `state`
+- `owner_guess`
+- `waiting_on`
+- `due_hint`
+- `risk_flags`
+- `state_confidence`
+- `evidence_refs`
 
-This layer should be config-driven, not hard-coded.
+This is often the real center of the system when recurring threads are process-shaped.
 
-### 4. Profile Layer
-
-Purpose:
-
-- inject company-, team-, role-, and person-specific behavior
-
-Examples:
-
-- CEO profile
-- sales profile
-- recruiter profile
-- project manager profile
-
-Profile data should define:
-
-- important senders
-- ignored senders
-- escalation conditions
-- reply style
-- digest sections
-- SLA target
-
-### 5. Action Layer
+### 4. Value Surface Layer
 
 Purpose:
 
-- run the selected business actions
+- turn inferred thread state into user-visible outputs that save time immediately
 
-Typical actions:
+Typical surfaces:
 
-- `archive`
-- `notify`
-- `draft_reply`
-- `create_task`
-- `sync_crm`
-- `build_digest`
-- `hold_for_review`
+- `daily-urgent`
+- `pending-replies`
+- `blocked-threads`
+- `weekly-brief`
+- `project-watchlist`
 
 Important rule:
 
-- action executors should consume a structured action plan, not make policy decisions themselves
+- if this layer is not useful, the system should not move on to more aggressive automation
 
-### 6. Review and Ops Layer
+### 5. Policy and Profile Layer
+
+Purpose:
+
+- adapt the universal workflow engine to a role, team, or organization
+
+Examples:
+
+- internal domain allowlist
+- workflow keyword dictionaries
+- sender/team priority
+- risk thresholds
+- digest sections
+- approval rules
+
+Important rule:
+
+- profile config may shape interpretation and presentation, but should not fork the core lifecycle engine
+
+### 6. Draft and Action Layer
+
+Purpose:
+
+- produce structured assistant actions after value surfaces are stable
+
+First-wave actions:
+
+- `summarize`
+- `classify`
+- `remind`
+- `draft_reply`
+
+Later-stage actions:
+
+- `send`
+- `archive`
+- `notify_external_system`
+
+Important rule:
+
+- sending should not be a first-class optimization target until read-only value is already proven
+
+### 7. Review and Ops Layer
 
 Purpose:
 
@@ -150,11 +192,23 @@ Purpose:
 Includes:
 
 - approval gates
-- retry rules
 - audit log
+- retry rules
+- dead-letter handling
+- evidence snapshots
 - fallback model routing
-- metrics
-- dead-letter handling for failures
+- quality metrics for outputs and drafts
+
+## Immediate Value Surfaces
+
+The architecture should be judged by whether it can reliably produce:
+
+- what I must follow up today
+- what is waiting on me
+- which important thread is blocked
+- what changed this week without rereading the mailbox
+
+These are easier for end users to perceive than abstract categories or generic automation claims.
 
 ## Recommended Repository Shape
 
@@ -163,30 +217,38 @@ email-bot/
 ├── SKILL.md
 ├── .env
 ├── docs/
-│   └── architecture.md
+│   ├── architecture.md
+│   └── validation/
+│       └── instance-calibration-notes.md
 ├── scripts/
 │   ├── check_env.sh
-│   └── render_himalaya_config.sh
+│   ├── render_himalaya_config.sh
+│   ├── phase1_mailbox_census.sh
+│   └── phase2_profile_inference.sh
 ├── config/
 │   ├── policy.default.yaml
-│   └── profiles/
-│       ├── executive.yaml
-│       └── recruiter.yaml
+│   ├── profiles/
+│   └── workflows/
 └── runtime/
+    ├── himalaya/
+    ├── validation/
+    ├── state/
+    └── drafts/
 ```
 
 ## Decision Flow
 
 ```text
 mail sync
--> normalize message
--> load tenant profile
--> apply global policy
--> apply role profile overrides
--> produce action plan
+-> normalize message event
+-> reconstruct thread
+-> infer workflow and state
+-> attach evidence and confidence
+-> generate user-visible queues
+-> optionally build a draft plan
 -> check review threshold
--> execute action
--> log result
+-> execute allowed action
+-> log outcome and learn from validated edits
 ```
 
 ## Universal vs Customizable Split
@@ -194,44 +256,45 @@ mail sync
 Universal core:
 
 - sync engine
-- parser
-- canonical schema
-- action runner
-- audit logging
-- retry and fallback
-- review gate
+- canonical message and thread schema
+- thread reconstruction
+- workflow inference engine
+- evidence and confidence model
+- value-surface generator
+- draft runner
+- audit and review gate
 
 Customizable surface:
 
-- policy YAML
+- internal domain map
+- workflow dictionaries
+- priority and SLA rules
 - profile YAML
 - prompt fragments
 - digest templates
-- sender priority lists
 - escalation routing
 
-## How to Achieve High Availability
+## Success Metrics Users Can Feel
 
-- keep sync idempotent by `message_id`
-- persist checkpoints for last successful fetch
-- store action results separately from raw messages
-- make classification and drafting re-runnable
-- keep sending behind explicit approval by default
-- support fallback model routing when primary model is limited
-- separate transport failures from LLM failures
+- fewer missed high-priority follow-ups
+- faster morning triage
+- clearer waiting-on-me list
+- lower weekly summary effort
+- lower draft edit burden
 
-## How to Avoid Over-Customization Chaos
+These matter more than the number of labels, actions, or profiles supported.
 
-- allow config overrides only in defined fields
-- do not let each tenant alter the core pipeline
-- version policy/profile files
-- provide a tested default profile
-- introduce extension points, not one-off hacks
+## What Not to Optimize Yet
+
+- broad external auto-send
+- CRM or ticket sync before value proof
+- highly granular persona branching without workflow evidence
+- one-off tenant hacks that bypass the thread model
 
 ## Practical Implementation Rule
 
-If a requirement changes for one person only, put it in profile config.
+If a requirement changes how one person sees outputs, put it in profile config.
 
-If a requirement changes for one department, put it in role policy.
+If a requirement changes how one team names or prioritizes workflows, put it in workflow or policy config.
 
-If a requirement improves reliability for everyone, put it in the universal core.
+If a requirement improves thread reconstruction, state inference, evidence quality, or review safety for everyone, put it in the universal core.

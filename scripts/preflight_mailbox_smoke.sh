@@ -7,6 +7,7 @@ RUNTIME_DIR="${ROOT_DIR}/runtime/validation/preflight"
 REPORT_FILE="${ROOT_DIR}/docs/validation/preflight-mailbox-smoke-report.md"
 OUTPUT_FILE="${RUNTIME_DIR}/mailbox-smoke.json"
 STDERR_FILE="${RUNTIME_DIR}/mailbox-smoke.stderr.log"
+HIMALAYA_CONFIG_FILE="${ROOT_DIR}/runtime/himalaya/config.toml"
 
 INTERACTIVE=0
 SHOW_CHAT_TEMPLATE=0
@@ -177,15 +178,22 @@ bash "${ROOT_DIR}/scripts/check_env.sh"
 bash "${ROOT_DIR}/scripts/render_himalaya_config.sh"
 
 if ! command -v himalaya >/dev/null 2>&1; then
-  echo "himalaya CLI not found in PATH"
-  exit 1
+  if [[ -x "${ROOT_DIR}/runtime/bin/himalaya" ]]; then
+    HIMALAYA_BIN="${ROOT_DIR}/runtime/bin/himalaya"
+  else
+    echo "himalaya CLI not found in PATH (or ${ROOT_DIR}/runtime/bin/himalaya)"
+    exit 1
+  fi
+else
+  HIMALAYA_BIN="$(command -v himalaya)"
 fi
 
 ACCOUNT="${ACCOUNT_OVERRIDE:-${MAIL_ACCOUNT_NAME}}"
 CMD=(
-  himalaya
-  --account "${ACCOUNT}"
+  "${HIMALAYA_BIN}"
+  -c "${HIMALAYA_CONFIG_FILE}"
   envelope list
+  --account "${ACCOUNT}"
   --folder "${FOLDER}"
   --page 1
   --page-size "${PAGE_SIZE}"
