@@ -6,3 +6,19 @@ __pycache__/
 logs/
 *.log
 runtime/
+
+# Local user materials and office documents
+*.xlsx
+*.xls
+*.docx
+*.doc
+*.pptx
+*.ppt
+*.pdf
+
+# Instance-specific validation artifacts must stay local
+/docs/validation/*
+!/docs/validation/README.md
+!/docs/validation/diagrams/
+/docs/validation/diagrams/*
+!/docs/validation/diagrams/README.md

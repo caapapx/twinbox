@@ -1,125 +1,139 @@
 # email-bot
 
-IMAP/SMTP mailbox skill scaffold for OpenClaw, designed around a `himalaya`-style mail backend.
+An OpenClaw-native, thread-centric email copilot that progressively learns a user's workflow from mailbox evidence, human context, and controlled automation.
 
-## Goal
+## What This Repository Is
 
-This repository gives us a practical baseline to:
+`email-bot` is not a generic auto-send mail bot and not a polished inbox client demo.
 
-1. Store verified mailbox settings in `.env`
-2. Render a local `himalaya` account config from `.env`
-3. Define a safe OpenClaw `SKILL.md` contract for email read/classify/draft workflows
+It is a self-hostable foundation for building an email copilot that:
 
-## Files
+- starts with read-only mailbox onboarding
+- reconstructs workflow state from threads instead of single messages
+- ingests user-supplied context such as work materials and recurring habits
+- turns mailbox state into visible queues like `daily-urgent` and `pending-replies`
+- only promotes actions gradually: read-only -> draft -> controlled send
 
-- `.env`: local credentials and behavior settings (git-ignored)
-- `.env.example`: shareable template
-- `SKILL.md`: OpenClaw skill definition draft
-- `docs/architecture.md`: universal-core and customizable-policy design
-- `docs/claude-value-skill-evaluation.md`: Claude-value style skill assessment
-- `config/policy.default.yaml`: global default rules
-- `config/profiles/`: role/persona profile overrides
-- `scripts/render_himalaya_config.sh`: generate `config.toml` from `.env`
-- `scripts/check_env.sh`: quick required-var check
+This repository currently combines:
 
-## Quick Start
+- shell-based mailbox validation and sampling scripts
+- a stable progressive validation template for OpenClaw or manual initialization
+- a context-ingestion model for user-provided materials and habits
+- a new spec-first runtime skeleton for listeners, actions, templates, and audit logging
 
-1. Update `.env` with your verified mailbox values.
-2. Run `bash scripts/check_env.sh`.
-3. Run `bash scripts/render_himalaya_config.sh`.
-4. Generated file will be at `runtime/himalaya/config.toml`.
-5. Install/attach the corresponding OpenClaw skill workflow (read/classify/draft only by default).
+## Why This Project Exists
 
-## Preflight Smoke Test
+Most email-agent demos optimize for message events, fast automation, and UI interaction.
 
-Use a single entry script for mailbox login and read-only connectivity:
+This project optimizes for a different problem:
 
-1. Chat-guided template output:
-   `bash scripts/preflight_mailbox_smoke.sh --chat-template`
-2. Interactive terminal fill for missing `.env` fields:
-   `bash scripts/preflight_mailbox_smoke.sh --interactive`
-3. Headless run for automation:
-   `bash scripts/preflight_mailbox_smoke.sh --headless`
+- enterprise-safe rollout
+- thread-centric workflow understanding
+- human-in-the-loop decision making
+- OpenClaw-native self-hosting and scheduling
+- gradual adaptation from one real mailbox into a reusable agent workflow
 
-Outputs:
+The result should feel less like "AI reads one email" and more like "AI becomes a usable mailbox copilot for how this person actually works".
 
-- `docs/validation/preflight-mailbox-smoke-report.md`
-- `runtime/validation/preflight/mailbox-smoke.json`
-- `runtime/validation/preflight/mailbox-smoke.stderr.log`
+## Current Status
+
+Current release posture: `spec-first`, `shell-first`, `read-only-first`.
+
+What is already in the repository:
+
+- IMAP/SMTP environment checks and local `himalaya` config rendering
+- read-only mailbox smoke test and early validation scripts
+- progressive validation docs for persona, lifecycle, and daily value outputs
+- architecture docs for thread-centric workflow and human context ingestion
+- runtime skeleton for future `listener`, `action`, `template`, and `audit` layers
+
+What is intentionally not implemented yet:
+
+- a long-running listener manager
+- a production action manager
+- WebSocket/frontend interaction surfaces
+- auto-send or archive automation by default
+- tenant-specific hardcoded business logic
+
+## Core Design Decisions
+
+1. `Thread over message`
+   Decisions are made on thread context, workflow stage, and evidence, not on isolated message snapshots.
+2. `Value before automation`
+   The system must prove read-only value before drafting, and prove draft value before sending.
+3. `Context is first-class`
+   User-uploaded materials, recurring habits, and confirmed facts are normalized instead of buried in chat history.
+4. `OpenClaw-native operation`
+   The repo is designed to work in OpenClaw-style self-hosted environments and also in manual chat-driven initialization.
+
+## Repository Map
+
+```text
+email-bot/
+├── README.md
+├── SKILL.md
+├── agent/
+│   ├── README.md
+│   └── custom_scripts/
+│       ├── types.ts
+│       ├── listeners/
+│       └── actions/
+├── config/
+│   ├── action-templates/
+│   ├── context/
+│   └── profiles/
+├── docs/
+│   ├── architecture.md
+│   ├── openclaw-progressive-validation-plan.md
+│   ├── release/open-source-v1-plan.md
+│   └── specs/thread-state-runtime.md
+├── scripts/
+└── runtime/
+```
+
+## Start Here
+
+1. Read [architecture.md](docs/architecture.md).
+2. Read [openclaw-progressive-validation-plan.md](docs/openclaw-progressive-validation-plan.md).
+3. Read [open-source-v1-plan.md](docs/release/open-source-v1-plan.md).
+4. If you want to validate mailbox access locally, run:
+   - `bash scripts/check_env.sh`
+   - `bash scripts/render_himalaya_config.sh`
+   - `bash scripts/preflight_mailbox_smoke.sh --headless`
+5. If you want to extend the runtime skeleton, start from:
+   - [agent/README.md](agent/README.md)
+   - [thread-state-runtime.md](docs/specs/thread-state-runtime.md)
+   - [types.ts](agent/custom_scripts/types.ts)
+
+## Runtime Direction
+
+The next runtime layer will not clone Anthropic's `email-agent` directly.
+
+It will keep this repository's strengths:
+
+- progressive validation
+- thread-centric workflow state
+- human context plane
+- controlled automation gates
+
+And absorb the engineering pieces that matter:
+
+- `listener` / `action` separation
+- `template` / `instance` separation
+- typed execution context
+- execution audit trail
+- enable/disable friendly extension surface
 
 ## Safety Defaults
 
-- Use app/client password only.
-- Keep `.env` local and never commit.
-- Default behavior is read/classify/draft, not auto-send.
-- Escalate high-risk emails to human review before sending.
+- Use app/client passwords only.
+- Keep `.env` local and never commit it.
+- Treat `runtime/` as local operational data.
+- Do not auto-send until draft quality and approval flow are proven.
+- Do not let user-supplied context silently overwrite mailbox facts.
 
-## Integration Notes (OpenClaw + ClawHub himalaya idea)
+## Important Publishing Note
 
-Recommended architecture:
+This repository still contains locally generated validation materials under `docs/validation/` from a real mailbox study. Before a fully public release, you should review and sanitize any instance-specific files and history.
 
-1. Mail transport layer
-   Backed by `himalaya` account config generated from `.env`.
-2. Skill action layer
-   `fetch_unread`, `classify_priority`, `draft_reply`, `build_digest`.
-3. Policy layer
-   `SOUL.md` + `AGENTS.md` enforce no-auto-send and privacy boundaries.
-4. Schedule layer
-   `HEARTBEAT.md` triggers periodic sync and digest generation.
-
-This keeps mailbox credentials and transport concerns separated from LLM prompt logic.
-
-## Architecture Overview
-
-The system is designed as a four-stage pipeline with a human-in-the-loop approval loop before any outbound delivery.
-
-```mermaid
-flowchart TD
-    subgraph L1[Data Ingestion Layer - Continuous]
-      G[Gmail Skill]
-      F[Feishu Skill]
-      Q[Unified Event Queue<br/>Local Files or SQLite]
-      G --> Q
-      F --> Q
-    end
-
-    Q -->|Weekly trigger: Friday| W[Weekly Report Generation Layer]
-    W --> R[Agent reads weekly events]
-    R --> T[Topic clustering]
-    T --> P[Priority ranking]
-    P --> D[Draft report generation]
-
-    D --> H[Human-in-the-Loop Layer]
-    H --> RV[User review]
-    RV --> FB[Revision feedback]
-    FB --> H
-
-    RV -->|User says: Confirm| S[Delivery Layer]
-    S --> FS[Feishu group]
-    S --> EM[Email recipients]
-```
-
-Event queue schema:
-
-```json
-{ "source": "...", "author": "...", "title": "...", "content": "...", "ts": "...", "tags": ["..."] }
-```
-
-Key behavior:
-
-- Ingestion runs continuously.
-- Weekly report generation runs on schedule.
-- Draft quality is improved through iterative human feedback.
-- Outbound delivery is triggered only after explicit confirmation.
-
-## Why This Structure Fits Real Email Work
-
-Email automation should not be rewritten per company or per person.
-
-Instead:
-
-1. The mailbox transport, parsing, sync, retries, and review gates stay universal.
-2. Company and role differences live in `config/policy.default.yaml` and `config/profiles/`.
-3. Personal style and approval thresholds become profile data, not code forks.
-
-This gives us a stable core with controlled extension points.
+The open-source-facing architecture and template docs live outside `docs/validation/` and should remain the stable public surface.

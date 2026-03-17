@@ -211,8 +211,8 @@ Attention narrowing by phase:
 
 Why this matters:
 
-- without an attention gate, Phase 4 body sampling would consume tokens on all 471 envelopes
-- with the gate, Phase 4 only samples ~24-30 high-value threads, cutting token cost by 40-60%
+- without an attention gate, Phase 4 body sampling would consume tokens on the full envelope set
+- with the gate, Phase 4 only samples a smaller focus set, cutting token cost materially while improving review quality
 - the gate also improves precision: fewer noise threads means fewer false positives in urgent/pending queues
 
 Important rules:
@@ -306,6 +306,62 @@ Includes:
 - fallback model routing
 - quality metrics for outputs and drafts
 
+## Runtime Extension Surface
+
+The first public runtime should expose a small but explicit extension model instead of hiding behavior in prompts.
+
+### Listener Layer
+
+Purpose:
+
+- react to normalized thread-state events
+- refresh value surfaces and low-risk reminders
+- stay read-oriented through early phases
+
+Preferred event types:
+
+- `thread_entered_state`
+- `thread_sla_risk`
+- `daily_digest_time`
+- `context_updated`
+- `confidence_below_threshold`
+
+### Action Template Layer
+
+Purpose:
+
+- define reusable capabilities without binding them to one thread
+- keep high-risk behavior reviewable and phase-gated
+
+Examples:
+
+- `summarize_thread`
+- `build_daily_digest`
+- `remind_owner`
+- `draft_reply`
+
+### Action Instance Layer
+
+Purpose:
+
+- materialize one concrete action proposal from a template plus thread/context state
+- provide review-ready payloads with evidence, confidence, and due hints
+
+Important rule:
+
+- instances belong to runtime data and review flows, not static config files
+
+### Execution Audit Layer
+
+Purpose:
+
+- record every listener emission, draft proposal, approval, rejection, and send attempt
+- make automation reviewable before it becomes trusted
+
+Important rule:
+
+- every meaningful action must leave a machine-readable audit trail
+
 ## Immediate Value Surfaces
 
 The architecture should be judged by whether it can reliably produce:
@@ -321,19 +377,27 @@ These are easier for end users to perceive than abstract categories or generic a
 
 ```text
 email-bot/
+├── agent/
+│   ├── README.md
+│   └── custom_scripts/
+│       ├── actions/
+│       ├── listeners/
+│       └── types.ts
 ├── SKILL.md
 ├── .env
 ├── docs/
 │   ├── architecture.md
+│   ├── release/
+│   ├── specs/
 │   └── validation/
-│       ├── context-brief.md
-│       └── instance-calibration-notes.md
+│       └── README.md
 ├── scripts/
 │   ├── check_env.sh
 │   ├── render_himalaya_config.sh
 │   ├── phase1_mailbox_census.sh
 │   └── phase2_profile_inference.sh
 ├── config/
+│   ├── action-templates/
 │   ├── policy.default.yaml
 │   ├── context/
 │   ├── profiles/
