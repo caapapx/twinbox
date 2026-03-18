@@ -1,6 +1,6 @@
 # twinbox 📮
 
-[中文](README.zh.md)
+[English](./README.md) | [中文](./README.zh.md)
 
 An OpenClaw-native, thread-centric email copilot: understand thread state first, then unlock automation step by step.
 
