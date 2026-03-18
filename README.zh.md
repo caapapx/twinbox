@@ -1,6 +1,6 @@
 # twinbox 📮
 
-[English](README.md)
+[English](./README.md) | [中文](./README.zh-CN.md)
 
 `twinbox` 是一个基于 OpenClaw 的、以 Thread 为中心的邮件 Copilot：先理解 Thread 状态，再逐步解锁自动化。
 
