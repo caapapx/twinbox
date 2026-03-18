@@ -124,7 +124,7 @@ call_llm() {
         model: model,
         messages: [{ role: "user", content: prompt }],
         temperature: 0.2,
-        max_tokens: 4096,
+        max_tokens: Number(process.env.LLM_MAX_TOKENS || 4096),
       }));
     ' "${prompt}" "${LLM_MODEL_NAME}")
 
