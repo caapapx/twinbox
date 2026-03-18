@@ -16,6 +16,11 @@ BODIES="${PHASE1_DIR}/raw/sample-bodies.json"
 ENVELOPES="${PHASE1_DIR}/raw/envelopes-merged.json"
 INTENT_RESULTS_DIR="${PHASE1_DIR}/intent-results"
 
+# Human context files (optional — skip gracefully if missing)
+MANUAL_FACTS="${ROOT_DIR}/runtime/context/manual-facts.yaml"
+MANUAL_HABITS="${ROOT_DIR}/runtime/context/manual-habits.yaml"
+CALIBRATION="${ROOT_DIR}/docs/validation/instance-calibration-notes.md"
+
 mkdir -p "${PHASE2_DIR}" "${DOC_DIR}" "${DIAGRAM_DIR}"
 
 for required in "${CENSUS}" "${BODIES}" "${ENVELOPES}"; do
@@ -27,10 +32,33 @@ for required in "${CENSUS}" "${BODIES}" "${ENVELOPES}"; do
 done
 
 # Build a compact context pack for the thinking layer
-node - <<'NODE' "${CENSUS}" "${CONTACT_DIST}" "${BODIES}" "${ENVELOPES}" "${INTENT_RESULTS_DIR}" "${PHASE2_DIR}"
+node - <<'NODE' "${CENSUS}" "${CONTACT_DIST}" "${BODIES}" "${ENVELOPES}" "${INTENT_RESULTS_DIR}" "${PHASE2_DIR}" "${MANUAL_FACTS}" "${MANUAL_HABITS}" "${CALIBRATION}"
 const fs = require('fs');
 const path = require('path');
-const [censusPath, contactPath, bodiesPath, envelopesPath, intentDir, phase2Dir] = process.argv.slice(2);
+const [censusPath, contactPath, bodiesPath, envelopesPath, intentDir, phase2Dir, factsPath, habitsPath, calibrationPath] = process.argv.slice(2);
+
+function readIfExists(p) {
+  try { return fs.readFileSync(p, 'utf8').trim(); } catch { return ''; }
+}
+
+function parseYamlSimple(text) {
+  // Lightweight: extract items after "facts:" or "habits:" lines
+  // Returns array of raw text blocks between "- id:" markers
+  if (!text || text === 'facts: []' || text === 'habits: []') return [];
+  const items = [];
+  const lines = text.split('\n');
+  let current = null;
+  for (const line of lines) {
+    if (/^\s+-\s+id:/.test(line)) {
+      if (current) items.push(current);
+      current = line.replace(/^\s+-\s+/, '');
+    } else if (current && /^\s{4,}\w/.test(line)) {
+      current += '\n' + line.trim();
+    }
+  }
+  if (current) items.push(current);
+  return items;
+}
 
 const census = JSON.parse(fs.readFileSync(censusPath, 'utf8'));
 const contacts = fs.existsSync(contactPath) ? JSON.parse(fs.readFileSync(contactPath, 'utf8')) : {};
@@ -66,6 +94,13 @@ const enriched = bodies.map((b, idx) => {
 });
 
 // Compact context for LLM
+const factsRaw = readIfExists(factsPath);
+const habitsRaw = readIfExists(habitsPath);
+const calibrationRaw = readIfExists(calibrationPath);
+
+const factsItems = parseYamlSimple(factsRaw);
+const habitsItems = parseYamlSimple(habitsRaw);
+
 const context = {
   mailbox_summary: {
     total_envelopes: census.scope.total_envelopes,
@@ -80,12 +115,21 @@ const context = {
   high_frequency_threads: census.threads.high_frequency.slice(0, 10),
   long_threads: (census.threads.long_threads || []).slice(0, 10),
   enriched_samples: enriched,
+  human_context: {
+    has_facts: factsItems.length > 0,
+    has_habits: habitsItems.length > 0,
+    has_calibration: calibrationRaw.length > 0,
+    manual_facts_raw: factsItems.length > 0 ? factsRaw : null,
+    manual_habits_raw: habitsItems.length > 0 ? habitsRaw : null,
+    calibration_notes: calibrationRaw.length > 50 ? calibrationRaw.slice(0, 2000) : null,
+  },
 };
 
 fs.writeFileSync(`${phase2Dir}/context-pack.json`, JSON.stringify(context, null, 2));
 
-console.log(`Context pack: ${enriched.length} enriched samples, ${census.scope.total_envelopes} total envelopes`);
-console.log(`  → ${phase2Dir}/context-pack.json`);
+console.log('Context pack: ' + enriched.length + ' enriched samples, ' + census.scope.total_envelopes + ' total envelopes');
+console.log('  human_context: facts=' + factsItems.length + ' habits=' + habitsItems.length + ' calibration=' + (calibrationRaw.length > 50 ? 'yes' : 'no'));
+console.log('  -> ' + phase2Dir + '/context-pack.json');
 NODE
 
 echo ""

@@ -96,7 +96,12 @@ Produce a JSON object with exactly this structure:
 3. Every evidence item must reference a concrete number, sender, thread, or intent from the input
 4. Do not invent data not present in the input
 5. confirmation_questions: max 7, each should resolve one ambiguity
-6. Output ONLY the JSON object. No markdown fences, no explanation.
+6. If human_context is provided in the input, use it to refine your hypotheses:
+   - Human-provided facts OVERRIDE email-only inference when they conflict
+   - Mark evidence source: "mail_evidence" for email data, "user_declared_rule" or "user_confirmed_fact" for human context
+   - If human context contradicts email evidence, flag the conflict in the evidence array
+   - Periodic tasks from manual_habits should appear in relevant hypotheses
+7. Output ONLY the JSON object. No markdown fences, no explanation.
 
 ## Mailbox data:
 '"${CONTEXT_CONTENT}"
