@@ -20,6 +20,7 @@
 - 开源 V1 计划：`docs/plans/open-source-v1-plan.md`
 - Phase 1 intent LLM 改造记录：`docs/reports/phase1-intent-llm-migration.md`
 - Phase 2 persona LLM 改造记录：`docs/reports/phase2-persona-llm-migration.md`
+- Phase 3 前架构审视：`docs/reports/architecture-review-before-phase3.md`
 
 ## Agent 角色（gastown 集成后）
 
