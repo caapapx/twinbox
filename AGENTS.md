@@ -22,6 +22,7 @@
 - Phase 2 persona LLM 改造记录：`docs/reports/phase2-persona-llm-migration.md`
 - Phase 3 前架构审视：`docs/reports/architecture-review-before-phase3.md`
 - Phase 3 lifecycle LLM 改造记录：`docs/reports/phase3-lifecycle-llm-migration.md`
+- Phase 4 value LLM 改造记录：`docs/reports/phase4-value-llm-migration.md`
 
 ## Agent 角色（gastown 集成后）
 
