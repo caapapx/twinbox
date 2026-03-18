@@ -28,3 +28,4 @@ runtime/
 !/docs/validation/diagrams/
 /docs/validation/diagrams/*
 !/docs/validation/diagrams/README.md
+claude-agent-sdk-demos
