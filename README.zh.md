@@ -1,122 +1,122 @@
-# Twinbox 📮
+# twinbox 📮
 
 [English](README.md)
 
-一个 OpenClaw 原生、以线程为中心的邮件 Copilot：先帮你看懂线程状态，再逐步放开自动化能力。
+`twinbox` 是一个基于 OpenClaw 的、以 Thread 为中心的邮件 Copilot：先理解 Thread 状态，再逐步解锁自动化。
 
-## 这是个什么项目
+## 它是什么
 
-`twinbox` 不是一个通用的自动发信机器人，也不是一个打磨好的收件箱客户端演示。
+`twinbox` 不是一个通用的自动发邮件机器人，也不是一个完善的收件箱客户端演示。
 
-它是一个可自托管的基础设施，用来构建邮件 Copilot，特点是：
+它是一个可自托管的基础框架，用于构建具有以下特性的邮件 Copilot：
 
-- 从只读邮箱接入开始
-- 基于线程而不是单封邮件重建工作流状态
-- 摄取用户提供的上下文（如工作资料、重复性习惯）
-- 将邮箱状态转成可见队列（如 `daily-urgent`、`pending-replies`）
-- 动作能力按阶段升级：`read-only -> draft -> controlled send`
+- 从只读邮箱引导开始
+- 从 Thread 中重建工作流状态，而不是简单的单一消息
+- 摄取用户提供的 Context，如工作材料和习惯
+- 将邮箱状态转化为可见队列，如 `daily-urgent` 和 `pending-replies`
+- 仅逐步提升操作权限：只读 -> 草稿 -> 受控发送
 
-现在已经有：
+目前已实现：
 
-- 基于 shell 的邮箱校验与采样脚本
-- 适用于 OpenClaw 或手工初始化的稳定渐进式验证模板
-- 面向用户资料与习惯的上下文摄取模型
-- 一套新的 spec-first 运行时骨架（listener、action、template、audit logging）
+- 基于 shell 的邮箱验证和采样脚本
+- 适用于 OpenClaw 或手动初始化的稳定渐进式验证模板
+- 用于用户提供材料和习惯的 Context Ingestion 模型
+- 用于 Listener、Action、Template 和 Audit Logging 的新 Spec-first Runtime Skeleton
 
-## 为什么要做它
+## 为什么存在这个仓库
 
-多数邮件 Agent 演示更关注消息事件、快速自动化和 UI 交互。
+大多数邮件 Agent 演示往往优化消息事件、快速自动化和 UI 交互。
 
-这个项目更关心另一类问题：
+本项目针对一套不同的目标进行了调整：
 
-- 企业级安全上线
-- 线程中心的工作流理解
-- 人在回路中的决策机制
-- OpenClaw 原生自托管与调度
-- 从单个真实邮箱逐步迁移为可复用的 Agent 工作流
+- 企业安全部署
+- 以 Thread 为中心的工作流理解
+- 人机协作决策
+- OpenClaw 原生自托管和调度
+- 从一个真实邮箱逐步适配为可重用的 Agent 工作流
 
-理想效果不是“AI 读了一封邮件”，而是“AI 能成为符合这个人真实工作方式的可用邮件 Copilot”。
+结果应该感觉不像是"AI 读取一封邮件"，而更像是"AI 成为一个人真实工作方式的可用邮箱 Copilot"。
 
-## 进度一览
+## 当前进度
 
-当前发布姿态：`spec-first`、`shell-first`、`read-only-first`。
+当前发布基调：`spec-first`, `shell-first`, `read-only-first`。
 
-仓库里已实现：
+仓库现有内容：
 
-- IMAP/SMTP 环境检查与本地 `himalaya` 配置渲染
-- 只读邮箱冒烟测试与早期验证脚本
-- 关于 persona、生命周期和日常价值输出的渐进式验证文档
-- 线程中心工作流与人类上下文摄取的架构文档
-- 面向后续 `listener`、`action`、`template`、`audit` 层的运行时骨架
+- IMAP/SMTP 环境检查和本地 `himalaya` 配置渲染
+- 只读邮箱冒烟测试和早期验证脚本
+- 关于 Persona、Lifecycle 和日常价值输出的渐进式验证文档
+- 关于以 Thread 为中心的工作流和人工 Context Ingestion 的架构文档
+- 未来 `Listener`、`Action`、`Template` 和 `Audit` 层的 Runtime Skeleton
 
-还没做的部分：
+尚未实现：
 
-- 常驻 listener 管理器
-- 生产级 action 管理器
-- WebSocket / 前端交互层
+- 长时间运行的 Listener Manager
+- 生产环境 Action Manager
+- WebSocket/前端交互界面
 - 默认自动发送或归档自动化
-- 租户特定的硬编码业务逻辑
+- 特定于租户的硬编码业务逻辑
 
-## 几个关键取舍
+## 关键权衡
 
-1. `Thread over message`  
-   决策基于线程上下文、工作流阶段和证据，而不是孤立的单邮件快照。
-2. `Value before automation`  
-   系统必须先证明只读阶段有价值，再进入草稿；草稿阶段证明价值后才进入发送。
-3. `Context is first-class`  
-   用户上传资料、重复习惯和确认事实会被结构化沉淀，而不是埋在聊天历史里。
-4. `OpenClaw-native operation`  
-   该仓库既面向 OpenClaw 风格的自托管环境，也支持手工聊天驱动的初始化。
+1. `Thread over Message`
+   决策基于 Thread Context、工作流阶段和证据，而不是孤立的消息快照。
+2. `Value before Automation`
+   系统必须在起草之前证明只读价值，并在发送之前证明草稿价值。
+3. `Context is First-class`
+   用户上传的材料、反复出现的习惯和已确认的事实会被规范化，不会埋没在聊天记录中。
+4. `OpenClaw-native Operation`
+   仓库设计为在 OpenClaw 风格的自托管环境中运行，也支持手动聊天驱动的初始化。
 
-## 架构图（ASCII）🧭
+## 架构图 (ASCII) 🧭
 
 ```text
                                 +----------------------+
-                                |   User / Operator    |
-                                |  (review & approve)  |
+                                |   用户 / Operator     |
+                                |  (审查并批准)         |
                                 +----------+-----------+
                                            |
                                            v
 +------------------+             +---------+----------+             +----------------------+
-| Mailbox (IMAP)   +-----------> | Thread State Layer | <---------- | Context Ingestion     |
-| read-only first  | evidence    | (thread lifecycle, |   facts     | (materials/habits)    |
-+------------------+             | queue projection)  |             +----------+-----------+
+| 邮箱 (IMAP)       +-----------> | Thread State Layer | <---------- | Context Ingestion    |
+| 首先只读          | 证据         | (Thread Lifecycle, |   事实      | (Materials/Habits)   |
++------------------+             | Queue Projection)  |             +----------+-----------+
                                  +---------+----------+                        |
                                            |                                   |
                                            v                                   |
                                  +---------+----------+                        |
-                                 | Runtime Skeleton   |                        |
-                                 | listener / action  |------------------------+
-                                 | template / audit   |     typed context
+                                 | Runtime Skeleton   |------------------------+
+                                 | Listener / Action  |     Typed Context
+                                 | Template / Audit   |
                                  +---------+----------+
                                            |
                                            v
                                  +---------+----------+
                                  | Automation Gates   |
-                                 | read -> draft ->   |
-                                 | controlled send    |
+                                 | 只读 -> 草稿 ->    |
+                                 | 受控发送           |
                                  +--------------------+
 ```
 
-## 对比：Anthropic `email-agent` 架构图
+## 比较：Anthropic `email-agent` 架构图
 
 Anthropic 项目 README 架构图：
 
 ![Anthropic Email Agent Architecture](docs/assets/anthropic-email-agent-architecture.png)
 
-主要差异（本仓库 vs Anthropic demo）：
+此仓库与 Anthropic 演示的主要区别：
 
-- `线程优先` vs `消息/交互优先`：本仓库以 thread state 作为主轴，强调状态重建与队列投影。
-- `渐进式自动化` vs `直接功能演示`：本仓库默认 `read-only -> draft -> controlled send`，先验证价值再放权。
-- `上下文平面` vs `即时会话`：本仓库把用户资料/习惯结构化沉淀，不依赖一次性对话上下文。
-- `自托管工作流稳定化` vs `本地 demo`：本仓库面向可演进的运行时骨架（listener/action/template/audit）。
+- `Thread-first` vs `Message/UI-event-first`：本仓库将 Thread Lifecycle 和 Queue Projection 作为核心状态建模。
+- `Progressive Automation` vs `Direct Demo Flow`：本仓库强制执行 `只读 -> 草稿 -> 受控发送`。
+- `Context as Structured Plane` vs `Ad-hoc Session Context`：用户 Materials/Habits 被规范化以供重用。
+- `Self-hostable Runtime Skeleton` vs `Local Demo App`：本仓库强调 Listener/Action/Template/Audit 层的演进。
 
-## 仓库结构
+## 仓库地图
 
 ```text
 twinbox/
 ├── README.md
-├── README.en.md
+├── README.zh.md
 ├── SKILL.md
 ├── agent/
 │   ├── README.md
@@ -142,44 +142,44 @@ twinbox/
 1. 阅读 [architecture.md](docs/architecture.md)。
 2. 阅读 [openclaw-progressive-validation-plan.md](docs/openclaw-progressive-validation-plan.md)。
 3. 阅读 [open-source-v1-plan.md](docs/release/open-source-v1-plan.md)。
-4. 如果你要在本地验证邮箱访问，运行：
+4. 如果你想在本地验证邮箱访问权限，运行：
    - `bash scripts/check_env.sh`
    - `bash scripts/render_himalaya_config.sh`
    - `bash scripts/preflight_mailbox_smoke.sh --headless`
-5. 如果你要扩展运行时骨架，建议从以下文件开始：
+5. 如果你想扩展 Runtime Skeleton，从以下文件开始：
    - [agent/README.md](agent/README.md)
    - [thread-state-runtime.md](docs/specs/thread-state-runtime.md)
    - [types.ts](agent/custom_scripts/types.ts)
 
-## 接下来会怎么演进
+## 运行时未来方向
 
-下一层运行时不会直接照搬 Anthropic 的 `email-agent`。
+下一个 Runtime 层不会直接克隆 Anthropic 的 `email-agent`。
 
-它会保留本仓库的优势：
+它将保持本仓库的优势：
 
 - 渐进式验证
-- 线程中心工作流状态
-- 人类上下文平面
-- 受控自动化闸门
+- 以 Thread 为中心的工作流状态
+- 人工 Context Plane
+- 受控 Automation Gates
 
-并吸收关键工程能力：
+并将吸收重要的工程组件：
 
-- `listener` / `action` 分离
-- `template` / `instance` 分离
-- 类型化执行上下文
-- 执行审计轨迹
-- 易于启用/停用的扩展界面
+- `Listener` / `Action` 分离
+- `Template` / `Instance` 分离
+- Typed Execution Context
+- Execution Audit Trail
+- 易于扩展的 Enable/Disable 接口
 
-## 默认安全边界
+## 安全边界
 
-- 只使用 app/client 密码。
-- `.env` 仅保存在本地，禁止提交。
-- `runtime/` 视为本地运行数据。
-- 在草稿质量与审批流验证完成前，不开启自动发送。
-- 不允许用户提供的上下文静默覆盖邮箱事实。
+- 仅使用应用/客户端专用密码。
+- 保持 `.env` 本地化，绝对不要提交它。
+- 将 `runtime/` 视为本地运行数据。
+- 在证明草稿质量和审批流程有效之前，不要自动发送。
+- 不要让用户提供的 Context 静默覆盖邮箱事实。
 
-## 发布前提醒
+## 发布说明
 
-仓库 `docs/validation/` 下仍包含来自真实邮箱研究的本地生成验证材料。正式完全公开前，应审查并脱敏所有实例相关文件和历史记录。
+该仓库的 `docs/validation/` 下仍包含从真实邮箱研究中生成的本地验证材料。在完全开放之前，你应该审查并清理任何特定于实例的文件和历史记录。
 
-面向开源用户的架构与模板文档位于 `docs/validation/` 之外，应保持为稳定的公共接口。
+面向开源的架构和模板文档位于 `docs/validation/` 之外，应保持为稳定的公共接口。
