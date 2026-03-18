@@ -18,6 +18,7 @@
 - 多 agent 集成：`docs/plans/gastown-multi-agent-integration.md`
 - 运行时规范：`docs/specs/thread-state-runtime.md`
 - 开源 V1 计划：`docs/plans/open-source-v1-plan.md`
+- Phase 1 intent LLM 改造记录：`docs/reports/phase1-intent-llm-migration.md`
 
 ## Agent 角色（gastown 集成后）
 
