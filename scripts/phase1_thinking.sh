@@ -46,8 +46,20 @@ if [[ -f "${ENV_FILE}" ]]; then
   set -a; source "${ENV_FILE}"; set +a
 fi
 
-if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
-  echo "Error: ANTHROPIC_API_KEY not set (add to .env or export)"
+if [[ -n "${LLM_API_KEY:-}" ]]; then
+  LLM_BACKEND="openai"
+  LLM_URL="${LLM_API_URL:-https://coding.dashscope.aliyuncs.com/v1/chat/completions}"
+  LLM_MODEL_NAME="${LLM_MODEL:-kimi-k2.5}"
+  API_KEY="${LLM_API_KEY}"
+  MODEL="${LLM_MODEL_NAME}"
+  echo "LLM backend: OpenAI-compatible API (${LLM_MODEL_NAME})"
+elif [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+  LLM_BACKEND="anthropic"
+  LLM_URL="https://api.anthropic.com/v1/messages"
+  API_KEY="${ANTHROPIC_API_KEY}"
+  echo "LLM backend: Anthropic API"
+else
+  echo "Error: LLM_API_KEY or ANTHROPIC_API_KEY not set (add to .env or export)"
   exit 1
 fi
 
@@ -65,11 +77,12 @@ echo "  Context: ${CONTEXT_PACK}"
 echo "  Batch size: ${BATCH_SIZE}"
 
 # --- build batches and classify ---
-node - <<'CLASSIFY' "${CONTEXT_PACK}" "${OUTPUT_DIR}" "${BATCH_SIZE}" "${MODEL}" "${ANTHROPIC_API_KEY}" "${DRY_RUN}"
+node - <<'CLASSIFY' "${CONTEXT_PACK}" "${OUTPUT_DIR}" "${BATCH_SIZE}" "${MODEL}" "${API_KEY}" "${DRY_RUN}" "${LLM_BACKEND}" "${LLM_URL}"
 const fs = require('fs');
 const https = require('https');
+const http = require('http');
 
-const [contextPath, outputDir, batchSizeRaw, model, apiKey, dryRun] =
+const [contextPath, outputDir, batchSizeRaw, model, apiKey, dryRun, backend, llmUrl] =
   process.argv.slice(2);
 const BATCH_SIZE = Number(batchSizeRaw);
 const isDryRun = dryRun === 'true';
@@ -117,27 +130,48 @@ function buildBatchPrompt(batch) {
 ${items.join('\n\n')}`;
 }
 
-function callClaude(systemPrompt, userPrompt) {
+function callLLM(systemPrompt, userPrompt) {
   return new Promise((resolve, reject) => {
-    const payload = JSON.stringify({
-      model,
-      max_tokens: 4096,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userPrompt }],
-    });
+    const url = new URL(llmUrl);
+    let payload, headers;
 
-    const options = {
-      hostname: 'api.anthropic.com',
-      path: '/v1/messages',
-      method: 'POST',
-      headers: {
+    if (backend === 'openai') {
+      payload = JSON.stringify({
+        model,
+        max_tokens: 4096,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+      });
+      headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      };
+    } else {
+      payload = JSON.stringify({
+        model,
+        max_tokens: 4096,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+      });
+      headers = {
         'Content-Type': 'application/json',
         'x-api-key': apiKey,
         'anthropic-version': '2023-06-01',
-      },
+      };
+    }
+
+    const options = {
+      hostname: url.hostname,
+      port: url.port || (url.protocol === 'https:' ? 443 : 80),
+      path: url.pathname,
+      method: 'POST',
+      headers,
     };
 
-    const req = https.request(options, (res) => {
+    const transport = url.protocol === 'https:' ? https : http;
+    const req = transport.request(options, (res) => {
       let data = '';
       res.on('data', (chunk) => (data += chunk));
       res.on('end', () => {
@@ -147,7 +181,12 @@ function callClaude(systemPrompt, userPrompt) {
         }
         try {
           const body = JSON.parse(data);
-          const text = body.content?.[0]?.text || '';
+          let text;
+          if (backend === 'openai') {
+            text = body.choices?.[0]?.message?.content || '';
+          } else {
+            text = body.content?.[0]?.text || '';
+          }
           resolve(text);
         } catch (e) {
           reject(new Error(`Parse error: ${e.message}`));
@@ -191,7 +230,7 @@ async function main() {
     console.log(`Batch ${bi + 1}/${batches.length} (${batch.length} items)...`);
 
     try {
-      const response = await callClaude(SYSTEM_PROMPT, prompt);
+      const response = await callLLM(SYSTEM_PROMPT, prompt);
       // Extract JSON array from response
       const jsonMatch = response.match(/\[[\s\S]*\]/);
       if (!jsonMatch) {
@@ -238,7 +277,7 @@ async function main() {
   }
 
   const output = {
-    generated_at: new Date().toISOString(),
+    generated_at: new Date().toLocaleString('sv-SE', {timeZone:'Asia/Shanghai'}).replace(' ','T') + '+08:00',
     model,
     dry_run: isDryRun,
     stats: {

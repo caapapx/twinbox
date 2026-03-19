@@ -209,7 +209,7 @@ const brief = llm.weekly_brief || {};
 
 // --- daily-urgent.yaml ---
 const urgentYaml = [
-  'generated_at: "' + new Date().toISOString() + '"',
+  'generated_at: "' + new Date().toLocaleString('sv-SE', {timeZone:'Asia/Shanghai'}).replace(' ','T') + '+08:00' + '"',
   'method: "llm"',
   'model: "' + model + '"',
   'daily_urgent:',
@@ -229,7 +229,7 @@ fs.writeFileSync(phase4Dir + '/daily-urgent.yaml', urgentYaml.join('\n') + '\n')
 
 // --- pending-replies.yaml ---
 const pendingYaml = [
-  'generated_at: "' + new Date().toISOString() + '"',
+  'generated_at: "' + new Date().toLocaleString('sv-SE', {timeZone:'Asia/Shanghai'}).replace(' ','T') + '+08:00' + '"',
   'method: "llm"',
   'model: "' + model + '"',
   'pending_replies:',
@@ -246,7 +246,7 @@ fs.writeFileSync(phase4Dir + '/pending-replies.yaml', pendingYaml.join('\n') + '
 
 // --- sla-risks.yaml ---
 const riskYaml = [
-  'generated_at: "' + new Date().toISOString() + '"',
+  'generated_at: "' + new Date().toLocaleString('sv-SE', {timeZone:'Asia/Shanghai'}).replace(' ','T') + '+08:00' + '"',
   'method: "llm"',
   'model: "' + model + '"',
   'sla_risks:',

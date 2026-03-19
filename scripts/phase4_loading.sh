@@ -180,7 +180,7 @@ const hasFacts = factsRaw && factsRaw !== 'facts: []';
 const hasHabits = habitsRaw && habitsRaw !== 'habits: []';
 
 const context = {
-  generated_at: now.toISOString(),
+  generated_at: now.toLocaleString('sv-SE', {timeZone:'Asia/Shanghai'}).replace(' ','T') + '+08:00',
   lookback_days: lookbackDays,
   mail_address: mailAddress,
   recent_envelope_count: recent.length,

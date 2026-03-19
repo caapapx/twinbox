@@ -1,8 +1,10 @@
 .env
 .env.local
 .env.*.local
-.beads/
+.beads/*
 !.beads/formulas/
+.beads/formulas/*
+!.beads/formulas/twinbox-*.formula.toml
 .claude/
 .runtime/
 __pycache__/

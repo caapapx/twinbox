@@ -227,7 +227,7 @@ const questions = llm.confirmation_questions || [];
 
 // --- persona-hypotheses.yaml ---
 const personaYaml = [
-  `generated_at: "${new Date().toISOString()}"`,
+  `generated_at: "${new Date().toLocaleString('sv-SE', {timeZone:'Asia/Shanghai'}).replace(' ','T') + '+08:00'}"`,
   `method: "llm"`,
   `model: "${model}"`,
   'persona_hypotheses:',
@@ -244,7 +244,7 @@ fs.writeFileSync(`${phase2Dir}/persona-hypotheses.yaml`, personaYaml.join('\n') 
 
 // --- business-hypotheses.yaml ---
 const businessYaml = [
-  `generated_at: "${new Date().toISOString()}"`,
+  `generated_at: "${new Date().toLocaleString('sv-SE', {timeZone:'Asia/Shanghai'}).replace(' ','T') + '+08:00'}"`,
   `method: "llm"`,
   `model: "${model}"`,
   'business_hypotheses:',

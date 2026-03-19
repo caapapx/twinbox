@@ -206,7 +206,7 @@ for (const b of bodies) {
 }
 
 const contextPack = {
-  generated_at: new Date().toISOString(),
+  generated_at: new Date().toLocaleString('sv-SE', {timeZone:'Asia/Shanghai'}).replace(' ','T') + '+08:00',
   owner_domain: ownDomain,
   stats: {
     total_envelopes: envelopes.length,

@@ -208,7 +208,7 @@ const policySugs = llm.policy_suggestions || [];
 
 // --- lifecycle-model.yaml ---
 const yaml = [
-  'generated_at: "' + new Date().toISOString() + '"',
+  'generated_at: "' + new Date().toLocaleString('sv-SE', {timeZone:'Asia/Shanghai'}).replace(' ','T') + '+08:00' + '"',
   'method: "llm"',
   'model: "' + model + '"',
   '',
