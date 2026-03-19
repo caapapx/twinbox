@@ -1,20 +1,41 @@
 formula = "twinbox-phase4"
 type = "workflow"
-version = 5
+version = 6
 description = """
-Phase 4: Value 输出 — 这是一个 EXECUTION formula，每个 step 必须实际运行脚本。
-先同步 polecat worktree 到最新 origin/master，然后 loading 构建 context-pack，thinking 拆为 3 个并行子任务：
-urgent+pending / sla-risks / weekly-brief，最后合并输出。
+Phase 4: Value 输出执行单。
 
-重要：此 formula 的目标是 RUN 脚本产生输出文件，不是审查或编写代码。
-所有脚本使用相对路径，在项目根目录下执行即可。
+目标：执行现有 Phase 4 分拆脚本，生成 urgent/pending、sla-risks、weekly brief 和最终 report。
+这是纯执行任务，不是代码审查，不是架构探索，也不是重新选择脚本。
+
+固定执行路径：
+1. 同步当前 worktree 到最新 `origin/master`
+2. 运行 `bash scripts/phase4_loading.sh`
+3. 并行/依次运行：
+   - `bash scripts/phase4_think_urgent.sh`
+   - `bash scripts/phase4_think_sla.sh`
+   - `bash scripts/phase4_think_brief.sh`
+4. 运行 `bash scripts/phase4_merge.sh`
+
+重要约束：
+- 在这个 formula 里不要运行 `scripts/phase4_thinking_parallel.sh`
+- merge step 只做 raw JSON → YAML/MD 合并，不调 LLM
+- 不要先读 README、reports、历史性能分析，除非当前命令失败且 formula 明确要求
+
+最小必读材料：
+- 当前 formula
+- `scripts/phase4_loading.sh`
+- `scripts/phase4_think_urgent.sh`
+- `scripts/phase4_think_sla.sh`
+- `scripts/phase4_think_brief.sh`
+- `scripts/phase4_merge.sh`
+- `scripts/llm_common.sh`（仅当 think 子任务失败时）
 """
 
 [[steps]]
 id = "sync-workspace"
 title = "Sync Workspace To origin/master — EXECUTE"
 description = """
-ACTION: 在项目根目录先同步当前 polecat worktree，避免 worktree 基于旧 commit 缺少最新脚本。
+ACTION: 在项目根目录先同步当前 polecat worktree。这是第一步；不要在同步前浏览仓库其他文件。
 
 ```bash
 git fetch origin master
@@ -31,6 +52,7 @@ git rev-parse --short origin/master
 验证：当前分支已经 fast-forward 或 rebase 到 `origin/master` 之上。
 注意：这个 step 只能同步远端最新提交；如果源码仓库本地 `master` 还有未 push 的 commit，
 必须先在源码仓库执行 `git push origin master` 再 sling。
+如果这里失败，只报告 git 同步问题，不要继续进入 loading。
 """
 
 [[steps]]
@@ -38,14 +60,24 @@ id = "loading"
 title = "Phase 4 Loading — EXECUTE"
 needs = ["sync-workspace"]
 description = """
-ACTION: 在项目根目录运行以下命令，等待完成，验证产出文件存在。
+ACTION: 在项目根目录构建 Phase 4 context-pack。此步骤是确定性 I/O，不调 LLM。
 
 ```bash
 bash scripts/phase4_loading.sh
 ```
 
-验证：确认 `runtime/validation/phase-4/context-pack.json` 存在且非空。
-如果失败，检查 .env 配置和网络连接。
+成功条件：
+- `runtime/validation/phase-4/context-pack.json` 存在且非空
+
+失败时只检查：
+- `scripts/phase4_loading.sh`
+- `runtime/validation/phase-1/raw/envelopes-merged.json`
+- `runtime/validation/phase-3/thread-stage-samples.json`
+
+失败分流：
+- Phase 1/3 输入缺失：报告“先跑上游 phase”
+- `.env` / `himalaya` / mailbox 拉取失败：报告环境或 I/O 问题
+- 不要提前进入 think/merge，也不要改成运行 `phase4_thinking_parallel.sh`
 """
 
 [[steps]]
@@ -53,13 +85,24 @@ id = "think-urgent"
 title = "Phase 4 Thinking — Urgent + Pending — EXECUTE"
 needs = ["loading"]
 description = """
-ACTION: 在项目根目录运行以下命令，等待 LLM 返回（可能需要 2-3 分钟）。
+ACTION: 只运行 urgent+pending 子任务，写出 raw JSON。不要顺手运行其他 think 脚本。
 
 ```bash
 bash scripts/phase4_think_urgent.sh
 ```
 
-验证：确认 `runtime/validation/phase-4/urgent-pending-raw.json` 存在且包含有效 JSON。
+成功条件：
+- `runtime/validation/phase-4/urgent-pending-raw.json` 存在且是有效 JSON
+
+失败时只检查：
+- `scripts/phase4_think_urgent.sh`
+- `scripts/llm_common.sh`
+- `runtime/validation/phase-4/context-pack.json`
+
+失败分流：
+- context-pack 缺失：说明 loading 未完成
+- LLM backend/限流/解析失败：报告 API 问题
+- 不要改跑串行大脚本，也不要去读其他 phase 文档
 """
 
 [[steps]]
@@ -67,13 +110,23 @@ id = "think-sla"
 title = "Phase 4 Thinking — SLA Risks — EXECUTE"
 needs = ["loading"]
 description = """
-ACTION: 在项目根目录运行以下命令，等待 LLM 返回（可能需要 2-3 分钟）。
+ACTION: 只运行 SLA risks 子任务，写出 raw JSON。不要顺手运行其他 think 脚本。
 
 ```bash
 bash scripts/phase4_think_sla.sh
 ```
 
-验证：确认 `runtime/validation/phase-4/sla-risks-raw.json` 存在且包含有效 JSON。
+成功条件：
+- `runtime/validation/phase-4/sla-risks-raw.json` 存在且是有效 JSON
+
+失败时只检查：
+- `scripts/phase4_think_sla.sh`
+- `scripts/llm_common.sh`
+- `runtime/validation/phase-4/context-pack.json`
+
+失败分流：
+- context-pack 缺失：说明 loading 未完成
+- LLM backend/限流/解析失败：报告 API 问题
 """
 
 [[steps]]
@@ -81,13 +134,23 @@ id = "think-brief"
 title = "Phase 4 Thinking — Weekly Brief — EXECUTE"
 needs = ["loading"]
 description = """
-ACTION: 在项目根目录运行以下命令，等待 LLM 返回（可能需要 2-3 分钟）。
+ACTION: 只运行 weekly brief 子任务，写出 raw JSON。不要顺手运行其他 think 脚本。
 
 ```bash
 bash scripts/phase4_think_brief.sh
 ```
 
-验证：确认 `runtime/validation/phase-4/weekly-brief-raw.json` 存在且包含有效 JSON。
+成功条件：
+- `runtime/validation/phase-4/weekly-brief-raw.json` 存在且是有效 JSON
+
+失败时只检查：
+- `scripts/phase4_think_brief.sh`
+- `scripts/llm_common.sh`
+- `runtime/validation/phase-4/context-pack.json`
+
+失败分流：
+- context-pack 缺失：说明 loading 未完成
+- LLM backend/限流/解析失败：报告 API 问题
 """
 
 [[steps]]
@@ -95,16 +158,24 @@ id = "merge"
 title = "Phase 4 Merge — Combine Outputs — EXECUTE"
 needs = ["think-urgent", "think-sla", "think-brief"]
 description = """
-ACTION: 在项目根目录运行以下命令合并 3 个子任务的输出（纯合并，不调 LLM）。
+ACTION: 只合并 3 个 raw JSON，纯合并，不调 LLM，也不要重新运行任何 think 脚本。
 
 ```bash
 bash scripts/phase4_merge.sh
 ```
 
-验证：确认以下文件全部存在：
+成功条件：确认以下文件全部存在：
 - runtime/validation/phase-4/daily-urgent.yaml
 - runtime/validation/phase-4/pending-replies.yaml
 - runtime/validation/phase-4/sla-risks.yaml
 - runtime/validation/phase-4/weekly-brief.md
 - docs/validation/phase-4-report.md
+
+失败时只检查：
+- `scripts/phase4_merge.sh`
+- 3 个 `*-raw.json`
+
+失败分流：
+- raw JSON 缺失：返回缺失的 think step
+- 不要改跑 `phase4_thinking_parallel.sh`
 """

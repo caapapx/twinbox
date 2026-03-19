@@ -1,16 +1,33 @@
 formula = "twinbox-phase1"
 type = "workflow"
-version = 2
+version = 3
 description = """
-Phase 1: Intent 分类 — 先同步 polecat worktree 到最新 origin/master，
-再执行 loading 拉取 envelope + body 采样，最后由 thinking 做 LLM batch intent 分类。
+Phase 1: Intent 分类执行单。
+
+目标：执行既有脚本，生成 Phase 1 的 intent 分类结果，不做代码审查，不重新理解 twinbox 架构。
+
+默认执行路径：
+1. 同步当前 worktree 到最新 `origin/master`
+2. 运行 `bash scripts/phase1_loading.sh`
+3. 确认 `runtime/context/phase1-context.json` 已生成
+4. 运行 `bash scripts/phase1_thinking.sh`
+5. 确认 `runtime/validation/phase-1/intent-classification.json` 和 `runtime/validation/phase-1/intent-report.md` 已生成
+
+最小必读材料：
+- 当前 formula
+- `scripts/phase1_loading.sh`
+- `scripts/phase1_thinking.sh`
+- `runtime/context/phase1-context.json`（仅在 loading 成功后）
+
+不要先读 README、`docs/plans/`、`docs/reports/`、其他 phase 脚本，也不要自行设计新 taxonomy。
+只有命令失败时，才回读当前 step 指定的脚本定位问题。
 """
 
 [[steps]]
 id = "sync-workspace"
 title = "Sync Workspace To origin/master"
 description = """
-在项目根目录先同步当前 polecat worktree，避免 worktree 基于旧 commit 缺少最新脚本。
+在项目根目录先同步当前 polecat worktree。这是第一步；不要在同步前浏览仓库其他文件。
 
 ```bash
 git fetch origin master
@@ -27,6 +44,7 @@ git rev-parse --short origin/master
 验证：当前分支已经 fast-forward 或 rebase 到 `origin/master` 之上。
 注意：这个 step 只能同步远端最新提交；如果源码仓库本地 `master` 还有未 push 的 commit，
 必须先在源码仓库执行 `git push origin master` 再 sling。
+如果这里失败，只报告 git 同步问题，不要继续进入 loading。
 此步骤为 pre-step，不占 polecat session。
 """
 
@@ -35,13 +53,27 @@ id = "loading"
 title = "Phase 1 Loading"
 needs = ["sync-workspace"]
 description = """
-确定性数据拉取 + 结构化。拉取 envelope、body 采样、构建 context-pack。
+目的：确定性拉取邮箱 envelope 和正文采样，构建 thinking 所需的 Phase 1 context。
+
+只执行：
 
 ```bash
 bash scripts/phase1_loading.sh
 ```
 
-产出：`runtime/context/phase1-context.json`
+成功条件：
+- `runtime/context/phase1-context.json` 存在且非空
+
+失败时只检查这些位置：
+- `scripts/phase1_loading.sh`
+- `scripts/check_env.sh`
+- `scripts/render_himalaya_config.sh`
+
+失败分流：
+- 缺 `.env`、`himalaya`、账号配置或认证失败：报告环境问题并停止
+- 邮箱拉取失败：报告 mailbox I/O 问题并停止
+- 不要进入 thinking，也不要去读其他 phase 或文档
+
 此步骤为 pre-step，不占 polecat session。
 """
 
@@ -50,12 +82,23 @@ id = "thinking"
 title = "Phase 1 Thinking — Intent Classification"
 needs = ["loading"]
 description = """
-读取 loading 产出的 context-pack，调用 LLM 做 batch intent 分类。
+目的：读取 `runtime/context/phase1-context.json`，调用 LLM 做 batch intent 分类。
+不要重读邮箱，也不要改动脚本里的 taxonomy/prompt。
 
 ```bash
 bash scripts/phase1_thinking.sh
 ```
 
-产出：`runtime/validation/phase-1/` 下的 intent 分类结果（JSON + report）。
-每条 intent 带 confidence + evidence chain。
+成功条件：
+- `runtime/validation/phase-1/intent-classification.json` 存在
+- `runtime/validation/phase-1/intent-report.md` 存在
+
+失败时只检查：
+- `scripts/phase1_thinking.sh`
+- `runtime/context/phase1-context.json`
+
+失败分流：
+- context-pack 缺失：说明 loading 未完成，返回上一 step
+- `LLM_API_KEY` / `ANTHROPIC_API_KEY` 缺失，或 API 失败：报告 LLM backend 问题
+- 不要阅读 README、Phase 2/3/4 脚本或其他设计文档
 """

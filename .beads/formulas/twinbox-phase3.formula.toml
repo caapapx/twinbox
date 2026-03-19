@@ -1,16 +1,34 @@
 formula = "twinbox-phase3"
 type = "workflow"
-version = 2
+version = 3
 description = """
-Phase 3: Lifecycle 建模 — 先同步 polecat worktree 到最新 origin/master，
-loading 做线程分组并聚合上游产出，thinking 推断生命周期流和阶段归类。
+Phase 3: Lifecycle 建模执行单。
+
+目标：消费 Phase 1/2 结果与可选人工上下文，产出 lifecycle flows 与 thread stage samples。
+这是执行既有建模脚本，不是重新设计状态机框架。
+
+默认执行路径：
+1. 同步当前 worktree 到最新 `origin/master`
+2. 运行 `bash scripts/phase3_loading.sh`
+3. 确认 `runtime/validation/phase-3/context-pack.json` 已生成
+4. 运行 `bash scripts/phase3_thinking.sh`
+5. 确认 lifecycle model、thread samples、report、diagram 已生成
+
+最小必读材料：
+- 当前 formula
+- `scripts/phase3_loading.sh`
+- `scripts/phase3_thinking.sh`
+- `runtime/validation/phase-3/context-pack.json`（仅在 loading 成功后）
+
+不要先读 README、Phase 4 脚本、旧架构讨论文档，或者自行发明新的 flow/stage schema。
+只有命令失败时，才检查当前 step 指定的脚本和输入文件。
 """
 
 [[steps]]
 id = "sync-workspace"
 title = "Sync Workspace To origin/master"
 description = """
-在项目根目录先同步当前 polecat worktree，避免 worktree 基于旧 commit 缺少最新脚本。
+在项目根目录先同步当前 polecat worktree。这是第一步；不要在同步前浏览仓库其他文件。
 
 ```bash
 git fetch origin master
@@ -27,6 +45,7 @@ git rev-parse --short origin/master
 验证：当前分支已经 fast-forward 或 rebase 到 `origin/master` 之上。
 注意：这个 step 只能同步远端最新提交；如果源码仓库本地 `master` 还有未 push 的 commit，
 必须先在源码仓库执行 `git push origin master` 再 sling。
+如果这里失败，只报告 git 同步问题，不要继续进入 loading。
 此步骤为 pre-step，不占 polecat session。
 """
 
@@ -35,13 +54,28 @@ id = "loading"
 title = "Phase 3 Loading"
 needs = ["sync-workspace"]
 description = """
-线程分组 + Phase 1/2 产出 + 人工上下文 → context-pack。
+目的：聚合 Phase 1/2 产物，做线程分组并生成 lifecycle modeling 所需的 context-pack。
 
 ```bash
 bash scripts/phase3_loading.sh
 ```
 
-产出：`runtime/context/phase3-context.json`
+成功条件：
+- `runtime/validation/phase-3/context-pack.json` 存在
+
+失败时只检查：
+- `scripts/phase3_loading.sh`
+- `runtime/validation/phase-1/mailbox-census.json`
+- `runtime/validation/phase-1/raw/sample-bodies.json`
+- `runtime/validation/phase-1/raw/envelopes-merged.json`
+- `runtime/validation/phase-2/persona-hypotheses.yaml`
+- `runtime/validation/phase-2/business-hypotheses.yaml`
+
+失败分流：
+- Phase 1/2 输入缺失：报告“先跑上游 phase”
+- optional 人工上下文缺失：允许继续
+- 不要进入 Phase 4，也不要去读长篇架构文档
+
 此步骤为 pre-step，不占 polecat session。
 """
 
@@ -50,12 +84,26 @@ id = "thinking"
 title = "Phase 3 Thinking — Lifecycle Modeling"
 needs = ["loading"]
 description = """
-读取 context-pack，LLM 推断生命周期流、阶段定义、线程归类。
+目的：读取 `runtime/validation/phase-3/context-pack.json`，用 LLM 产出 lifecycle flows、thread stage samples 和 Phase 4 建议。
+不要自行改写阶段定义；脚本 prompt 已经约束了输出结构。
 
 ```bash
 bash scripts/phase3_thinking.sh
 ```
 
-产出：`runtime/validation/phase-3/` 下的 lifecycle 模型。
-每条线程归类带证据链。
+成功条件：
+- `runtime/validation/phase-3/lifecycle-model.yaml`
+- `runtime/validation/phase-3/thread-stage-samples.json`
+- `docs/validation/phase-3-report.md`
+- `docs/validation/diagrams/phase-3-lifecycle-overview.mmd`
+- `docs/validation/diagrams/phase-3-thread-state-machine.mmd`
+
+失败时只检查：
+- `scripts/phase3_thinking.sh`
+- `runtime/validation/phase-3/context-pack.json`
+
+失败分流：
+- context-pack 缺失：说明 loading 未完成
+- LLM backend/鉴权失败：报告 API 问题
+- 不要阅读 README、reports、Phase 4 脚本来“补理解”
 """
