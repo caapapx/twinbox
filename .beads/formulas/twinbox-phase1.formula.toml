@@ -1,0 +1,35 @@
+formula = "twinbox-phase1"
+type = "workflow"
+version = 1
+description = """
+Phase 1: Intent 分类 — loading 拉取 envelope + body 采样，thinking 做 LLM batch intent 分类。
+"""
+
+[[steps]]
+id = "loading"
+title = "Phase 1 Loading"
+description = """
+确定性数据拉取 + 结构化。拉取 envelope、body 采样、构建 context-pack。
+
+```bash
+bash scripts/phase1_loading.sh
+```
+
+产出：`runtime/context/phase1-context.json`
+此步骤为 pre-step，不占 polecat session。
+"""
+
+[[steps]]
+id = "thinking"
+title = "Phase 1 Thinking — Intent Classification"
+needs = ["loading"]
+description = """
+读取 loading 产出的 context-pack，调用 LLM 做 batch intent 分类。
+
+```bash
+bash scripts/phase1_thinking.sh
+```
+
+产出：`runtime/validation/phase-1/` 下的 intent 分类结果（JSON + report）。
+每条 intent 带 confidence + evidence chain。
+"""

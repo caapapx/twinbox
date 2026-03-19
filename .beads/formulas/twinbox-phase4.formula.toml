@@ -1,0 +1,39 @@
+formula = "twinbox-phase4"
+type = "workflow"
+version = 1
+description = """
+Phase 4: Value 输出 — loading fetch recent bodies + lifecycle context，thinking 生成 daily-urgent / pending-replies / sla-risks / weekly-brief。
+"""
+
+[[steps]]
+id = "loading"
+title = "Phase 4 Loading"
+description = """
+Fetch recent bodies + lifecycle context + 人工上下文 → context-pack。
+
+```bash
+bash scripts/phase4_loading.sh
+```
+
+产出：`runtime/context/phase4-context.json`
+此步骤为 pre-step，不占 polecat session。
+"""
+
+[[steps]]
+id = "thinking"
+title = "Phase 4 Thinking — Value Outputs"
+needs = ["loading"]
+description = """
+读取 context-pack，LLM 生成四类价值输出：
+- daily-urgent：当日紧急事项
+- pending-replies：待回复线程
+- sla-risks：SLA 风险预警
+- weekly-brief：周报摘要
+
+```bash
+bash scripts/phase4_thinking.sh
+```
+
+产出：`runtime/validation/phase-4/` 下的 value outputs。
+每条判断带证据链和真实置信度。
+"""

@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_database": "twinbox",
+  "project_id": "342c964f-b83c-40c7-afda-e1aa81e6d3be"
+}

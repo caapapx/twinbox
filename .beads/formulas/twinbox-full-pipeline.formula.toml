@@ -1,0 +1,90 @@
+formula = "twinbox-full-pipeline"
+type = "convoy"
+version = 1
+description = """
+twinbox 全流程 pipeline — 4 条 leg 对应 4 个 Phase，synthesis 合并最终输出为 attention-budget。
+
+注意：Phase 间有数据依赖（Phase 2 依赖 Phase 1 产出，Phase 3 依赖 1+2，Phase 4 依赖 1+2+3），
+当前以 convoy 声明并发意图，实际执行时 synthesis 负责校验依赖完整性。
+对于严格顺序执行，使用 scripts/run_pipeline.sh fallback。
+"""
+
+[[legs]]
+id = "phase1"
+title = "Phase 1 — Intent Classification"
+focus = "邮件 intent 分类：envelope 拉取 + LLM batch 分类"
+description = """
+执行 Phase 1 的 loading → thinking 全流程。
+
+```bash
+bash scripts/phase1_loading.sh
+bash scripts/phase1_thinking.sh
+```
+
+产出：`runtime/validation/phase-1/` 下的 intent 分类结果。
+"""
+
+[[legs]]
+id = "phase2"
+title = "Phase 2 — Persona Inference"
+focus = "用户画像推断：统计聚合 + LLM persona 生成"
+description = """
+执行 Phase 2 的 loading → thinking 全流程。
+依赖 Phase 1 产出。
+
+```bash
+bash scripts/phase2_loading.sh
+bash scripts/phase2_thinking.sh
+```
+
+产出：`runtime/validation/phase-2/` 下的 persona 推断结果。
+"""
+
+[[legs]]
+id = "phase3"
+title = "Phase 3 — Lifecycle Modeling"
+focus = "生命周期建模：线程分组 + LLM 阶段归类"
+description = """
+执行 Phase 3 的 loading → thinking 全流程。
+依赖 Phase 1 + Phase 2 产出。
+
+```bash
+bash scripts/phase3_loading.sh
+bash scripts/phase3_thinking.sh
+```
+
+产出：`runtime/validation/phase-3/` 下的 lifecycle 模型。
+"""
+
+[[legs]]
+id = "phase4"
+title = "Phase 4 — Value Outputs"
+focus = "价值输出：紧急度/待回复/风险/周报"
+description = """
+执行 Phase 4 的 loading → thinking 全流程。
+依赖 Phase 1 + Phase 2 + Phase 3 产出。
+
+```bash
+bash scripts/phase4_loading.sh
+bash scripts/phase4_thinking.sh
+```
+
+产出：`runtime/validation/phase-4/` 下的 value outputs。
+"""
+
+[synthesis]
+title = "Pipeline Synthesis — Attention Budget"
+depends_on = ["phase1", "phase2", "phase3", "phase4"]
+description = """
+合并 4 个 Phase 的输出为最终 attention-budget。
+
+校验各 Phase 产出完整性，合并为：
+- `runtime/attention-budget.yaml` — 综合注意力预算
+- `runtime/pipeline-report.md` — 全流程执行报告
+
+合并逻辑：
+1. 读取 phase-1 intent 分类 → 确定邮件优先级基线
+2. 读取 phase-2 persona → 叠加用户画像权重
+3. 读取 phase-3 lifecycle → 叠加生命周期阶段权重
+4. 读取 phase-4 value outputs → 生成最终 urgent/pending/risk 列表
+"""

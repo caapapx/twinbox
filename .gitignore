@@ -29,3 +29,7 @@ runtime/
 /docs/validation/diagrams/*
 !/docs/validation/diagrams/README.md
 claude-agent-sdk-demos
+
+# Dolt database files (added by bd init)
+.dolt/
+*.db

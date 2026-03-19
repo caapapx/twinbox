@@ -1,0 +1,35 @@
+formula = "twinbox-phase2"
+type = "workflow"
+version = 1
+description = """
+Phase 2: Persona 推断 — loading 读 Phase 1 产出 + 构建 enriched context，thinking 生成 persona + business 假设。
+"""
+
+[[steps]]
+id = "loading"
+title = "Phase 2 Loading"
+description = """
+读取 Phase 1 统计结果 + 人工上下文，构建 enriched context pack。
+
+```bash
+bash scripts/phase2_loading.sh
+```
+
+产出：`runtime/context/phase2-context.json`
+此步骤为 pre-step，不占 polecat session。
+"""
+
+[[steps]]
+id = "thinking"
+title = "Phase 2 Thinking — Persona Inference"
+needs = ["loading"]
+description = """
+读取 enriched context，单次 LLM 调用生成 persona + business 假设。
+
+```bash
+bash scripts/phase2_thinking.sh
+```
+
+产出：`runtime/validation/phase-2/` 下的 persona 推断结果。
+每条假设带具体证据链和真实置信度。
+"""

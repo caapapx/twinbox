@@ -1,0 +1,35 @@
+formula = "twinbox-phase3"
+type = "workflow"
+version = 1
+description = """
+Phase 3: Lifecycle 建模 — loading 做线程分组 + 聚合上游产出，thinking 推断生命周期流和阶段归类。
+"""
+
+[[steps]]
+id = "loading"
+title = "Phase 3 Loading"
+description = """
+线程分组 + Phase 1/2 产出 + 人工上下文 → context-pack。
+
+```bash
+bash scripts/phase3_loading.sh
+```
+
+产出：`runtime/context/phase3-context.json`
+此步骤为 pre-step，不占 polecat session。
+"""
+
+[[steps]]
+id = "thinking"
+title = "Phase 3 Thinking — Lifecycle Modeling"
+needs = ["loading"]
+description = """
+读取 context-pack，LLM 推断生命周期流、阶段定义、线程归类。
+
+```bash
+bash scripts/phase3_thinking.sh
+```
+
+产出：`runtime/validation/phase-3/` 下的 lifecycle 模型。
+每条线程归类带证据链。
+"""
