@@ -21,11 +21,35 @@ tar xzf /tmp/dolt.tar.gz -C /tmp
 cp /tmp/dolt-linux-amd64/bin/dolt ~/go/bin/dolt
 ```
 
-### 环境变量（写入 ~/.bashrc）
+### 环境变量（写入 `~/.bashrc`）
 
 ```bash
-export PATH=$HOME/go/bin:$PATH:/usr/local/go/bin
-export GT_TOWN_ROOT="$HOME/gt"
+# Gastown / Go CLI bootstrap
+case ":$PATH:" in
+  *":$HOME/go/bin:"*) ;;
+  *) export PATH="$HOME/go/bin:$PATH" ;;
+esac
+case ":$PATH:" in
+  *":/usr/local/go/bin:"*) ;;
+  *) export PATH="$PATH:/usr/local/go/bin" ;;
+esac
+export GT_TOWN_ROOT="${GT_TOWN_ROOT:-$HOME/gt}"
+```
+
+写入后立刻 reload 并验证：
+
+```bash
+source ~/.bashrc
+hash -r
+command -v gt
+command -v bd
+echo "$GT_TOWN_ROOT"
+```
+
+如果你的登录 shell 走 `~/.bash_profile`，确保它会 source `~/.bashrc`：
+
+```bash
+[ -f ~/.bashrc ] && . ~/.bashrc
 ```
 
 ---
@@ -241,7 +265,7 @@ rm -rf ~/gt
 
 | 问题 | 原因 | 解决 |
 |------|------|------|
-| `gt: command not found` | PATH 没配 | `export PATH=$HOME/go/bin:$PATH` |
+| `gt: command not found` | `~/go/bin` 不在 PATH，或 shell 没 reload | `source ~/.bashrc && hash -r && command -v gt` |
 | `not in a Gas Town workspace` | 没设 GT_TOWN_ROOT 或不在 town 目录 | `export GT_TOWN_ROOT=$HOME/gt && cd ~/gt` |
 | `cannot determine agent identity` | town 没初始化完整 | `gt doctor --fix` |
 | `Dolt server unreachable` | dolt 没启动 | `gt dolt start` 或 `bd dolt start` |
