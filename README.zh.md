@@ -48,6 +48,43 @@
 - 关于 Persona、Lifecycle 和日常价值输出的渐进式验证文档
 - 关于以 Thread 为中心的工作流和人工 Context Ingestion 的架构文档
 - 未来 `Listener`、`Action`、`Template` 和 `Audit` 层的 Runtime Skeleton
+- Phase 1-4 的 Loading/Thinking 分离（LLM 替代硬编码推断）
+- Gastown 多 Agent 编排集成（formula + sling + witness）
+
+### LLM Pipeline（Loading → Thinking）
+
+每个 Phase 拆为确定性 I/O（loading）和 LLM 推断（thinking）两步：
+
+| Phase | Loading | Thinking |
+|-------|---------|----------|
+| 1 | envelope + body 采样 | Intent 分类 |
+| 2 | Phase 1 产出 + enriched context | Persona + business 假设 |
+| 3 | 线程分组 + 上游产出聚合 | 生命周期流 + 阶段归类 |
+| 4 | recent bodies + lifecycle context | daily-urgent / pending-replies / sla-risks |
+
+```bash
+# 单 Phase 执行
+bash scripts/phase1_loading.sh && bash scripts/phase1_thinking.sh
+
+# 全流程串行
+bash scripts/run_pipeline.sh
+
+# 单跑某个 Phase
+bash scripts/run_pipeline.sh --phase 2
+```
+
+### Gastown 多 Agent 编排
+
+twinbox 已接入 [gastown](https://github.com/steveyegge/gastown) 多 agent 编排系统：
+
+```bash
+# 将 Phase 1 formula 分发给 polecat 执行
+gt sling twinbox-phase1 twinbox --create
+```
+
+执行链路：`gt sling` → spawn polecat → cook formula → 执行 loading/thinking → 提交 MR → refinery 合并 → witness 监控
+
+详见 [Gastown 操作指南](docs/guides/gastown-operations.md)。
 
 尚未实现：
 
@@ -118,6 +155,9 @@ twinbox/
 ├── README.md
 ├── README.zh.md
 ├── SKILL.md
+├── .beads/formulas/          # gastown formula 定义
+│   ├── twinbox-phase{1-4}.formula.toml
+│   └── twinbox-full-pipeline.formula.toml
 ├── agent/
 │   ├── README.md
 │   └── custom_scripts/
@@ -130,10 +170,17 @@ twinbox/
 │   └── profiles/
 ├── docs/
 │   ├── architecture.md
+│   ├── guides/
+│   │   └── gastown-operations.md   # gt 操作指南
+│   ├── plans/
+│   │   └── gastown-multi-agent-integration.md
 │   ├── openclaw-progressive-validation-plan.md
 │   ├── release/open-source-v1-plan.md
 │   └── specs/thread-state-runtime.md
 ├── scripts/
+│   ├── phase{1-4}_loading.sh       # 确定性 I/O
+│   ├── phase{1-4}_thinking.sh      # LLM 推断
+│   └── run_pipeline.sh             # fallback 串行编排
 └── runtime/
 ```
 

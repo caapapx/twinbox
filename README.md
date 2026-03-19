@@ -48,6 +48,43 @@ What is already in the repository:
 - progressive validation docs for persona, lifecycle, and daily value outputs
 - architecture docs for thread-centric workflow and human context ingestion
 - runtime skeleton for future `listener`, `action`, `template`, and `audit` layers
+- Phase 1-4 Loading/Thinking separation (LLM replaces hardcoded inference)
+- Gastown multi-agent orchestration integration (formula + sling + witness)
+
+### LLM Pipeline (Loading → Thinking)
+
+Each Phase is split into deterministic I/O (loading) and LLM inference (thinking):
+
+| Phase | Loading | Thinking |
+|-------|---------|----------|
+| 1 | envelope + body sampling | Intent classification |
+| 2 | Phase 1 output + enriched context | Persona + business hypotheses |
+| 3 | thread grouping + upstream aggregation | Lifecycle flow + stage classification |
+| 4 | recent bodies + lifecycle context | daily-urgent / pending-replies / sla-risks |
+
+```bash
+# Single phase
+bash scripts/phase1_loading.sh && bash scripts/phase1_thinking.sh
+
+# Full pipeline
+bash scripts/run_pipeline.sh
+
+# Single phase via pipeline
+bash scripts/run_pipeline.sh --phase 2
+```
+
+### Gastown Multi-Agent Orchestration
+
+twinbox integrates with [gastown](https://github.com/steveyegge/gastown) for multi-agent orchestration:
+
+```bash
+# Sling a Phase 1 formula to a polecat worker
+gt sling twinbox-phase1 twinbox --create
+```
+
+Execution chain: `gt sling` → spawn polecat → cook formula → execute loading/thinking → submit MR → refinery merge → witness monitoring
+
+See [Gastown Operations Guide](docs/guides/gastown-operations.md).
 
 Not implemented yet:
 
@@ -116,8 +153,11 @@ Main differences (this repo vs Anthropic demo):
 ```text
 twinbox/
 ├── README.md
-├── README.en.md
+├── README.zh.md
 ├── SKILL.md
+├── .beads/formulas/          # gastown formula definitions
+│   ├── twinbox-phase{1-4}.formula.toml
+│   └── twinbox-full-pipeline.formula.toml
 ├── agent/
 │   ├── README.md
 │   └── custom_scripts/
@@ -130,10 +170,17 @@ twinbox/
 │   └── profiles/
 ├── docs/
 │   ├── architecture.md
+│   ├── guides/
+│   │   └── gastown-operations.md   # gt operations guide
+│   ├── plans/
+│   │   └── gastown-multi-agent-integration.md
 │   ├── openclaw-progressive-validation-plan.md
 │   ├── release/open-source-v1-plan.md
 │   └── specs/thread-state-runtime.md
 ├── scripts/
+│   ├── phase{1-4}_loading.sh       # deterministic I/O
+│   ├── phase{1-4}_thinking.sh      # LLM inference
+│   └── run_pipeline.sh             # fallback serial orchestration
 └── runtime/
 ```
 
