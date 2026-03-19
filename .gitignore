@@ -1,6 +1,9 @@
 .env
 .env.local
 .env.*.local
+.beads/
+.claude/
+.runtime/
 __pycache__/
 *.pyc
 logs/
