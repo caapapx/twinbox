@@ -33,3 +33,7 @@ gastown
 # Dolt database files (added by bd init)
 .dolt/
 *.db
+
+# Gas Town (added by gt)
+.logs/
+state.json
