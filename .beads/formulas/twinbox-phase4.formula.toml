@@ -1,77 +1,86 @@
 formula = "twinbox-phase4"
 type = "workflow"
-version = 2
+version = 4
 description = """
-Phase 4: Value 输出 — loading 构建 context-pack，thinking 拆为 3 个并行子任务：
+Phase 4: Value 输出 — 这是一个 EXECUTION formula，每个 step 必须实际运行脚本。
+loading 构建 context-pack，thinking 拆为 3 个并行子任务：
 urgent+pending / sla-risks / weekly-brief，最后合并输出。
+
+重要：此 formula 的目标是 RUN 脚本产生输出文件，不是审查或编写代码。
+所有脚本使用相对路径，在项目根目录下执行即可。
 """
 
 [[steps]]
 id = "loading"
-title = "Phase 4 Loading"
+title = "Phase 4 Loading — EXECUTE"
 description = """
-Fetch recent bodies + lifecycle context + 人工上下文 → context-pack。
+ACTION: 在项目根目录运行以下命令，等待完成，验证产出文件存在。
 
 ```bash
 bash scripts/phase4_loading.sh
 ```
 
-产出：`runtime/validation/phase-4/context-pack.json`
-此步骤为 pre-step，不占 polecat session。
+验证：确认 `runtime/validation/phase-4/context-pack.json` 存在且非空。
+如果失败，检查 .env 配置和网络连接。
 """
 
 [[steps]]
 id = "think-urgent"
-title = "Phase 4 Thinking — Urgent + Pending"
+title = "Phase 4 Thinking — Urgent + Pending — EXECUTE"
 needs = ["loading"]
 description = """
-并行子任务 1: daily-urgent + pending-replies。
+ACTION: 在项目根目录运行以下命令，等待 LLM 返回（可能需要 2-3 分钟）。
 
 ```bash
 bash scripts/phase4_think_urgent.sh
 ```
 
-产出：`runtime/validation/phase-4/urgent-pending-raw.json`
+验证：确认 `runtime/validation/phase-4/urgent-pending-raw.json` 存在且包含有效 JSON。
 """
 
 [[steps]]
 id = "think-sla"
-title = "Phase 4 Thinking — SLA Risks"
+title = "Phase 4 Thinking — SLA Risks — EXECUTE"
 needs = ["loading"]
 description = """
-并行子任务 2: SLA 风险扫描。
+ACTION: 在项目根目录运行以下命令，等待 LLM 返回（可能需要 2-3 分钟）。
 
 ```bash
 bash scripts/phase4_think_sla.sh
 ```
 
-产出：`runtime/validation/phase-4/sla-risks-raw.json`
+验证：确认 `runtime/validation/phase-4/sla-risks-raw.json` 存在且包含有效 JSON。
 """
 
 [[steps]]
 id = "think-brief"
-title = "Phase 4 Thinking — Weekly Brief"
+title = "Phase 4 Thinking — Weekly Brief — EXECUTE"
 needs = ["loading"]
 description = """
-并行子任务 3: 周报汇总。
+ACTION: 在项目根目录运行以下命令，等待 LLM 返回（可能需要 2-3 分钟）。
 
 ```bash
 bash scripts/phase4_think_brief.sh
 ```
 
-产出：`runtime/validation/phase-4/weekly-brief-raw.json`
+验证：确认 `runtime/validation/phase-4/weekly-brief-raw.json` 存在且包含有效 JSON。
 """
 
 [[steps]]
 id = "merge"
-title = "Phase 4 Merge — Combine Outputs"
+title = "Phase 4 Merge — Combine Outputs — EXECUTE"
 needs = ["think-urgent", "think-sla", "think-brief"]
 description = """
-合并 3 个子任务的 raw JSON → 最终 YAML/MD 输出。
+ACTION: 在项目根目录运行以下命令合并 3 个子任务的输出。
 
 ```bash
 bash scripts/phase4_thinking_parallel.sh
 ```
 
-产出：daily-urgent.yaml / pending-replies.yaml / sla-risks.yaml / weekly-brief.md
+验证：确认以下文件全部存在：
+- runtime/validation/phase-4/daily-urgent.yaml
+- runtime/validation/phase-4/pending-replies.yaml
+- runtime/validation/phase-4/sla-risks.yaml
+- runtime/validation/phase-4/weekly-brief.md
+- docs/validation/phase-4-report.md
 """
