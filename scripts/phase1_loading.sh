@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
-set -euo pipefail
-
-# Phase 1 Loading: deterministic envelope + body sampling → context-pack
+# Phase 1 Loading: deterministic envelope + body pull → context-pack
 # Output: runtime/context/phase1-context.json
+set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${ROOT_DIR}/.env"
 CONTEXT_DIR="${ROOT_DIR}/runtime/context"
-RAW_DIR="${CONTEXT_DIR}/raw"
+RAW_DIR="${ROOT_DIR}/runtime/context/raw"
 CONFIG_FILE="${ROOT_DIR}/runtime/himalaya/config.toml"
-OUT_FILE="${CONTEXT_DIR}/phase1-context.json"
 
 MAX_PAGES_PER_FOLDER=20
 PAGE_SIZE=50
@@ -22,25 +20,28 @@ usage() {
 Usage:
   bash scripts/phase1_loading.sh [options]
 
+Pulls envelope metadata + body samples from mailbox via himalaya.
+Outputs: runtime/context/phase1-context.json
+
 Options:
   --account <name>               Override MAIL_ACCOUNT_NAME
   --folder <name>                Only scan one folder (default: all)
   --max-pages-per-folder <n>     Max pages per folder (default: 20)
   --page-size <n>                Page size for envelope list (default: 50)
-  --sample-body-count <n>        Body samples to fetch (default: 30)
+  --sample-body-count <n>        Bodies to sample (default: 30)
   -h, --help                     Show this help
 USAGE
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --account)          ACCOUNT_OVERRIDE="${2:-}"; shift 2 ;;
-    --folder)           FOLDER_FILTER="${2:-}"; shift 2 ;;
+    --account) ACCOUNT_OVERRIDE="${2:-}"; shift 2 ;;
+    --folder) FOLDER_FILTER="${2:-}"; shift 2 ;;
     --max-pages-per-folder) MAX_PAGES_PER_FOLDER="${2:-}"; shift 2 ;;
-    --page-size)        PAGE_SIZE="${2:-}"; shift 2 ;;
+    --page-size) PAGE_SIZE="${2:-}"; shift 2 ;;
     --sample-body-count) SAMPLE_BODY_COUNT="${2:-}"; shift 2 ;;
-    -h|--help)          usage; exit 0 ;;
-    *)                  echo "Unknown option: $1"; usage; exit 1 ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown option: $1"; usage; exit 1 ;;
   esac
 done
 
@@ -51,6 +52,7 @@ if [[ ! -f "${ENV_FILE}" ]]; then
   echo "Missing .env at ${ENV_FILE}"; exit 1
 fi
 set -a; source "${ENV_FILE}"; set +a
+
 bash "${ROOT_DIR}/scripts/check_env.sh"
 bash "${ROOT_DIR}/scripts/render_himalaya_config.sh"
 
@@ -67,23 +69,22 @@ fi
 ACCOUNT="${ACCOUNT_OVERRIDE:-${MAIL_ACCOUNT_NAME}}"
 FOLDERS_JSON="${RAW_DIR}/folders.json"
 
-# --- Step 1: list folders ---
-echo "[loading] Listing folders..."
-"${HIMALAYA_BIN}" -c "${CONFIG_FILE}" folder list \
-  --account "${ACCOUNT}" --output json > "${FOLDERS_JSON}"
+# --- Step 1: folder list ---
+echo "Fetching folder list..."
+"${HIMALAYA_BIN}" -c "${CONFIG_FILE}" folder list --account "${ACCOUNT}" --output json > "${FOLDERS_JSON}"
 
 mapfile -t FOLDERS < <(node -e '
-  const fs = require("fs");
-  const rows = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+  const rows = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
   for (const r of rows) console.log(r.name);
 ' "${FOLDERS_JSON}")
 
 if [[ -n "${FOLDER_FILTER}" ]]; then
   FOLDERS=("${FOLDER_FILTER}")
 fi
-echo "[loading] Folders: ${FOLDERS[*]}"
 
-# --- Step 2: paginate envelopes ---
+echo "Folders: ${FOLDERS[*]}"
+
+# --- Step 2: paginated envelope fetch ---
 : > "${RAW_DIR}/all-pages.ndjson"
 
 for folder in "${FOLDERS[@]}"; do
@@ -96,20 +97,19 @@ for folder in "${FOLDERS[@]}"; do
         --account "${ACCOUNT}" --folder "${folder}" \
         --page "${page}" --page-size "${PAGE_SIZE}" \
         --output json > "${page_out}" 2> "${page_err}"; then
-      if rg -qi "out of bound|out-of-bound|out of range" "${page_err}" 2>/dev/null || \
-         grep -qi "out of bound\|out-of-bound\|out of range" "${page_err}" 2>/dev/null; then
+      if rg -qi "out of bound|out-of-bound|out of range" "${page_err}" 2>/dev/null; then
         break
       fi
-      echo "Warn: envelope list failed folder=${folder} page=${page}" >&2
+      echo "Warn: envelope list failed for folder=${folder}, page=${page}" >&2
       break
     fi
 
     count="$(node -e '
       const a = JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));
-      console.log(Array.isArray(a)?a.length:0);
+      console.log(Array.isArray(a) ? a.length : 0);
     ' "${page_out}")"
 
-    [[ "${count}" -eq 0 ]] && break
+    if [[ "${count}" -eq 0 ]]; then break; fi
 
     printf '{"folder":%s,"page":%s,"path":%s}\n' \
       "$(node -p 'JSON.stringify(process.argv[1])' "${folder}")" \
@@ -117,14 +117,12 @@ for folder in "${FOLDERS[@]}"; do
       "$(node -p 'JSON.stringify(process.argv[1])' "${page_out}")" \
       >> "${RAW_DIR}/all-pages.ndjson"
 
-    [[ "${count}" -lt "${PAGE_SIZE}" ]] && break
+    if [[ "${count}" -lt "${PAGE_SIZE}" ]]; then break; fi
   done
 done
 
 # --- Step 3: merge envelopes ---
-echo "[loading] Merging envelopes..."
 ENVELOPES_JSON="${RAW_DIR}/envelopes-merged.json"
-
 node - <<'NODE' "${RAW_DIR}/all-pages.ndjson" "${ENVELOPES_JSON}"
 const fs = require('fs');
 const [ndjsonPath, outPath] = process.argv.slice(2);
@@ -140,13 +138,12 @@ if (lines) {
   }
 }
 fs.writeFileSync(outPath, JSON.stringify(items, null, 2));
-console.log(`[loading] ${items.length} envelopes merged`);
+console.log(`Merged ${items.length} envelopes`);
 NODE
 
 # --- Step 4: sample bodies ---
-echo "[loading] Sampling ${SAMPLE_BODY_COUNT} message bodies..."
 BODIES_JSON="${RAW_DIR}/sample-bodies.json"
-
+echo "Sampling ${SAMPLE_BODY_COUNT} message bodies..."
 node - <<'NODE' "${ENVELOPES_JSON}" "${BODIES_JSON}" "${SAMPLE_BODY_COUNT}" "${HIMALAYA_BIN}" "${CONFIG_FILE}" "${ACCOUNT}"
 const fs = require('fs');
 const cp = require('child_process');
@@ -170,59 +167,61 @@ for (const e of samples) {
     });
     let body = '';
     try { body = JSON.parse(raw); } catch { body = ''; }
-    out.push({ id, folder, body: String(body).slice(0, 3000) });
+    out.push({ id, folder, subject: e.subject || '', body: String(body).slice(0, 3000) });
   } catch {
-    out.push({ id, folder, body: '' });
+    out.push({ id, folder, subject: e.subject || '', body: '' });
   }
 }
 fs.writeFileSync(outPath, JSON.stringify(out, null, 2));
-console.log(`[loading] ${out.length} bodies sampled`);
+console.log(`Sampled ${out.length} bodies`);
 NODE
 
-# --- Step 5: assemble context-pack ---
-echo "[loading] Assembling context-pack..."
-
-node - <<'NODE' "${ENVELOPES_JSON}" "${BODIES_JSON}" "${OUT_FILE}" "${MAIL_ADDRESS:-}"
+# --- Step 5: build context-pack ---
+echo "Building context-pack..."
+node - <<'NODE' "${ENVELOPES_JSON}" "${BODIES_JSON}" "${FOLDERS_JSON}" "${CONTEXT_DIR}/phase1-context.json" "${MAIL_ADDRESS:-}"
 const fs = require('fs');
-const [envPath, bodiesPath, outPath, mailAddress] = process.argv.slice(2);
+const [envPath, bodiesPath, foldersPath, outPath, mailAddress] = process.argv.slice(2);
+
 const envelopes = JSON.parse(fs.readFileSync(envPath, 'utf8'));
 const bodies = JSON.parse(fs.readFileSync(bodiesPath, 'utf8'));
+const folders = JSON.parse(fs.readFileSync(foldersPath, 'utf8'));
 
-// Build compact envelope records
-const records = envelopes.map(e => ({
+const ownDomain = (mailAddress.split('@')[1] || '').toLowerCase();
+
+// Build envelope summaries (strip raw page refs)
+const envelopeSummaries = envelopes.map(e => ({
   id: String(e.id),
   folder: e.folder || 'INBOX',
   subject: e.subject || '',
-  from_addr: (e.from && e.from.addr) || '',
   from_name: (e.from && e.from.name) || '',
+  from_addr: (e.from && e.from.addr) || '',
   date: e.date || '',
   has_attachment: !!e.has_attachment,
 }));
 
-// Folder distribution
-const byFolder = {};
-for (const r of records) {
-  byFolder[r.folder] = (byFolder[r.folder] || 0) + 1;
+// Body map keyed by id
+const bodyMap = {};
+for (const b of bodies) {
+  bodyMap[String(b.id)] = { subject: b.subject || '', body: b.body || '' };
 }
 
 const contextPack = {
-  version: 1,
   generated_at: new Date().toISOString(),
-  account: mailAddress || 'unknown',
+  owner_domain: ownDomain,
   stats: {
-    total_envelopes: records.length,
+    total_envelopes: envelopes.length,
     sampled_bodies: bodies.length,
-    folders: byFolder,
+    folders_scanned: folders.map(f => f.name),
   },
-  envelopes: records,
-  sampled_bodies: bodies,
+  envelopes: envelopeSummaries,
+  sampled_bodies: bodyMap,
 };
 
 fs.writeFileSync(outPath, JSON.stringify(contextPack, null, 2));
-console.log(`[loading] Context-pack written to ${outPath}`);
-console.log(`[loading] ${records.length} envelopes, ${bodies.length} body samples`);
+console.log(`Context-pack written: ${outPath}`);
+console.log(`  ${envelopes.length} envelopes, ${bodies.length} body samples`);
 NODE
 
 echo ""
 echo "Phase 1 Loading complete."
-echo "  Output: ${OUT_FILE}"
+echo "  Output: runtime/context/phase1-context.json"
