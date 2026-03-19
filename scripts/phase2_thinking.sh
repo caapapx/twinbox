@@ -8,12 +8,7 @@ PHASE2_DIR="${ROOT_DIR}/runtime/validation/phase-2"
 DOC_DIR="${ROOT_DIR}/docs/validation"
 DIAGRAM_DIR="${DOC_DIR}/diagrams"
 CONTEXT_PACK="${PHASE2_DIR}/context-pack.json"
-
-# Source .env
-ENV_FILE="${ROOT_DIR}/.env"
-if [[ -f "${ENV_FILE}" ]]; then
-  set -a; source "${ENV_FILE}"; set +a
-fi
+source "${ROOT_DIR}/scripts/llm_common.sh"
 
 DRY_RUN=false
 usage() {
@@ -43,20 +38,7 @@ if [[ ! -f "${CONTEXT_PACK}" ]]; then
   exit 1
 fi
 
-# Detect LLM backend (same logic as phase1_thinking.sh)
-LLM_BACKEND=""
-if [[ -n "${LLM_API_KEY:-}" ]]; then
-  LLM_BACKEND="openai"
-  LLM_URL="${LLM_API_URL:-https://coding.dashscope.aliyuncs.com/v1/chat/completions}"
-  LLM_MODEL_NAME="${LLM_MODEL:-kimi-k2.5}"
-  echo "LLM backend: OpenAI-compatible API (${LLM_MODEL_NAME})"
-elif [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
-  LLM_BACKEND="anthropic"
-  echo "LLM backend: Anthropic API"
-else
-  echo "No LLM backend. Set LLM_API_KEY in .env."
-  exit 1
-fi
+init_llm_backend "${ROOT_DIR}/.env" || exit 1
 
 # --- Build prompt ---
 CONTEXT_CONTENT=$(cat "${CONTEXT_PACK}")
@@ -114,99 +96,9 @@ if [[ "${DRY_RUN}" == "true" ]]; then
   exit 0
 fi
 
-# --- Call LLM ---
 echo "Calling LLM for persona + business inference..."
-
-call_llm() {
-  local prompt="$1"
-
-  if [[ "${LLM_BACKEND}" == "openai" ]]; then
-    local request_body
-    request_body=$(node -e '
-      const prompt = process.argv[1];
-      const model = process.argv[2];
-      console.log(JSON.stringify({
-        model: model,
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.2,
-        max_tokens: Number(process.env.LLM_MAX_TOKENS || 4096),
-      }));
-    ' "${prompt}" "${LLM_MODEL_NAME}")
-
-    local raw
-    raw=$(curl -s -X POST "${LLM_URL}" \
-      -H "Content-Type: application/json" \
-      -H "Authorization: Bearer ${LLM_API_KEY}" \
-      -d "${request_body}" 2>/dev/null)
-
-    echo "${raw}" | node -e '
-      const chunks = [];
-      process.stdin.on("data", c => chunks.push(c));
-      process.stdin.on("end", () => {
-        const raw = Buffer.concat(chunks).toString("utf8");
-        try {
-          const resp = JSON.parse(raw);
-          if (resp.error) { process.stderr.write("API error: " + JSON.stringify(resp.error) + "\n"); process.stdout.write("{}"); return; }
-          process.stdout.write(resp.choices?.[0]?.message?.content || "{}");
-        } catch (e) {
-          process.stderr.write("Parse error: " + e.message + "\n");
-          process.stdout.write("{}");
-        }
-      });
-    '
-
-  elif [[ "${LLM_BACKEND}" == "anthropic" ]]; then
-    local api_url="${ANTHROPIC_BASE_URL:-https://api.anthropic.com}/v1/messages"
-    local model="${ANTHROPIC_MODEL:-claude-sonnet-4-20250514}"
-    local request_body
-    request_body=$(node -e '
-      console.log(JSON.stringify({
-        model: process.argv[2],
-        max_tokens: 4096,
-        messages: [{ role: "user", content: process.argv[1] }]
-      }));
-    ' "${prompt}" "${model}")
-
-    local raw
-    raw=$(curl -s -X POST "${api_url}" \
-      -H "Content-Type: application/json" \
-      -H "x-api-key: ${ANTHROPIC_API_KEY}" \
-      -H "anthropic-version: 2023-06-01" \
-      -d "${request_body}" 2>/dev/null)
-
-    echo "${raw}" | node -e '
-      const chunks = [];
-      process.stdin.on("data", c => chunks.push(c));
-      process.stdin.on("end", () => {
-        try {
-          const resp = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-          if (resp.error) { process.stderr.write("API error: " + JSON.stringify(resp.error) + "\n"); process.stdout.write("{}"); return; }
-          process.stdout.write((resp.content || []).map(c => c.text || "").join(""));
-        } catch (e) { process.stdout.write("{}"); }
-      });
-    '
-  fi
-}
-
-RAW_RESPONSE=$(call_llm "${PERSONA_PROMPT}")
-
-# Parse and clean response
-echo "${RAW_RESPONSE}" | node -e '
-  const chunks = [];
-  process.stdin.on("data", c => chunks.push(c));
-  process.stdin.on("end", () => {
-    let text = Buffer.concat(chunks).toString("utf8").trim();
-    text = text.replace(/^```(?:json)?\s*/m, "").replace(/\s*```\s*$/m, "").trim();
-    try {
-      const obj = JSON.parse(text);
-      process.stdout.write(JSON.stringify(obj, null, 2));
-    } catch (e) {
-      process.stderr.write("Failed to parse LLM JSON: " + e.message + "\n");
-      process.stderr.write("Raw (first 500): " + text.slice(0, 500) + "\n");
-      process.stdout.write("{}");
-    }
-  });
-' > "${PHASE2_DIR}/llm-response.json"
+RAW_RESPONSE=$(call_llm "${PERSONA_PROMPT}" "${LLM_MAX_TOKENS:-4096}")
+echo "${RAW_RESPONSE}" | clean_json > "${PHASE2_DIR}/llm-response.json"
 
 echo "LLM response saved."
 

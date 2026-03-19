@@ -7,11 +7,7 @@ PHASE3_DIR="${ROOT_DIR}/runtime/validation/phase-3"
 DOC_DIR="${ROOT_DIR}/docs/validation"
 DIAGRAM_DIR="${DOC_DIR}/diagrams"
 CONTEXT_PACK="${PHASE3_DIR}/context-pack.json"
-
-ENV_FILE="${ROOT_DIR}/.env"
-if [[ -f "${ENV_FILE}" ]]; then
-  set -a; source "${ENV_FILE}"; set +a
-fi
+source "${ROOT_DIR}/scripts/llm_common.sh"
 
 DRY_RUN=false
 while [[ $# -gt 0 ]]; do
@@ -30,20 +26,7 @@ if [[ ! -f "${CONTEXT_PACK}" ]]; then
   exit 1
 fi
 
-# LLM backend detection (same as phase1/2)
-LLM_BACKEND=""
-if [[ -n "${LLM_API_KEY:-}" ]]; then
-  LLM_BACKEND="openai"
-  LLM_URL="${LLM_API_URL:-}"
-  LLM_MODEL_NAME="${LLM_MODEL:-}"
-  echo "LLM backend: OpenAI-compatible (${LLM_MODEL_NAME})"
-elif [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
-  LLM_BACKEND="anthropic"
-  echo "LLM backend: Anthropic API"
-else
-  echo "No LLM backend. Set LLM_API_KEY in .env."
-  exit 1
-fi
+init_llm_backend "${ROOT_DIR}/.env" || exit 1
 
 CONTEXT_CONTENT=$(cat "${CONTEXT_PACK}")
 
@@ -114,81 +97,9 @@ if [[ "${DRY_RUN}" == "true" ]]; then
   exit 0
 fi
 
-# --- Call LLM ---
 echo "Calling LLM for lifecycle modeling..."
-
-call_llm() {
-  local prompt="$1"
-  if [[ "${LLM_BACKEND}" == "openai" ]]; then
-    local request_body
-    request_body=$(node -e '
-      console.log(JSON.stringify({
-        model: process.argv[2],
-        messages: [{ role: "user", content: process.argv[1] }],
-        temperature: 0.2,
-        max_tokens: Number(process.env.LLM_MAX_TOKENS || 8192),
-      }));
-    ' "${prompt}" "${LLM_MODEL_NAME}")
-
-    local raw
-    raw=$(curl -s -X POST "${LLM_URL}" \
-      -H "Content-Type: application/json" \
-      -H "Authorization: Bearer ${LLM_API_KEY}" \
-      -d "${request_body}" 2>/dev/null)
-
-    echo "${raw}" | node -e '
-      const c=[]; process.stdin.on("data",d=>c.push(d));
-      process.stdin.on("end",()=>{
-        try {
-          const r=JSON.parse(Buffer.concat(c).toString("utf8"));
-          if(r.error){process.stderr.write("API error: "+JSON.stringify(r.error)+"\n");process.stdout.write("{}");return;}
-          process.stdout.write(r.choices?.[0]?.message?.content||"{}");
-        } catch(e){process.stderr.write("Parse error\n");process.stdout.write("{}");}
-      });
-    '
-  elif [[ "${LLM_BACKEND}" == "anthropic" ]]; then
-    local api_url="${ANTHROPIC_BASE_URL:-https://api.anthropic.com}/v1/messages"
-    local model="${ANTHROPIC_MODEL:-claude-sonnet-4-20250514}"
-    local request_body
-    request_body=$(node -e '
-      console.log(JSON.stringify({
-        model: process.argv[2], max_tokens: 8192,
-        messages: [{ role: "user", content: process.argv[1] }]
-      }));
-    ' "${prompt}" "${model}")
-
-    local raw
-    raw=$(curl -s -X POST "${api_url}" \
-      -H "Content-Type: application/json" \
-      -H "x-api-key: ${ANTHROPIC_API_KEY}" \
-      -H "anthropic-version: 2023-06-01" \
-      -d "${request_body}" 2>/dev/null)
-
-    echo "${raw}" | node -e '
-      const c=[]; process.stdin.on("data",d=>c.push(d));
-      process.stdin.on("end",()=>{
-        try {
-          const r=JSON.parse(Buffer.concat(c).toString("utf8"));
-          if(r.error){process.stderr.write("API error\n");process.stdout.write("{}");return;}
-          process.stdout.write((r.content||[]).map(c=>c.text||"").join(""));
-        } catch(e){process.stdout.write("{}");}
-      });
-    '
-  fi
-}
-
-RAW_RESPONSE=$(call_llm "${LIFECYCLE_PROMPT}")
-
-# Parse response
-echo "${RAW_RESPONSE}" | node -e '
-  const c=[]; process.stdin.on("data",d=>c.push(d));
-  process.stdin.on("end",()=>{
-    let t=Buffer.concat(c).toString("utf8").trim();
-    t=t.replace(/^```(?:json)?\s*/m,"").replace(/\s*```\s*$/m,"").trim();
-    try { process.stdout.write(JSON.stringify(JSON.parse(t),null,2)); }
-    catch(e){ process.stderr.write("JSON parse failed: "+e.message+"\n"); process.stdout.write("{}"); }
-  });
-' > "${PHASE3_DIR}/llm-response.json"
+RAW_RESPONSE=$(call_llm "${LIFECYCLE_PROMPT}" "${LLM_MAX_TOKENS:-8192}")
+echo "${RAW_RESPONSE}" | clean_json > "${PHASE3_DIR}/llm-response.json"
 
 echo "LLM response saved."
 
