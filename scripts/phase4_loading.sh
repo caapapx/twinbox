@@ -21,7 +21,7 @@ MANUAL_FACTS="${ROOT_DIR}/runtime/context/manual-facts.yaml"
 MANUAL_HABITS="${ROOT_DIR}/runtime/context/manual-habits.yaml"
 CALIBRATION="${ROOT_DIR}/docs/validation/instance-calibration-notes.md"
 
-LOOKBACK_DAYS=18
+LOOKBACK_DAYS="${PIPELINE_LOOKBACK_DAYS:-7}"
 MAX_BODY_FETCH=24
 ACCOUNT_OVERRIDE=""
 
@@ -30,7 +30,7 @@ usage() {
 Usage: bash scripts/phase4_loading.sh [options]
 Options:
   --account <name>         Override MAIL_ACCOUNT_NAME
-  --lookback-days <n>      Lookback window (default: 18)
+  --lookback-days <n>      Lookback window (default: PIPELINE_LOOKBACK_DAYS or 7)
   --max-body-fetch <n>     Max bodies to fetch live (default: 24)
   -h, --help
 USAGE
@@ -209,6 +209,7 @@ NODE
 
 echo ""
 echo "Phase 4 loading complete."
+echo "Lookback days: ${LOOKBACK_DAYS}"
 echo "Output: ${PHASE4_DIR}/context-pack.json"
 echo ""
 echo "Next: bash scripts/phase4_thinking.sh"

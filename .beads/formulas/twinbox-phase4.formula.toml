@@ -6,6 +6,13 @@ Phase 4: Value 输出执行单。
 
 目标：执行现有 Phase 4 分拆脚本，生成 urgent/pending、sla-risks、weekly brief 和最终 report。
 这是纯执行任务，不是代码审查，不是架构探索，也不是重新选择脚本。
+这个 formula 现在作为单 polecat fallback；如果要让 3 个 think 子任务分别分发到 3 个 Gastown session，
+优先使用：
+- `twinbox-phase4-loading`
+- `twinbox-phase4-think-urgent`
+- `twinbox-phase4-think-sla`
+- `twinbox-phase4-think-brief`
+- `twinbox-phase4-merge`
 
 固定执行路径：
 1. 同步当前 worktree 到最新 `origin/master`

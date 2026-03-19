@@ -14,6 +14,8 @@ CENSUS="${PHASE1_DIR}/mailbox-census.json"
 BODIES="${PHASE1_DIR}/raw/sample-bodies.json"
 ENVELOPES="${PHASE1_DIR}/raw/envelopes-merged.json"
 INTENT_RESULTS_DIR="${PHASE1_DIR}/intent-results"
+PHASE1_CONTEXT="${ROOT_DIR}/runtime/context/phase1-context.json"
+INTENT_CLASSIFICATION="${PHASE1_DIR}/intent-classification.json"
 PERSONA="${PHASE2_DIR}/persona-hypotheses.yaml"
 BUSINESS="${PHASE2_DIR}/business-hypotheses.yaml"
 
@@ -23,36 +25,169 @@ CALIBRATION="${ROOT_DIR}/docs/validation/instance-calibration-notes.md"
 
 mkdir -p "${PHASE3_DIR}" "${DOC_DIR}" "${DIAGRAM_DIR}"
 
-for required in "${CENSUS}" "${BODIES}" "${ENVELOPES}"; do
-  if [[ ! -f "${required}" ]]; then
-    echo "Missing: ${required}"
-    echo "Run Phase 1+2 first."
-    exit 1
-  fi
-done
+if [[ ! -f "${PHASE1_CONTEXT}" || ! -f "${INTENT_CLASSIFICATION}" ]]; then
+  echo "Missing Phase 1 outputs."
+  echo "Run Phase 1 first."
+  exit 1
+fi
 
-node - <<'NODE' "${CENSUS}" "${BODIES}" "${ENVELOPES}" "${INTENT_RESULTS_DIR}" "${PERSONA}" "${BUSINESS}" "${PHASE3_DIR}" "${MANUAL_FACTS}" "${MANUAL_HABITS}" "${CALIBRATION}"
+node - <<'NODE' "${CENSUS}" "${BODIES}" "${ENVELOPES}" "${INTENT_RESULTS_DIR}" "${PERSONA}" "${BUSINESS}" "${PHASE3_DIR}" "${MANUAL_FACTS}" "${MANUAL_HABITS}" "${CALIBRATION}" "${PHASE1_CONTEXT}" "${INTENT_CLASSIFICATION}"
 const fs = require('fs');
 const path = require('path');
-const [censusPath, bodiesPath, envelopesPath, intentDir, personaPath, businessPath, phase3Dir, factsPath, habitsPath, calibrationPath] = process.argv.slice(2);
+const [censusPath, bodiesPath, envelopesPath, intentDir, personaPath, businessPath, phase3Dir, factsPath, habitsPath, calibrationPath, phase1ContextPath, intentClassificationPath] = process.argv.slice(2);
 
 function readIfExists(p) {
   try { return fs.readFileSync(p, 'utf8').trim(); } catch { return ''; }
 }
 
-const census = JSON.parse(fs.readFileSync(censusPath, 'utf8'));
-const bodies = JSON.parse(fs.readFileSync(bodiesPath, 'utf8'));
-const envelopes = JSON.parse(fs.readFileSync(envelopesPath, 'utf8'));
-const envMap = new Map(envelopes.map(e => [String(e.id), e]));
-
-// Merge intent results
-const intents = [];
-if (fs.existsSync(intentDir)) {
-  for (const f of fs.readdirSync(intentDir).filter(f => f.endsWith('.json')).sort()) {
-    intents.push(...JSON.parse(fs.readFileSync(path.join(intentDir, f), 'utf8')));
-  }
+function topN(obj, n = 10) {
+  return Object.entries(obj)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, n)
+    .map(([key, count]) => ({ key, count }));
 }
-const intentMap = new Map(intents.map(i => [i.idx, i]));
+
+function senderAddr(env) {
+  return String(env.from?.addr || env.from_addr || '').toLowerCase();
+}
+
+function senderDomain(env) {
+  const addr = senderAddr(env);
+  const index = addr.lastIndexOf('@');
+  return index >= 0 ? addr.slice(index + 1) : 'unknown';
+}
+
+function extractTokens(text) {
+  const stopWords = new Set(['re', 'fw', 'fwd', '回复', '转发', '关于', '通知', '请', '公司', 'the', 'and', 'for', 'with', 'to', 'of', 'in']);
+  return (String(text || '').match(/[A-Za-z0-9\u4e00-\u9fff]{2,}/g) || [])
+    .map((token) => token.toLowerCase())
+    .filter((token) => !stopWords.has(token));
+}
+
+function normalizeEnvelope(env) {
+  return {
+    id: String(env.id),
+    folder: env.folder || 'INBOX',
+    subject: env.subject || '',
+    date: env.date || '',
+    has_attachment: !!env.has_attachment,
+    from: env.from || {
+      addr: env.from_addr || '',
+      name: env.from_name || '',
+    },
+  };
+}
+
+function deriveLegacyCensus(envelopes, intents, ownerDomain, foldersScanned, lookbackDays) {
+  const byDomain = {};
+  const bySender = {};
+  const byKeyword = {};
+  const byIntent = {};
+  const byInternalExternal = { internal: 0, external: 0, unknown: 0 };
+  const threadCounts = {};
+  let withAttachment = 0;
+
+  const intentById = new Map(intents.map((intent) => [String(intent.id), intent]));
+
+  for (const env of envelopes) {
+    const domain = senderDomain(env);
+    const sender = senderAddr(env) || env.from?.name || 'unknown';
+    const intent = intentById.get(String(env.id))?.intent || 'unknown';
+
+    byDomain[domain] = (byDomain[domain] || 0) + 1;
+    bySender[sender] = (bySender[sender] || 0) + 1;
+    byIntent[intent] = (byIntent[intent] || 0) + 1;
+    threadCounts[normThread(env.subject)] = (threadCounts[normThread(env.subject)] || 0) + 1;
+
+    for (const token of extractTokens(env.subject)) {
+      byKeyword[token] = (byKeyword[token] || 0) + 1;
+    }
+
+    if (env.has_attachment) withAttachment++;
+
+    if (domain === 'unknown') {
+      byInternalExternal.unknown += 1;
+    } else if (ownerDomain && domain === ownerDomain) {
+      byInternalExternal.internal += 1;
+    } else {
+      byInternalExternal.external += 1;
+    }
+  }
+
+  const total = envelopes.length;
+  const threadsTop = topN(threadCounts, 15);
+
+  return {
+    generated_at: new Date().toISOString(),
+    scope: {
+      folders_scanned: foldersScanned,
+      lookback_days: lookbackDays || null,
+      total_envelopes: total,
+      sampled_bodies: 0,
+    },
+    distributions: {
+      internal_external: byInternalExternal,
+    },
+    metrics: {
+      attachment_ratio: total ? Number((withAttachment / total).toFixed(4)) : 0,
+    },
+    threads: {
+      high_frequency: threadsTop.slice(0, 10),
+      long_threads: threadsTop.filter((thread) => thread.count >= 3),
+    },
+    top: {
+      intents: topN(byIntent, 10),
+      domains: topN(byDomain, 10),
+      contacts: topN(bySender, 15),
+      keywords: topN(byKeyword, 15),
+    },
+  };
+}
+
+let census;
+let bodies;
+let envelopes;
+let intents = [];
+
+if (fs.existsSync(censusPath) && fs.existsSync(bodiesPath) && fs.existsSync(envelopesPath)) {
+  census = JSON.parse(fs.readFileSync(censusPath, 'utf8'));
+  bodies = JSON.parse(fs.readFileSync(bodiesPath, 'utf8'));
+  envelopes = JSON.parse(fs.readFileSync(envelopesPath, 'utf8')).map(normalizeEnvelope);
+
+  if (fs.existsSync(intentDir)) {
+    for (const f of fs.readdirSync(intentDir).filter((file) => file.endsWith('.json')).sort()) {
+      intents.push(...JSON.parse(fs.readFileSync(path.join(intentDir, f), 'utf8')));
+    }
+  }
+} else {
+  const phase1Context = JSON.parse(fs.readFileSync(phase1ContextPath, 'utf8'));
+  const intentClassification = JSON.parse(fs.readFileSync(intentClassificationPath, 'utf8'));
+
+  envelopes = (phase1Context.envelopes || []).map(normalizeEnvelope);
+  const sampledBodies = phase1Context.sampled_bodies || {};
+  bodies = Object.entries(sampledBodies).map(([id, row]) => ({
+    id,
+    folder: envelopes.find((env) => String(env.id) === String(id))?.folder || '',
+    subject: row.subject || '',
+    body: row.body || '',
+  }));
+  intents = intentClassification.classifications || [];
+  census = deriveLegacyCensus(
+    envelopes,
+    intents,
+    String(phase1Context.owner_domain || '').toLowerCase(),
+    phase1Context.stats?.folders_scanned || [],
+    phase1Context.lookback_days || null
+  );
+}
+
+const envMap = new Map(envelopes.map((env) => [String(env.id), env]));
+const intentMapByIdx = new Map(intents.map((intent) => [intent.idx, intent]));
+const intentMapById = new Map(
+  intents
+    .filter((intent) => intent.id !== undefined && intent.id !== null)
+    .map((intent) => [String(intent.id), intent])
+);
 
 // Normalize thread key
 function normThread(subject) {
@@ -86,10 +221,8 @@ const threadSummaries = topThreads.map(t => {
   const rows = threads.get(t.key);
   const latest = rows[0];
   const bodyEntry = bodies.find(b => String(b.id) === String(latest.id));
-  const intentEntry = intents.find(i => {
-    const bodyIdx = bodies.findIndex(b => String(b.id) === String(latest.id));
-    return i.idx === bodyIdx;
-  });
+  const bodyIdx = bodies.findIndex(b => String(b.id) === String(latest.id));
+  const intentEntry = intentMapById.get(String(latest.id)) || intentMapByIdx.get(bodyIdx);
   return {
     thread_key: t.key,
     count: t.count,
@@ -117,15 +250,16 @@ const habitsRaw = readIfExists(habitsPath);
 const calibrationRaw = readIfExists(calibrationPath);
 const hasFacts = factsRaw && factsRaw !== 'facts: []';
 const hasHabits = habitsRaw && habitsRaw !== 'habits: []';
+const internalExternal = census.distributions.internal_external || census.distributions.byInternalExternal || { internal: 0, external: 0, unknown: 0 };
 
 const context = {
   mailbox_summary: {
     total_envelopes: census.scope.total_envelopes,
     total_threads: threadList.length,
     folders: census.scope.folders_scanned,
-    internal_external: census.distributions.byInternalExternal,
+    internal_external: internalExternal,
   },
-  intent_distribution: census.top.intents,
+  intent_distribution: census.top.intents || [],
   persona_summary: personaRaw.slice(0, 1500) || null,
   business_summary: businessRaw.slice(0, 1500) || null,
   top_threads: threadSummaries,

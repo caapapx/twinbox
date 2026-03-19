@@ -1,0 +1,55 @@
+formula = "twinbox-phase4-loading"
+type = "workflow"
+version = 1
+description = """
+Phase 4 loading 执行单。
+
+目标：只构建 `runtime/validation/phase-4/context-pack.json`。
+这是确定性 I/O 步骤，不调 LLM，不做 Phase 4 think，不读无关文档。
+
+最小必读材料：
+- 当前 formula
+- `scripts/phase4_loading.sh`
+"""
+
+[[steps]]
+id = "sync-workspace"
+title = "Sync Workspace To origin/master — EXECUTE"
+description = """
+ACTION: 在项目根目录同步当前 polecat worktree 到最新 `origin/master`。
+
+```bash
+git fetch origin master
+if git merge-base --is-ancestor HEAD origin/master; then
+  git merge --ff-only origin/master
+else
+  git rebase origin/master
+fi
+git merge-base --is-ancestor origin/master HEAD
+git rev-parse --short HEAD
+git rev-parse --short origin/master
+```
+
+如果同步失败，只报告 git 问题，不要继续执行 loading。
+"""
+
+[[steps]]
+id = "loading"
+title = "Phase 4 Loading — EXECUTE"
+needs = ["sync-workspace"]
+description = """
+ACTION: 只运行 loading 脚本。
+
+```bash
+export PIPELINE_LOOKBACK_DAYS="${PIPELINE_LOOKBACK_DAYS:-7}"
+bash scripts/phase4_loading.sh
+```
+
+成功条件：
+- `runtime/validation/phase-4/context-pack.json` 存在且非空
+
+失败时只检查：
+- `scripts/phase4_loading.sh`
+- `runtime/validation/phase-1/raw/envelopes-merged.json`
+- `runtime/validation/phase-3/thread-stage-samples.json`
+"""

@@ -12,6 +12,7 @@ CONFIG_FILE="${ROOT_DIR}/runtime/himalaya/config.toml"
 MAX_PAGES_PER_FOLDER=20
 PAGE_SIZE=50
 SAMPLE_BODY_COUNT=30
+LOOKBACK_DAYS="${PIPELINE_LOOKBACK_DAYS:-7}"
 FOLDER_FILTER=""
 ACCOUNT_OVERRIDE=""
 
@@ -29,6 +30,7 @@ Options:
   --max-pages-per-folder <n>     Max pages per folder (default: 20)
   --page-size <n>                Page size for envelope list (default: 50)
   --sample-body-count <n>        Bodies to sample (default: 30)
+  --lookback-days <n>            Keep only recent envelopes in the last N days (default: PIPELINE_LOOKBACK_DAYS or 7)
   -h, --help                     Show this help
 USAGE
 }
@@ -40,6 +42,7 @@ while [[ $# -gt 0 ]]; do
     --max-pages-per-folder) MAX_PAGES_PER_FOLDER="${2:-}"; shift 2 ;;
     --page-size) PAGE_SIZE="${2:-}"; shift 2 ;;
     --sample-body-count) SAMPLE_BODY_COUNT="${2:-}"; shift 2 ;;
+    --lookback-days) LOOKBACK_DAYS="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1"; usage; exit 1 ;;
   esac
@@ -123,9 +126,10 @@ done
 
 # --- Step 3: merge envelopes ---
 ENVELOPES_JSON="${RAW_DIR}/envelopes-merged.json"
-node - <<'NODE' "${RAW_DIR}/all-pages.ndjson" "${ENVELOPES_JSON}"
+node - <<'NODE' "${RAW_DIR}/all-pages.ndjson" "${ENVELOPES_JSON}" "${LOOKBACK_DAYS}"
 const fs = require('fs');
-const [ndjsonPath, outPath] = process.argv.slice(2);
+const [ndjsonPath, outPath, lookbackDaysRaw] = process.argv.slice(2);
+const lookbackDays = Number(lookbackDaysRaw);
 const lines = fs.readFileSync(ndjsonPath, 'utf8').trim();
 const items = [];
 if (lines) {
@@ -137,8 +141,21 @@ if (lines) {
     }
   }
 }
-fs.writeFileSync(outPath, JSON.stringify(items, null, 2));
-console.log(`Merged ${items.length} envelopes`);
+function parseDate(value) {
+  if (!value) return null;
+  const d = new Date(String(value).replace(' ', 'T'));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+const filtered = (Number.isFinite(lookbackDays) && lookbackDays > 0)
+  ? items.filter((item) => {
+      const dt = parseDate(item.date);
+      if (!dt) return false;
+      const cutoff = Date.now() - lookbackDays * 86400000;
+      return dt.getTime() >= cutoff;
+    })
+  : items;
+fs.writeFileSync(outPath, JSON.stringify(filtered, null, 2));
+console.log(`Merged ${filtered.length} envelopes (lookback_days=${Number.isFinite(lookbackDays) && lookbackDays > 0 ? lookbackDays : 'all'})`);
 NODE
 
 # --- Step 4: sample bodies ---
@@ -178,13 +195,14 @@ NODE
 
 # --- Step 5: build context-pack ---
 echo "Building context-pack..."
-node - <<'NODE' "${ENVELOPES_JSON}" "${BODIES_JSON}" "${FOLDERS_JSON}" "${CONTEXT_DIR}/phase1-context.json" "${MAIL_ADDRESS:-}"
+node - <<'NODE' "${ENVELOPES_JSON}" "${BODIES_JSON}" "${FOLDERS_JSON}" "${CONTEXT_DIR}/phase1-context.json" "${MAIL_ADDRESS:-}" "${LOOKBACK_DAYS}"
 const fs = require('fs');
-const [envPath, bodiesPath, foldersPath, outPath, mailAddress] = process.argv.slice(2);
+const [envPath, bodiesPath, foldersPath, outPath, mailAddress, lookbackDaysRaw] = process.argv.slice(2);
 
 const envelopes = JSON.parse(fs.readFileSync(envPath, 'utf8'));
 const bodies = JSON.parse(fs.readFileSync(bodiesPath, 'utf8'));
 const folders = JSON.parse(fs.readFileSync(foldersPath, 'utf8'));
+const lookbackDays = Number(lookbackDaysRaw);
 
 const ownDomain = (mailAddress.split('@')[1] || '').toLowerCase();
 
@@ -208,6 +226,7 @@ for (const b of bodies) {
 const contextPack = {
   generated_at: new Date().toLocaleString('sv-SE', {timeZone:'Asia/Shanghai'}).replace(' ','T') + '+08:00',
   owner_domain: ownDomain,
+  lookback_days: Number.isFinite(lookbackDays) && lookbackDays > 0 ? lookbackDays : null,
   stats: {
     total_envelopes: envelopes.length,
     sampled_bodies: bodies.length,
@@ -222,6 +241,14 @@ console.log(`Context-pack written: ${outPath}`);
 console.log(`  ${envelopes.length} envelopes, ${bodies.length} body samples`);
 NODE
 
+PHASE1_RAW_DIR="${ROOT_DIR}/runtime/validation/phase-1/raw"
+mkdir -p "${PHASE1_RAW_DIR}"
+cp -f "${RAW_DIR}/envelopes-merged.json" "${PHASE1_RAW_DIR}/envelopes-merged.json"
+cp -f "${RAW_DIR}/sample-bodies.json" "${PHASE1_RAW_DIR}/sample-bodies.json"
+cp -f "${RAW_DIR}/folders.json" "${PHASE1_RAW_DIR}/folders.json"
+cp -f "${RAW_DIR}/all-pages.ndjson" "${PHASE1_RAW_DIR}/all-pages.ndjson"
+
 echo ""
 echo "Phase 1 Loading complete."
+echo "  Lookback days: ${LOOKBACK_DAYS}"
 echo "  Output: runtime/context/phase1-context.json"

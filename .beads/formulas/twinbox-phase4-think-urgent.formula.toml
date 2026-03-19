@@ -1,0 +1,54 @@
+formula = "twinbox-phase4-think-urgent"
+type = "workflow"
+version = 1
+description = """
+Phase 4 urgent/pending 子任务执行单。
+
+目标：只生成 `runtime/validation/phase-4/urgent-pending-raw.json`。
+不要运行其他 Phase 4 脚本，不要做 merge，不要先读 README。
+
+最小必读材料：
+- 当前 formula
+- `scripts/phase4_think_urgent.sh`
+- `scripts/llm_common.sh`（仅当 think 失败时）
+"""
+
+[[steps]]
+id = "sync-workspace"
+title = "Sync Workspace To origin/master — EXECUTE"
+description = """
+ACTION: 在项目根目录同步当前 polecat worktree 到最新 `origin/master`。
+
+```bash
+git fetch origin master
+if git merge-base --is-ancestor HEAD origin/master; then
+  git merge --ff-only origin/master
+else
+  git rebase origin/master
+fi
+git merge-base --is-ancestor origin/master HEAD
+```
+
+如果同步失败，只报告 git 问题。
+"""
+
+[[steps]]
+id = "think-urgent"
+title = "Phase 4 Thinking — Urgent + Pending — EXECUTE"
+needs = ["sync-workspace"]
+description = """
+ACTION: 只运行 urgent/pending 子任务。
+
+```bash
+export PIPELINE_LOOKBACK_DAYS="${PIPELINE_LOOKBACK_DAYS:-7}"
+bash scripts/phase4_think_urgent.sh
+```
+
+成功条件：
+- `runtime/validation/phase-4/urgent-pending-raw.json` 存在且是有效 JSON
+
+失败时只检查：
+- `runtime/validation/phase-4/context-pack.json`
+- `scripts/phase4_think_urgent.sh`
+- `scripts/llm_common.sh`
+"""
