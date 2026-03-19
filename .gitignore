@@ -6,6 +6,9 @@ __pycache__/
 logs/
 *.log
 runtime/
+.beads/
+.claude/
+.runtime/
 
 # Local user materials and office documents
 *.xlsx
