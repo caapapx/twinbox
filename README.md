@@ -129,6 +129,30 @@ Current execution model:
 - Parallelism mostly lives inside a phase, not across dependent phases
 - Phase 4 is the clearest example: `urgent/pending`, `sla-risks`, and `weekly-brief` can run in parallel and merge at the end
 
+### Phase 4 Shared State Root
+
+Phase 4 now separates `code root` from `state root` so Gastown linked worktrees stop writing isolated artifacts.
+
+- `code root`: the current checkout that provides tracked scripts and formulas
+- `state root`: the canonical checkout that provides `.env`, `runtime/context/`, `runtime/validation/`, and `docs/validation/`
+- Resolution order: `TWINBOX_CANONICAL_ROOT` -> `~/.config/twinbox/canonical-root` -> current checkout
+- Safety rule: in a linked worktree, Phase 4 fails fast if no canonical root is configured
+
+```bash
+# Register the canonical state root once from the main checkout
+bash scripts/register_canonical_root.sh
+
+# Verify what a Phase 4 worker will use
+bash scripts/phase4_gastown.sh roots
+```
+
+### Phase 4 Checklist
+
+1. Register the canonical root from the main checkout with `bash scripts/register_canonical_root.sh`.
+2. Verify the resolved roots with `bash scripts/phase4_gastown.sh roots`.
+3. Push `master` before `gt sling` so polecat worktrees see the latest scripts and formulas.
+4. Run Phase 4 through `bash scripts/phase4_gastown.sh <step>` or the corresponding `twinbox-phase4-*` formulas.
+
 ```bash
 # Push local master before slinging so polecat worktrees see the latest scripts
 git checkout master
@@ -144,6 +168,11 @@ bash scripts/run_pipeline.sh
 ```
 
 See [Gastown Operations Guide](docs/guides/gastown-operations.md) and [Gastown Integration Plan](docs/plans/gastown-multi-agent-integration.md).
+
+Follow-up work is tracked in `bd`, not markdown TODOs:
+
+- `twinbox-d9j`: formalize the full Phase 4 fan-out / merge flow as one reproducible Gastown entrypoint
+- `twinbox-04o`: extend the shared canonical-root pattern beyond Phase 4
 
 Not implemented yet:
 
@@ -239,7 +268,10 @@ twinbox/
 ├── scripts/
 │   ├── phase{1-4}_loading.sh       # deterministic I/O
 │   ├── phase{1-4}_thinking.sh      # LLM inference
-│   └── run_pipeline.sh             # fallback serial orchestration
+│   ├── phase4_gastown.sh           # unified Phase 4 gastown entrypoint
+│   ├── register_canonical_root.sh  # register shared state root for worktrees
+│   ├── run_pipeline.sh             # fallback serial orchestration
+│   └── twinbox_paths.sh            # shared code-root/state-root resolution
 └── runtime/
 ```
 

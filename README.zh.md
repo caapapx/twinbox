@@ -129,6 +129,30 @@ flowchart LR
 - 并发主要发生在阶段内部，而不是依赖链之间
 - `Phase 4` 是最典型的例子：`urgent/pending`、`sla-risks`、`weekly-brief` 可以并行跑，最后再 merge
 
+### Phase 4 共享状态根目录
+
+Phase 4 现在显式区分 `code root` 和 `state root`，避免 Gastown linked worktree 把产物写进各自隔离目录。
+
+- `code root`：当前 checkout，提供受版本控制的脚本和 formula
+- `state root`：canonical checkout，提供 `.env`、`runtime/context/`、`runtime/validation/` 和 `docs/validation/`
+- 解析顺序：`TWINBOX_CANONICAL_ROOT` -> `~/.config/twinbox/canonical-root` -> 当前 checkout
+- 安全规则：如果在 linked worktree 里没有配置 canonical root，Phase 4 会直接失败，不再静默回退
+
+```bash
+# 在主 checkout 中执行一次，注册 canonical state root
+bash scripts/register_canonical_root.sh
+
+# 查看 Phase 4 worker 实际会使用的根目录
+bash scripts/phase4_gastown.sh roots
+```
+
+### Phase 4 Checklist
+
+1. 在主 checkout 里执行 `bash scripts/register_canonical_root.sh` 注册 canonical root。
+2. 用 `bash scripts/phase4_gastown.sh roots` 验证解析结果。
+3. 在 `gt sling` 前先把 `master` 推到远端，确保 polecat worktree 能看到最新脚本和 formula。
+4. 通过 `bash scripts/phase4_gastown.sh <step>` 或对应的 `twinbox-phase4-*` formula 运行 Phase 4。
+
 ```bash
 # 先把本地 master 推到 origin，确保 polecat worktree 能看到最新脚本
 git checkout master
@@ -144,6 +168,11 @@ bash scripts/run_pipeline.sh
 ```
 
 详见 [Gastown 操作指南](docs/guides/gastown-operations.md) 和 [Gastown 集成方案](docs/plans/gastown-multi-agent-integration.md)。
+
+后续补充项通过 `bd` 跟踪，不再追加 markdown TODO：
+
+- `twinbox-d9j`：把完整的 Phase 4 fan-out / merge 固化成一条可复现的 Gastown 入口
+- `twinbox-04o`：把 shared canonical-root 模式扩展到 Phase 4 之外的上游阶段
 
 尚未实现：
 
@@ -239,7 +268,10 @@ twinbox/
 ├── scripts/
 │   ├── phase{1-4}_loading.sh       # 确定性 I/O
 │   ├── phase{1-4}_thinking.sh      # LLM 推断
-│   └── run_pipeline.sh             # fallback 串行编排
+│   ├── phase4_gastown.sh           # Phase 4 统一 gastown 入口
+│   ├── register_canonical_root.sh  # 给 worktree 注册共享状态根目录
+│   ├── run_pipeline.sh             # fallback 串行编排
+│   └── twinbox_paths.sh            # 统一解析 code root / state root
 └── runtime/
 ```
 
