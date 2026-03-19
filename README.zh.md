@@ -51,40 +51,94 @@
 - Phase 1-4 的 Loading/Thinking 分离（LLM 替代硬编码推断）
 - Gastown 多 Agent 编排集成（formula + sling + witness）
 
-### LLM Pipeline（Loading → Thinking）
+### 渐进式验证流水线
 
-每个 Phase 拆为确定性 I/O（loading）和 LLM 推断（thinking）两步：
+当前仓库实现的是一个 `4` 阶段、`read-only-first` 的分析漏斗。
+每个阶段都会收窄注意力范围，并把结构化产物交给下一阶段继续处理。
 
-| Phase | Loading | Thinking |
-|-------|---------|----------|
-| 1 | envelope + body 采样 | Intent 分类 |
-| 2 | Phase 1 产出 + enriched context | Persona + business 假设 |
-| 3 | 线程分组 + 上游产出聚合 | 生命周期流 + 阶段归类 |
-| 4 | recent bodies + lifecycle context | daily-urgent / pending-replies / sla-risks |
+```mermaid
+flowchart LR
+    M["Mailbox<br/>envelopes + sampled bodies"]
+    C["Human context<br/>materials / habits / confirmed facts"]
+    P1["Phase 1<br/>Mailbox census + intent classification"]
+    B1["attention-budget v1<br/>noise filtered"]
+    P2["Phase 2<br/>Persona + business hypotheses"]
+    B2["attention-budget v2<br/>role-relevant threads"]
+    P3["Phase 3<br/>Lifecycle modeling"]
+    B3["attention-budget v3<br/>modeled threads"]
+    P4["Phase 4<br/>Daily value outputs"]
+    O["Outputs<br/>daily-urgent / pending-replies / sla-risks / weekly-brief"]
+
+    M --> P1 --> B1 --> P2 --> B2 --> P3 --> B3 --> P4 --> O
+    C --> P2
+    C --> P3
+    C --> P4
+```
+
+| Phase | 核心工作 | 典型产物 | 这一阶段的意义 |
+|-------|----------|----------|----------------|
+| 1 | 在分布层面读懂邮箱 | `mailbox-census.json`、`intent-distribution.yaml`、第一版 `attention-budget.yaml` | 先建立全局基线，并尽早过滤明显噪声 |
+| 2 | 推断这个邮箱对应的人和业务 | `persona-hypotheses.yaml`、`business-hypotheses.yaml`、更收敛的 `attention-budget.yaml` | 用角色、业务和上下文相关性继续缩小范围 |
+| 3 | 从标签升级到 thread 级工作流状态 | `lifecycle-model.yaml`、`thread-stage-samples.json`、建模后的 `attention-budget.yaml` | 理解每条线程在重复流程中的当前位置 |
+| 4 | 产出用户真正会看的价值面板 | `daily-urgent.yaml`、`pending-replies.yaml`、`sla-risks.yaml`、`weekly-brief.md` | 直接回答“今天我该看什么” |
+
+每个阶段内部仍保持同一套结构：
+
+- `Loading`：确定性 I/O、采样和 context-pack 构建
+- `Thinking`：带证据与置信度的 LLM 推断
 
 ```bash
 # 单 Phase 执行
 bash scripts/phase1_loading.sh && bash scripts/phase1_thinking.sh
 
-# 全流程串行
+# 全流程串行 fallback
 bash scripts/run_pipeline.sh
 
 # 单跑某个 Phase
 bash scripts/run_pipeline.sh --phase 2
 ```
 
-### Gastown 多 Agent 编排
+### Gastown 在哪里起作用
 
-twinbox 已接入 [gastown](https://github.com/steveyegge/gastown) 多 agent 编排系统：
+Gastown 是这条流水线外侧的编排层。它不决定邮件语义本身，而是负责把 phase 打包、分发、监控和合并。
 
-```bash
-# 将 Phase 1 formula 分发给 polecat 执行
-gt sling twinbox-phase1 twinbox --create
+```mermaid
+flowchart LR
+    F["Formula<br/>workflow or convoy"]
+    S["gt sling"]
+    P["Polecat workers<br/>phase tasks / subtasks"]
+    R["Refinery<br/>merge outputs and MRs"]
+    W["Witness<br/>health monitoring"]
+
+    F --> S --> P --> R
+    W -. monitors .-> P
 ```
 
-执行链路：`gt sling` → spawn polecat → cook formula → 执行 loading/thinking → 提交 MR → refinery 合并 → witness 监控
+| Gastown 概念 | 在 twinbox 里的角色 |
+|--------------|---------------------|
+| `Formula` | 把每个 phase 封装成 `loading -> thinking` workflow，把全流程封装成 convoy |
+| `Sling` | 将某个 phase formula 分发给 worker |
+| `Polecat` | 真正执行阶段任务或子任务 |
+| `Refinery` | 串行化合并，并汇总子任务输出 |
+| `Witness` | 监控卡死或失联 worker，保证执行健康 |
+| `Convoy` | 把多阶段流程作为一个更高层级的执行单元追踪 |
 
-详见 [Gastown 操作指南](docs/guides/gastown-operations.md)。
+当前执行模型有三个关键点：
+
+- Phase 依赖仍然是顺序的：`1 -> 2 -> 3 -> 4`
+- 并发主要发生在阶段内部，而不是依赖链之间
+- `Phase 4` 是最典型的例子：`urgent/pending`、`sla-risks`、`weekly-brief` 可以并行跑，最后再 merge
+
+```bash
+# 通过 gastown 分发单个 phase
+gt sling twinbox-phase1 twinbox --create
+
+# 查看 formula，或直接跑本地串行 fallback
+gt formula show twinbox-phase4
+bash scripts/run_pipeline.sh
+```
+
+详见 [Gastown 操作指南](docs/guides/gastown-operations.md) 和 [Gastown 集成方案](docs/plans/gastown-multi-agent-integration.md)。
 
 尚未实现：
 
@@ -173,9 +227,9 @@ twinbox/
 │   ├── guides/
 │   │   └── gastown-operations.md   # gt 操作指南
 │   ├── plans/
-│   │   └── gastown-multi-agent-integration.md
-│   ├── openclaw-progressive-validation-plan.md
-│   ├── release/open-source-v1-plan.md
+│   │   ├── progressive-validation-framework.md
+│   │   ├── gastown-multi-agent-integration.md
+│   │   └── open-source-v1-plan.md
 │   └── specs/thread-state-runtime.md
 ├── scripts/
 │   ├── phase{1-4}_loading.sh       # 确定性 I/O
@@ -187,8 +241,8 @@ twinbox/
 ## 快速开始 🚀
 
 1. 阅读 [architecture.md](docs/architecture.md)。
-2. 阅读 [openclaw-progressive-validation-plan.md](docs/openclaw-progressive-validation-plan.md)。
-3. 阅读 [open-source-v1-plan.md](docs/release/open-source-v1-plan.md)。
+2. 阅读 [progressive-validation-framework.md](docs/plans/progressive-validation-framework.md)。
+3. 阅读 [open-source-v1-plan.md](docs/plans/open-source-v1-plan.md)。
 4. 如果你想在本地验证邮箱访问权限，运行：
    - `bash scripts/check_env.sh`
    - `bash scripts/render_himalaya_config.sh`

@@ -2,6 +2,7 @@
 .env.local
 .env.*.local
 .beads/
+!.beads/formulas/
 .claude/
 .runtime/
 __pycache__/
@@ -9,9 +10,6 @@ __pycache__/
 logs/
 *.log
 runtime/
-.beads/
-.claude/
-.runtime/
 
 # Local user materials and office documents
 *.xlsx
@@ -29,7 +27,7 @@ runtime/
 /docs/validation/diagrams/*
 !/docs/validation/diagrams/README.md
 claude-agent-sdk-demos
-
+gastown
 # Dolt database files (added by bd init)
 .dolt/
 *.db

@@ -1,8 +1,9 @@
 formula = "twinbox-phase4"
 type = "workflow"
-version = 1
+version = 2
 description = """
-Phase 4: Value 输出 — loading fetch recent bodies + lifecycle context，thinking 生成 daily-urgent / pending-replies / sla-risks / weekly-brief。
+Phase 4: Value 输出 — loading 构建 context-pack，thinking 拆为 3 个并行子任务：
+urgent+pending / sla-risks / weekly-brief，最后合并输出。
 """
 
 [[steps]]
@@ -15,25 +16,62 @@ Fetch recent bodies + lifecycle context + 人工上下文 → context-pack。
 bash scripts/phase4_loading.sh
 ```
 
-产出：`runtime/context/phase4-context.json`
+产出：`runtime/validation/phase-4/context-pack.json`
 此步骤为 pre-step，不占 polecat session。
 """
 
 [[steps]]
-id = "thinking"
-title = "Phase 4 Thinking — Value Outputs"
+id = "think-urgent"
+title = "Phase 4 Thinking — Urgent + Pending"
 needs = ["loading"]
 description = """
-读取 context-pack，LLM 生成四类价值输出：
-- daily-urgent：当日紧急事项
-- pending-replies：待回复线程
-- sla-risks：SLA 风险预警
-- weekly-brief：周报摘要
+并行子任务 1: daily-urgent + pending-replies。
 
 ```bash
-bash scripts/phase4_thinking.sh
+bash scripts/phase4_think_urgent.sh
 ```
 
-产出：`runtime/validation/phase-4/` 下的 value outputs。
-每条判断带证据链和真实置信度。
+产出：`runtime/validation/phase-4/urgent-pending-raw.json`
+"""
+
+[[steps]]
+id = "think-sla"
+title = "Phase 4 Thinking — SLA Risks"
+needs = ["loading"]
+description = """
+并行子任务 2: SLA 风险扫描。
+
+```bash
+bash scripts/phase4_think_sla.sh
+```
+
+产出：`runtime/validation/phase-4/sla-risks-raw.json`
+"""
+
+[[steps]]
+id = "think-brief"
+title = "Phase 4 Thinking — Weekly Brief"
+needs = ["loading"]
+description = """
+并行子任务 3: 周报汇总。
+
+```bash
+bash scripts/phase4_think_brief.sh
+```
+
+产出：`runtime/validation/phase-4/weekly-brief-raw.json`
+"""
+
+[[steps]]
+id = "merge"
+title = "Phase 4 Merge — Combine Outputs"
+needs = ["think-urgent", "think-sla", "think-brief"]
+description = """
+合并 3 个子任务的 raw JSON → 最终 YAML/MD 输出。
+
+```bash
+bash scripts/phase4_thinking_parallel.sh
+```
+
+产出：daily-urgent.yaml / pending-replies.yaml / sla-risks.yaml / weekly-brief.md
 """

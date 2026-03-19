@@ -1,31 +1,29 @@
 #!/usr/bin/env bash
-# run_pipeline.sh — 顺序执行 Phase 1-4 的 loading → thinking
-# 纯 bash 串行 fallback，不依赖 gastown。
+# run_pipeline.sh — Phase 1-4 loading → thinking，Phase 4 默认并行
 #
 # 用法：
-#   bash scripts/run_pipeline.sh              # 全流程
+#   bash scripts/run_pipeline.sh              # 全流程（Phase 4 并行）
 #   bash scripts/run_pipeline.sh --phase 2    # 只跑 Phase 2
+#   bash scripts/run_pipeline.sh --serial     # Phase 4 用串行模式
 #   bash scripts/run_pipeline.sh --dry-run    # 只打印，不执行
 
 set -euo pipefail
 
+export TZ="Asia/Shanghai"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DRY_RUN=false
 PHASE=""
+SERIAL=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --phase)
-      PHASE="$2"
-      shift 2
-      ;;
-    --dry-run)
-      DRY_RUN=true
-      shift
-      ;;
+    --phase) PHASE="$2"; shift 2 ;;
+    --dry-run) DRY_RUN=true; shift ;;
+    --serial) SERIAL=true; shift ;;
     *)
       echo "Unknown option: $1" >&2
-      echo "Usage: bash scripts/run_pipeline.sh [--phase N] [--dry-run]" >&2
+      echo "Usage: bash scripts/run_pipeline.sh [--phase N] [--dry-run] [--serial]" >&2
       exit 1
       ;;
   esac
@@ -46,7 +44,11 @@ run_step() {
 run_phase() {
   local n="$1"
   run_step "Phase $n Loading"  "$SCRIPT_DIR/phase${n}_loading.sh"
-  run_step "Phase $n Thinking" "$SCRIPT_DIR/phase${n}_thinking.sh"
+  if [[ "$n" == "4" && "$SERIAL" == "false" ]]; then
+    run_step "Phase 4 Thinking (parallel)" "$SCRIPT_DIR/phase4_thinking_parallel.sh"
+  else
+    run_step "Phase $n Thinking" "$SCRIPT_DIR/phase${n}_thinking.sh"
+  fi
 }
 
 if [[ -n "$PHASE" ]]; then

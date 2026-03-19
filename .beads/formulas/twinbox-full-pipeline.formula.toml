@@ -58,18 +58,23 @@ bash scripts/phase3_thinking.sh
 
 [[legs]]
 id = "phase4"
-title = "Phase 4 — Value Outputs"
-focus = "价值输出：紧急度/待回复/风险/周报"
+title = "Phase 4 — Value Outputs (Parallel)"
+focus = "价值输出：3 个并行 LLM 子任务 — urgent+pending / sla-risks / weekly-brief"
 description = """
-执行 Phase 4 的 loading → thinking 全流程。
+执行 Phase 4 的 loading → parallel thinking 全流程。
 依赖 Phase 1 + Phase 2 + Phase 3 产出。
 
 ```bash
 bash scripts/phase4_loading.sh
-bash scripts/phase4_thinking.sh
+bash scripts/phase4_thinking_parallel.sh
 ```
 
-产出：`runtime/validation/phase-4/` 下的 value outputs。
+并行子任务：
+- phase4_think_urgent.sh → urgent-pending-raw.json
+- phase4_think_sla.sh → sla-risks-raw.json
+- phase4_think_brief.sh → weekly-brief-raw.json
+
+合并产出：`runtime/validation/phase-4/` 下的 daily-urgent.yaml / pending-replies.yaml / sla-risks.yaml / weekly-brief.md
 """
 
 [synthesis]

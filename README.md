@@ -51,40 +51,94 @@ What is already in the repository:
 - Phase 1-4 Loading/Thinking separation (LLM replaces hardcoded inference)
 - Gastown multi-agent orchestration integration (formula + sling + witness)
 
-### LLM Pipeline (Loading → Thinking)
+### Progressive Validation Pipeline
 
-Each Phase is split into deterministic I/O (loading) and LLM inference (thinking):
+The repository currently implements a four-phase, read-only-first funnel.
+Each phase narrows the attention window and hands structured output to the next one.
 
-| Phase | Loading | Thinking |
-|-------|---------|----------|
-| 1 | envelope + body sampling | Intent classification |
-| 2 | Phase 1 output + enriched context | Persona + business hypotheses |
-| 3 | thread grouping + upstream aggregation | Lifecycle flow + stage classification |
-| 4 | recent bodies + lifecycle context | daily-urgent / pending-replies / sla-risks |
+```mermaid
+flowchart LR
+    M["Mailbox<br/>envelopes + sampled bodies"]
+    C["Human context<br/>materials / habits / confirmed facts"]
+    P1["Phase 1<br/>Mailbox census + intent classification"]
+    B1["attention-budget v1<br/>noise filtered"]
+    P2["Phase 2<br/>Persona + business hypotheses"]
+    B2["attention-budget v2<br/>role-relevant threads"]
+    P3["Phase 3<br/>Lifecycle modeling"]
+    B3["attention-budget v3<br/>modeled threads"]
+    P4["Phase 4<br/>Daily value outputs"]
+    O["Outputs<br/>daily-urgent / pending-replies / sla-risks / weekly-brief"]
+
+    M --> P1 --> B1 --> P2 --> B2 --> P3 --> B3 --> P4 --> O
+    C --> P2
+    C --> P3
+    C --> P4
+```
+
+| Phase | Main job | Typical outputs | Why it exists |
+|-------|----------|-----------------|---------------|
+| 1 | Read the mailbox at distribution level | `mailbox-census.json`, `intent-distribution.yaml`, first `attention-budget.yaml` | Establish the baseline and remove obvious noise early |
+| 2 | Infer who this mailbox belongs to and what work matters | `persona-hypotheses.yaml`, `business-hypotheses.yaml`, narrower `attention-budget.yaml` | Filter threads through role, business, and context relevance |
+| 3 | Upgrade from labels to thread-level workflow state | `lifecycle-model.yaml`, `thread-stage-samples.json`, modeled-thread `attention-budget.yaml` | Understand where each thread is in a recurring lifecycle |
+| 4 | Produce user-visible value surfaces | `daily-urgent.yaml`, `pending-replies.yaml`, `sla-risks.yaml`, `weekly-brief.md` | Answer the operational question: "what should I look at today?" |
+
+Each phase still follows the same internal split:
+
+- `Loading`: deterministic I/O, sampling, and context-pack building
+- `Thinking`: LLM inference with evidence and confidence
 
 ```bash
 # Single phase
 bash scripts/phase1_loading.sh && bash scripts/phase1_thinking.sh
 
-# Full pipeline
+# Full pipeline (strict serial fallback)
 bash scripts/run_pipeline.sh
 
 # Single phase via pipeline
 bash scripts/run_pipeline.sh --phase 2
 ```
 
-### Gastown Multi-Agent Orchestration
+### Where Gastown Fits
 
-twinbox integrates with [gastown](https://github.com/steveyegge/gastown) for multi-agent orchestration:
+Gastown is the orchestration layer around the pipeline. It does not define mailbox semantics; it packages, dispatches, monitors, and merges phase work.
 
-```bash
-# Sling a Phase 1 formula to a polecat worker
-gt sling twinbox-phase1 twinbox --create
+```mermaid
+flowchart LR
+    F["Formula<br/>workflow or convoy"]
+    S["gt sling"]
+    P["Polecat workers<br/>phase tasks / subtasks"]
+    R["Refinery<br/>merge outputs and MRs"]
+    W["Witness<br/>health monitoring"]
+
+    F --> S --> P --> R
+    W -. monitors .-> P
 ```
 
-Execution chain: `gt sling` → spawn polecat → cook formula → execute loading/thinking → submit MR → refinery merge → witness monitoring
+| Gastown concept | Role in twinbox |
+|-----------------|-----------------|
+| `Formula` | Encodes each phase as a `loading -> thinking` workflow and the full pipeline as a convoy |
+| `Sling` | Dispatches a phase formula to a worker |
+| `Polecat` | Runs the actual phase work or subtask work |
+| `Refinery` | Serializes merge and combines child outputs |
+| `Witness` | Detects stalled or zombie workers and keeps execution healthy |
+| `Convoy` | Tracks the multi-phase pipeline as one higher-level unit |
 
-See [Gastown Operations Guide](docs/guides/gastown-operations.md).
+Current execution model:
+
+- Phase dependencies stay sequential: `1 -> 2 -> 3 -> 4`
+- Parallelism mostly lives inside a phase, not across dependent phases
+- Phase 4 is the clearest example: `urgent/pending`, `sla-risks`, and `weekly-brief` can run in parallel and merge at the end
+
+```bash
+# Sling a single phase to gastown
+gt sling twinbox-phase1 twinbox --create
+
+# Inspect the formula or run the serial fallback locally
+gt formula show twinbox-phase4
+bash scripts/run_pipeline.sh
+```
+
+See [Gastown Operations Guide](docs/guides/gastown-operations.md) and [Gastown Integration Plan](docs/plans/gastown-multi-agent-integration.md).
 
 Not implemented yet:
 
@@ -173,9 +227,9 @@ twinbox/
 │   ├── guides/
 │   │   └── gastown-operations.md   # gt operations guide
 │   ├── plans/
-│   │   └── gastown-multi-agent-integration.md
-│   ├── openclaw-progressive-validation-plan.md
-│   ├── release/open-source-v1-plan.md
+│   │   ├── progressive-validation-framework.md
+│   │   ├── gastown-multi-agent-integration.md
+│   │   └── open-source-v1-plan.md
 │   └── specs/thread-state-runtime.md
 ├── scripts/
 │   ├── phase{1-4}_loading.sh       # deterministic I/O
@@ -187,8 +241,8 @@ twinbox/
 ## Quick Start 🚀
 
 1. Read [architecture.md](docs/architecture.md).
-2. Read [openclaw-progressive-validation-plan.md](docs/openclaw-progressive-validation-plan.md).
-3. Read [open-source-v1-plan.md](docs/release/open-source-v1-plan.md).
+2. Read [progressive-validation-framework.md](docs/plans/progressive-validation-framework.md).
+3. Read [open-source-v1-plan.md](docs/plans/open-source-v1-plan.md).
 4. If you want to validate mailbox access locally, run:
    - `bash scripts/check_env.sh`
    - `bash scripts/render_himalaya_config.sh`
