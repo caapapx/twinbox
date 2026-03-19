@@ -2,9 +2,14 @@
 # Phase 4 Thinking (并行版): 3 个子任务并行 → 合并输出
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PHASE4_DIR="${ROOT_DIR}/runtime/validation/phase-4"
-DOC_DIR="${ROOT_DIR}/docs/validation"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+source "${SCRIPT_DIR}/twinbox_paths.sh"
+twinbox_init_roots "${BASH_SOURCE[0]}"
+
+CODE_ROOT="${TWINBOX_CODE_ROOT}"
+STATE_ROOT="${TWINBOX_CANONICAL_ROOT}"
+PHASE4_DIR="${STATE_ROOT}/runtime/validation/phase-4"
+DOC_DIR="${STATE_ROOT}/docs/validation"
 mkdir -p "${PHASE4_DIR}" "${DOC_DIR}"
 
 if [[ ! -f "${PHASE4_DIR}/context-pack.json" ]]; then
@@ -14,11 +19,11 @@ fi
 echo "Phase 4 Thinking (parallel mode): launching 3 sub-tasks..."
 
 # 并行启动 3 个子任务
-bash "${ROOT_DIR}/scripts/phase4_think_urgent.sh" &
+bash "${CODE_ROOT}/scripts/phase4_think_urgent.sh" &
 PID_URGENT=$!
-bash "${ROOT_DIR}/scripts/phase4_think_sla.sh" &
+bash "${CODE_ROOT}/scripts/phase4_think_sla.sh" &
 PID_SLA=$!
-bash "${ROOT_DIR}/scripts/phase4_think_brief.sh" &
+bash "${CODE_ROOT}/scripts/phase4_think_brief.sh" &
 PID_BRIEF=$!
 
 # 等待全部完成

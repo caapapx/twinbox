@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+source "${SCRIPT_DIR}/twinbox_paths.sh"
+twinbox_init_roots "${BASH_SOURCE[0]}"
+
+ROOT_DIR="${TWINBOX_CANONICAL_ROOT}"
 ENV_FILE="${ROOT_DIR}/.env"
 RUNTIME_DIR="${ROOT_DIR}/runtime/himalaya"
 CONFIG_FILE="${RUNTIME_DIR}/config.toml"

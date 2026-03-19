@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
 # Phase 4 子任务: sla-risks (可并行)
 set -euo pipefail
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-source "${ROOT_DIR}/scripts/llm_common.sh"
-init_llm_backend "${ROOT_DIR}/.env"
 
-PHASE4_DIR="${ROOT_DIR}/runtime/validation/phase-4"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+source "${SCRIPT_DIR}/twinbox_paths.sh"
+twinbox_init_roots "${BASH_SOURCE[0]}"
+
+CODE_ROOT="${TWINBOX_CODE_ROOT}"
+STATE_ROOT="${TWINBOX_CANONICAL_ROOT}"
+
+source "${CODE_ROOT}/scripts/llm_common.sh"
+init_llm_backend "${STATE_ROOT}/.env"
+
+PHASE4_DIR="${STATE_ROOT}/runtime/validation/phase-4"
 CONTEXT=$(cat "${PHASE4_DIR}/context-pack.json")
 
 PROMPT='You are an enterprise email assistant scanning for SLA risks. Produce a JSON object:

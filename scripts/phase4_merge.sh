@@ -3,9 +3,13 @@
 # 纯合并，不调 LLM。前置条件：3 个 *-raw.json 已存在。
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PHASE4_DIR="${ROOT_DIR}/runtime/validation/phase-4"
-DOC_DIR="${ROOT_DIR}/docs/validation"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+source "${SCRIPT_DIR}/twinbox_paths.sh"
+twinbox_init_roots "${BASH_SOURCE[0]}"
+
+STATE_ROOT="${TWINBOX_CANONICAL_ROOT}"
+PHASE4_DIR="${STATE_ROOT}/runtime/validation/phase-4"
+DOC_DIR="${STATE_ROOT}/docs/validation"
 mkdir -p "${PHASE4_DIR}" "${DOC_DIR}"
 
 for f in urgent-pending-raw.json sla-risks-raw.json weekly-brief-raw.json; do

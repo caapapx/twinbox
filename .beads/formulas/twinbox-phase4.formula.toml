@@ -1,6 +1,6 @@
 formula = "twinbox-phase4"
 type = "workflow"
-version = 6
+version = 7
 description = """
 Phase 4: Value 输出执行单。
 
@@ -16,25 +16,26 @@ Phase 4: Value 输出执行单。
 
 固定执行路径：
 1. 同步当前 worktree 到最新 `origin/master`
-2. 运行 `bash scripts/phase4_loading.sh`
+2. 运行 `bash scripts/phase4_gastown.sh loading`
 3. 并行/依次运行：
-   - `bash scripts/phase4_think_urgent.sh`
-   - `bash scripts/phase4_think_sla.sh`
-   - `bash scripts/phase4_think_brief.sh`
-4. 运行 `bash scripts/phase4_merge.sh`
+   - `bash scripts/phase4_gastown.sh think-urgent`
+   - `bash scripts/phase4_gastown.sh think-sla`
+   - `bash scripts/phase4_gastown.sh think-brief`
+4. 运行 `bash scripts/phase4_gastown.sh merge`
 
 重要约束：
 - 在这个 formula 里不要运行 `scripts/phase4_thinking_parallel.sh`
 - merge step 只做 raw JSON → YAML/MD 合并，不调 LLM
+- Phase 4 共享状态根目录按以下顺序解析：
+  1. `TWINBOX_CANONICAL_ROOT`
+  2. `~/.config/twinbox/canonical-root`
+  3. 当前 checkout（仅普通仓库；linked worktree 不允许回退）
 - 不要先读 README、reports、历史性能分析，除非当前命令失败且 formula 明确要求
 
 最小必读材料：
 - 当前 formula
-- `scripts/phase4_loading.sh`
-- `scripts/phase4_think_urgent.sh`
-- `scripts/phase4_think_sla.sh`
-- `scripts/phase4_think_brief.sh`
-- `scripts/phase4_merge.sh`
+- `scripts/phase4_gastown.sh`
+- `scripts/twinbox_paths.sh`
 - `scripts/llm_common.sh`（仅当 think 子任务失败时）
 """
 
@@ -70,14 +71,14 @@ description = """
 ACTION: 在项目根目录构建 Phase 4 context-pack。此步骤是确定性 I/O，不调 LLM。
 
 ```bash
-bash scripts/phase4_loading.sh
+bash scripts/phase4_gastown.sh loading
 ```
 
 成功条件：
 - `runtime/validation/phase-4/context-pack.json` 存在且非空
 
 失败时只检查：
-- `scripts/phase4_loading.sh`
+- `scripts/phase4_gastown.sh`
 - `runtime/validation/phase-1/raw/envelopes-merged.json`
 - `runtime/validation/phase-3/thread-stage-samples.json`
 
@@ -95,14 +96,14 @@ description = """
 ACTION: 只运行 urgent+pending 子任务，写出 raw JSON。不要顺手运行其他 think 脚本。
 
 ```bash
-bash scripts/phase4_think_urgent.sh
+bash scripts/phase4_gastown.sh think-urgent
 ```
 
 成功条件：
 - `runtime/validation/phase-4/urgent-pending-raw.json` 存在且是有效 JSON
 
 失败时只检查：
-- `scripts/phase4_think_urgent.sh`
+- `scripts/phase4_gastown.sh`
 - `scripts/llm_common.sh`
 - `runtime/validation/phase-4/context-pack.json`
 
@@ -120,14 +121,14 @@ description = """
 ACTION: 只运行 SLA risks 子任务，写出 raw JSON。不要顺手运行其他 think 脚本。
 
 ```bash
-bash scripts/phase4_think_sla.sh
+bash scripts/phase4_gastown.sh think-sla
 ```
 
 成功条件：
 - `runtime/validation/phase-4/sla-risks-raw.json` 存在且是有效 JSON
 
 失败时只检查：
-- `scripts/phase4_think_sla.sh`
+- `scripts/phase4_gastown.sh`
 - `scripts/llm_common.sh`
 - `runtime/validation/phase-4/context-pack.json`
 
@@ -144,14 +145,14 @@ description = """
 ACTION: 只运行 weekly brief 子任务，写出 raw JSON。不要顺手运行其他 think 脚本。
 
 ```bash
-bash scripts/phase4_think_brief.sh
+bash scripts/phase4_gastown.sh think-brief
 ```
 
 成功条件：
 - `runtime/validation/phase-4/weekly-brief-raw.json` 存在且是有效 JSON
 
 失败时只检查：
-- `scripts/phase4_think_brief.sh`
+- `scripts/phase4_gastown.sh`
 - `scripts/llm_common.sh`
 - `runtime/validation/phase-4/context-pack.json`
 
@@ -168,7 +169,7 @@ description = """
 ACTION: 只合并 3 个 raw JSON，纯合并，不调 LLM，也不要重新运行任何 think 脚本。
 
 ```bash
-bash scripts/phase4_merge.sh
+bash scripts/phase4_gastown.sh merge
 ```
 
 成功条件：确认以下文件全部存在：
@@ -179,7 +180,7 @@ bash scripts/phase4_merge.sh
 - docs/validation/phase-4-report.md
 
 失败时只检查：
-- `scripts/phase4_merge.sh`
+- `scripts/phase4_gastown.sh`
 - 3 个 `*-raw.json`
 
 失败分流：

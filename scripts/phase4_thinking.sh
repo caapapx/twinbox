@@ -2,11 +2,16 @@
 # Phase 4 Thinking: LLM-based daily value outputs
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PHASE4_DIR="${ROOT_DIR}/runtime/validation/phase-4"
-DOC_DIR="${ROOT_DIR}/docs/validation"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+source "${SCRIPT_DIR}/twinbox_paths.sh"
+twinbox_init_roots "${BASH_SOURCE[0]}"
+
+CODE_ROOT="${TWINBOX_CODE_ROOT}"
+STATE_ROOT="${TWINBOX_CANONICAL_ROOT}"
+PHASE4_DIR="${STATE_ROOT}/runtime/validation/phase-4"
+DOC_DIR="${STATE_ROOT}/docs/validation"
 CONTEXT_PACK="${PHASE4_DIR}/context-pack.json"
-source "${ROOT_DIR}/scripts/llm_common.sh"
+source "${CODE_ROOT}/scripts/llm_common.sh"
 
 DRY_RUN=false
 while [[ $# -gt 0 ]]; do
@@ -25,7 +30,7 @@ if [[ ! -f "${CONTEXT_PACK}" ]]; then
   exit 1
 fi
 
-init_llm_backend "${ROOT_DIR}/.env" || exit 1
+init_llm_backend "${STATE_ROOT}/.env" || exit 1
 
 CONTEXT_CONTENT=$(cat "${CONTEXT_PACK}")
 

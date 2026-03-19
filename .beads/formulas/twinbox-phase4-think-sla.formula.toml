@@ -1,15 +1,21 @@
 formula = "twinbox-phase4-think-sla"
 type = "workflow"
-version = 1
+version = 2
 description = """
 Phase 4 SLA risk 子任务执行单。
 
 目标：只生成 `runtime/validation/phase-4/sla-risks-raw.json`。
 不要运行其他 Phase 4 脚本，不要做 merge，不要先读 README。
 
+共享状态根目录解析顺序：
+1. `TWINBOX_CANONICAL_ROOT`
+2. `~/.config/twinbox/canonical-root`
+3. 当前 checkout（仅普通仓库；linked worktree 必须显式配置）
+
 最小必读材料：
 - 当前 formula
-- `scripts/phase4_think_sla.sh`
+- `scripts/phase4_gastown.sh`
+- `scripts/twinbox_paths.sh`
 - `scripts/llm_common.sh`（仅当 think 失败时）
 """
 
@@ -41,7 +47,7 @@ ACTION: 只运行 SLA risk 子任务。
 
 ```bash
 export PIPELINE_LOOKBACK_DAYS="${PIPELINE_LOOKBACK_DAYS:-7}"
-bash scripts/phase4_think_sla.sh
+bash scripts/phase4_gastown.sh think-sla
 ```
 
 成功条件：
@@ -49,6 +55,6 @@ bash scripts/phase4_think_sla.sh
 
 失败时只检查：
 - `runtime/validation/phase-4/context-pack.json`
-- `scripts/phase4_think_sla.sh`
+- `scripts/phase4_gastown.sh`
 - `scripts/llm_common.sh`
 """

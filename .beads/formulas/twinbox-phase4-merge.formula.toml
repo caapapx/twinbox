@@ -1,15 +1,21 @@
 formula = "twinbox-phase4-merge"
 type = "workflow"
-version = 1
+version = 2
 description = """
 Phase 4 merge 执行单。
 
 目标：只合并 3 个 think 子任务的 raw JSON，生成最终 YAML/MD 报告。
 这是纯合并步骤，不调 LLM，不要回头重跑 think 脚本。
 
+共享状态根目录解析顺序：
+1. `TWINBOX_CANONICAL_ROOT`
+2. `~/.config/twinbox/canonical-root`
+3. 当前 checkout（仅普通仓库；linked worktree 必须显式配置）
+
 最小必读材料：
 - 当前 formula
-- `scripts/phase4_merge.sh`
+- `scripts/phase4_gastown.sh`
+- `scripts/twinbox_paths.sh`
 """
 
 [[steps]]
@@ -39,7 +45,7 @@ description = """
 ACTION: 只运行 merge 脚本。
 
 ```bash
-bash scripts/phase4_merge.sh
+bash scripts/phase4_gastown.sh merge
 ```
 
 成功条件：
@@ -50,7 +56,7 @@ bash scripts/phase4_merge.sh
 - `docs/validation/phase-4-report.md`
 
 失败时只检查：
-- `scripts/phase4_merge.sh`
+- `scripts/phase4_gastown.sh`
 - `runtime/validation/phase-4/urgent-pending-raw.json`
 - `runtime/validation/phase-4/sla-risks-raw.json`
 - `runtime/validation/phase-4/weekly-brief-raw.json`

@@ -3,23 +3,28 @@
 # Deterministic I/O, no LLM.
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ENV_FILE="${ROOT_DIR}/.env"
-CONFIG_FILE="${ROOT_DIR}/runtime/himalaya/config.toml"
-PHASE1_DIR="${ROOT_DIR}/runtime/validation/phase-1"
-PHASE3_DIR="${ROOT_DIR}/runtime/validation/phase-3"
-PHASE4_DIR="${ROOT_DIR}/runtime/validation/phase-4"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+source "${SCRIPT_DIR}/twinbox_paths.sh"
+twinbox_init_roots "${BASH_SOURCE[0]}"
+
+CODE_ROOT="${TWINBOX_CODE_ROOT}"
+STATE_ROOT="${TWINBOX_CANONICAL_ROOT}"
+ENV_FILE="${STATE_ROOT}/.env"
+CONFIG_FILE="${STATE_ROOT}/runtime/himalaya/config.toml"
+PHASE1_DIR="${STATE_ROOT}/runtime/validation/phase-1"
+PHASE3_DIR="${STATE_ROOT}/runtime/validation/phase-3"
+PHASE4_DIR="${STATE_ROOT}/runtime/validation/phase-4"
 
 ENVELOPES="${PHASE1_DIR}/raw/envelopes-merged.json"
 BODIES="${PHASE1_DIR}/raw/sample-bodies.json"
 CENSUS="${PHASE1_DIR}/mailbox-census.json"
 LIFECYCLE="${PHASE3_DIR}/lifecycle-model.yaml"
 THREAD_SAMPLES="${PHASE3_DIR}/thread-stage-samples.json"
-PERSONA="${ROOT_DIR}/runtime/validation/phase-2/persona-hypotheses.yaml"
+PERSONA="${STATE_ROOT}/runtime/validation/phase-2/persona-hypotheses.yaml"
 
-MANUAL_FACTS="${ROOT_DIR}/runtime/context/manual-facts.yaml"
-MANUAL_HABITS="${ROOT_DIR}/runtime/context/manual-habits.yaml"
-CALIBRATION="${ROOT_DIR}/docs/validation/instance-calibration-notes.md"
+MANUAL_FACTS="${STATE_ROOT}/runtime/context/manual-facts.yaml"
+MANUAL_HABITS="${STATE_ROOT}/runtime/context/manual-habits.yaml"
+CALIBRATION="${STATE_ROOT}/docs/validation/instance-calibration-notes.md"
 
 LOOKBACK_DAYS="${PIPELINE_LOOKBACK_DAYS:-7}"
 MAX_BODY_FETCH=24
@@ -50,12 +55,12 @@ mkdir -p "${PHASE4_DIR}"
 
 if [[ ! -f "${ENV_FILE}" ]]; then echo "Missing .env"; exit 1; fi
 set -a; source "${ENV_FILE}"; set +a
-bash "${ROOT_DIR}/scripts/check_env.sh"
-bash "${ROOT_DIR}/scripts/render_himalaya_config.sh"
+bash "${CODE_ROOT}/scripts/check_env.sh"
+bash "${CODE_ROOT}/scripts/render_himalaya_config.sh"
 
 if ! command -v himalaya >/dev/null 2>&1; then
-  if [[ -x "${ROOT_DIR}/runtime/bin/himalaya" ]]; then
-    HIMALAYA_BIN="${ROOT_DIR}/runtime/bin/himalaya"
+  if [[ -x "${STATE_ROOT}/runtime/bin/himalaya" ]]; then
+    HIMALAYA_BIN="${STATE_ROOT}/runtime/bin/himalaya"
   else
     echo "himalaya CLI not found"; exit 1
   fi
@@ -212,4 +217,4 @@ echo "Phase 4 loading complete."
 echo "Lookback days: ${LOOKBACK_DAYS}"
 echo "Output: ${PHASE4_DIR}/context-pack.json"
 echo ""
-echo "Next: bash scripts/phase4_thinking.sh"
+echo "Next: bash scripts/phase4_gastown.sh think-urgent"
