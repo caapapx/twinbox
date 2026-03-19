@@ -71,10 +71,10 @@ id = "merge"
 title = "Phase 4 Merge — Combine Outputs — EXECUTE"
 needs = ["think-urgent", "think-sla", "think-brief"]
 description = """
-ACTION: 在项目根目录运行以下命令合并 3 个子任务的输出。
+ACTION: 在项目根目录运行以下命令合并 3 个子任务的输出（纯合并，不调 LLM）。
 
 ```bash
-bash scripts/phase4_thinking_parallel.sh
+bash scripts/phase4_merge.sh
 ```
 
 验证：确认以下文件全部存在：
