@@ -1,12 +1,15 @@
 formula = "twinbox-full-pipeline"
 type = "convoy"
-version = 1
+version = 2
 description = """
 twinbox 全流程 pipeline — 4 条 leg 对应 4 个 Phase，synthesis 合并最终输出为 attention-budget。
 
 注意：Phase 间有数据依赖（Phase 2 依赖 Phase 1 产出，Phase 3 依赖 1+2，Phase 4 依赖 1+2+3），
 当前以 convoy 声明并发意图，实际执行时 synthesis 负责校验依赖完整性。
 对于严格顺序执行，使用 scripts/run_pipeline.sh fallback。
+
+执行前提：源码仓库的 `master` 必须已经 `git push origin master`。
+每个 leg 开始前仍需把当前 worktree 同步到最新 `origin/master`，避免复用旧 worktree。
 """
 
 [[legs]]
@@ -15,6 +18,18 @@ title = "Phase 1 — Intent Classification"
 focus = "邮件 intent 分类：envelope 拉取 + LLM batch 分类"
 description = """
 执行 Phase 1 的 loading → thinking 全流程。
+
+先同步当前 worktree：
+
+```bash
+git fetch origin master
+if git merge-base --is-ancestor HEAD origin/master; then
+  git merge --ff-only origin/master
+else
+  git rebase origin/master
+fi
+git merge-base --is-ancestor origin/master HEAD
+```
 
 ```bash
 bash scripts/phase1_loading.sh
@@ -32,6 +47,18 @@ description = """
 执行 Phase 2 的 loading → thinking 全流程。
 依赖 Phase 1 产出。
 
+先同步当前 worktree：
+
+```bash
+git fetch origin master
+if git merge-base --is-ancestor HEAD origin/master; then
+  git merge --ff-only origin/master
+else
+  git rebase origin/master
+fi
+git merge-base --is-ancestor origin/master HEAD
+```
+
 ```bash
 bash scripts/phase2_loading.sh
 bash scripts/phase2_thinking.sh
@@ -48,6 +75,18 @@ description = """
 执行 Phase 3 的 loading → thinking 全流程。
 依赖 Phase 1 + Phase 2 产出。
 
+先同步当前 worktree：
+
+```bash
+git fetch origin master
+if git merge-base --is-ancestor HEAD origin/master; then
+  git merge --ff-only origin/master
+else
+  git rebase origin/master
+fi
+git merge-base --is-ancestor origin/master HEAD
+```
+
 ```bash
 bash scripts/phase3_loading.sh
 bash scripts/phase3_thinking.sh
@@ -63,6 +102,18 @@ focus = "价值输出：3 个并行 LLM 子任务 — urgent+pending / sla-risks
 description = """
 执行 Phase 4 的 loading → parallel thinking 全流程。
 依赖 Phase 1 + Phase 2 + Phase 3 产出。
+
+先同步当前 worktree：
+
+```bash
+git fetch origin master
+if git merge-base --is-ancestor HEAD origin/master; then
+  git merge --ff-only origin/master
+else
+  git rebase origin/master
+fi
+git merge-base --is-ancestor origin/master HEAD
+```
 
 ```bash
 bash scripts/phase4_loading.sh

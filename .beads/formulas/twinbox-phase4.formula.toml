@@ -1,9 +1,9 @@
 formula = "twinbox-phase4"
 type = "workflow"
-version = 4
+version = 5
 description = """
 Phase 4: Value 输出 — 这是一个 EXECUTION formula，每个 step 必须实际运行脚本。
-loading 构建 context-pack，thinking 拆为 3 个并行子任务：
+先同步 polecat worktree 到最新 origin/master，然后 loading 构建 context-pack，thinking 拆为 3 个并行子任务：
 urgent+pending / sla-risks / weekly-brief，最后合并输出。
 
 重要：此 formula 的目标是 RUN 脚本产生输出文件，不是审查或编写代码。
@@ -11,8 +11,32 @@ urgent+pending / sla-risks / weekly-brief，最后合并输出。
 """
 
 [[steps]]
+id = "sync-workspace"
+title = "Sync Workspace To origin/master — EXECUTE"
+description = """
+ACTION: 在项目根目录先同步当前 polecat worktree，避免 worktree 基于旧 commit 缺少最新脚本。
+
+```bash
+git fetch origin master
+if git merge-base --is-ancestor HEAD origin/master; then
+  git merge --ff-only origin/master
+else
+  git rebase origin/master
+fi
+git merge-base --is-ancestor origin/master HEAD
+git rev-parse --short HEAD
+git rev-parse --short origin/master
+```
+
+验证：当前分支已经 fast-forward 或 rebase 到 `origin/master` 之上。
+注意：这个 step 只能同步远端最新提交；如果源码仓库本地 `master` 还有未 push 的 commit，
+必须先在源码仓库执行 `git push origin master` 再 sling。
+"""
+
+[[steps]]
 id = "loading"
 title = "Phase 4 Loading — EXECUTE"
+needs = ["sync-workspace"]
 description = """
 ACTION: 在项目根目录运行以下命令，等待完成，验证产出文件存在。
 

@@ -130,6 +130,11 @@ Current execution model:
 - Phase 4 is the clearest example: `urgent/pending`, `sla-risks`, and `weekly-brief` can run in parallel and merge at the end
 
 ```bash
+# Push local master before slinging so polecat worktrees see the latest scripts
+git checkout master
+git pull --ff-only origin master
+git push origin master
+
 # Sling a single phase to gastown
 gt sling twinbox-phase1 twinbox --create
 

@@ -129,6 +129,21 @@ gt daemon status  # 查看状态
 
 核心命令。将 formula 分发给 polecat 执行。
 
+### Sling 前先同步源码仓库（必须）
+
+polecat worktree 是从 rig 的 `origin/master` 创建的。源码仓库本地 `master` 上如果还有未 push 的 commit，
+polecat 即使在 formula 里执行 `git pull/rebase` 也拿不到这些脚本改动。
+
+```bash
+cd /path/to/twinbox
+git checkout master
+git pull --ff-only origin master
+git push origin master
+```
+
+twinbox 的 formula 现在会在执行开始时再做一次 `git fetch + ff-only/rebase`，
+用于修复“worktree 创建后仍停在旧远端 commit”的情况；但它不能替代这一步 `push`。
+
 ### 单 Phase 执行
 
 ```bash

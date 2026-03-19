@@ -130,6 +130,11 @@ flowchart LR
 - `Phase 4` 是最典型的例子：`urgent/pending`、`sla-risks`、`weekly-brief` 可以并行跑，最后再 merge
 
 ```bash
+# 先把本地 master 推到 origin，确保 polecat worktree 能看到最新脚本
+git checkout master
+git pull --ff-only origin master
+git push origin master
+
 # 通过 gastown 分发单个 phase
 gt sling twinbox-phase1 twinbox --create
 

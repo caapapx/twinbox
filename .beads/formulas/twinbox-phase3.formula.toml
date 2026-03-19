@@ -1,13 +1,39 @@
 formula = "twinbox-phase3"
 type = "workflow"
-version = 1
+version = 2
 description = """
-Phase 3: Lifecycle 建模 — loading 做线程分组 + 聚合上游产出，thinking 推断生命周期流和阶段归类。
+Phase 3: Lifecycle 建模 — 先同步 polecat worktree 到最新 origin/master，
+loading 做线程分组并聚合上游产出，thinking 推断生命周期流和阶段归类。
+"""
+
+[[steps]]
+id = "sync-workspace"
+title = "Sync Workspace To origin/master"
+description = """
+在项目根目录先同步当前 polecat worktree，避免 worktree 基于旧 commit 缺少最新脚本。
+
+```bash
+git fetch origin master
+if git merge-base --is-ancestor HEAD origin/master; then
+  git merge --ff-only origin/master
+else
+  git rebase origin/master
+fi
+git merge-base --is-ancestor origin/master HEAD
+git rev-parse --short HEAD
+git rev-parse --short origin/master
+```
+
+验证：当前分支已经 fast-forward 或 rebase 到 `origin/master` 之上。
+注意：这个 step 只能同步远端最新提交；如果源码仓库本地 `master` 还有未 push 的 commit，
+必须先在源码仓库执行 `git push origin master` 再 sling。
+此步骤为 pre-step，不占 polecat session。
 """
 
 [[steps]]
 id = "loading"
 title = "Phase 3 Loading"
+needs = ["sync-workspace"]
 description = """
 线程分组 + Phase 1/2 产出 + 人工上下文 → context-pack。
 

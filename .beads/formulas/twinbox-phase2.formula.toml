@@ -1,13 +1,39 @@
 formula = "twinbox-phase2"
 type = "workflow"
-version = 1
+version = 2
 description = """
-Phase 2: Persona 推断 — loading 读 Phase 1 产出 + 构建 enriched context，thinking 生成 persona + business 假设。
+Phase 2: Persona 推断 — 先同步 polecat worktree 到最新 origin/master，
+loading 读取 Phase 1 产出并构建 enriched context，thinking 生成 persona + business 假设。
+"""
+
+[[steps]]
+id = "sync-workspace"
+title = "Sync Workspace To origin/master"
+description = """
+在项目根目录先同步当前 polecat worktree，避免 worktree 基于旧 commit 缺少最新脚本。
+
+```bash
+git fetch origin master
+if git merge-base --is-ancestor HEAD origin/master; then
+  git merge --ff-only origin/master
+else
+  git rebase origin/master
+fi
+git merge-base --is-ancestor origin/master HEAD
+git rev-parse --short HEAD
+git rev-parse --short origin/master
+```
+
+验证：当前分支已经 fast-forward 或 rebase 到 `origin/master` 之上。
+注意：这个 step 只能同步远端最新提交；如果源码仓库本地 `master` 还有未 push 的 commit，
+必须先在源码仓库执行 `git push origin master` 再 sling。
+此步骤为 pre-step，不占 polecat session。
 """
 
 [[steps]]
 id = "loading"
 title = "Phase 2 Loading"
+needs = ["sync-workspace"]
 description = """
 读取 Phase 1 统计结果 + 人工上下文，构建 enriched context pack。
 
