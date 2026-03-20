@@ -1,31 +1,31 @@
 formula = "twinbox-full-pipeline"
-type = "convoy"
-version = 3
+type = "workflow"
+version = 4
 description = """
 twinbox 全流程 pipeline 执行单。
 
-目标：按 leg 执行现有 Phase 1-4 脚本链路，并在 synthesis 汇总 attention-budget 所需输入。
-这是编排任务，不是让 polecat自行研究 twinbox 架构。
+目标：按 phase 顺序执行现有 Phase 1-4 脚本链路（loading → thinking），生成 attention-budget 所需的完整输入。
 
-注意：Phase 间有数据依赖（Phase 2 依赖 Phase 1 产出，Phase 3 依赖 1+2，Phase 4 依赖 1+2+3），
-当前以 convoy 声明并发意图，实际执行时 synthesis 负责校验依赖完整性。
-对于严格顺序执行，使用 scripts/twinbox_orchestrate.sh（稳定 CLI 入口）。
+运行时根目录规则：
+- 脚本从当前 checkout 读取代码（code root）
+- `.env`、`runtime/`、`docs/validation/` 从 canonical root 读取和写入（state root）
+- 解析顺序：`TWINBOX_CANONICAL_ROOT` -> `~/.config/twinbox/canonical-root` -> 当前 checkout（仅普通仓库）
+
+数据依赖：
+- Phase 2 依赖 Phase 1 产出
+- Phase 3 依赖 Phase 1 + Phase 2 产出
+- Phase 4 依赖 Phase 1 + Phase 2 + Phase 3 产出
 
 执行前提：源码仓库的 `master` 必须已经 `git push origin master`。
-每个 leg 开始前仍需把当前 worktree 同步到最新 `origin/master`，避免复用旧 worktree。
 
-不要先读 README、方案文档、历史报告；每个 leg 只执行当前 description 指定的命令。
+不要先读 README、方案文档、历史报告；每个 step 只执行当前 description 指定的命令。
 """
 
-[[legs]]
-id = "phase1"
-title = "Phase 1 — Intent Classification"
-focus = "邮件 intent 分类：envelope 拉取 + LLM batch 分类"
+[[steps]]
+id = "sync-workspace"
+title = "Sync Workspace To origin/master"
 description = """
-执行 Phase 1 的 loading → thinking 全流程。
-只关心 Phase 1 输入和输出，不要推断后续 phase 逻辑。
-
-先同步当前 worktree：
+在项目根目录先同步当前 polecat worktree。这是第一步；不要在同步前浏览仓库其他文件。
 
 ```bash
 git fetch origin master
@@ -35,126 +35,96 @@ else
   git rebase origin/master
 fi
 git merge-base --is-ancestor origin/master HEAD
+git rev-parse --short HEAD
+git rev-parse --short origin/master
 ```
+
+验证：当前分支已经 fast-forward 或 rebase 到 `origin/master` 之上。
+此步骤为 pre-step，不占 polecat session。
+"""
+
+[[steps]]
+id = "phase1"
+title = "Phase 1 — Intent Classification"
+needs = ["sync-workspace"]
+description = """
+执行 Phase 1 的 loading → thinking 全流程。
+只关心 Phase 1 输入和输出，不要推断后续 phase 逻辑。
 
 ```bash
 bash scripts/phase1_loading.sh
 bash scripts/phase1_thinking.sh
 ```
 
-产出：`runtime/validation/phase-1/` 下的 intent 分类结果。
-最小验证：`runtime/context/phase1-context.json`、`runtime/validation/phase-1/intent-classification.json`、`runtime/validation/phase-1/intent-report.md`
+产出验证：
+- `runtime/context/phase1-context.json`
+- `runtime/validation/phase-1/intent-classification.json`
+- `runtime/validation/phase-1/intent-report.md`
+
+此步骤为 pre-step，不占 polecat session。
 """
 
-[[legs]]
+[[steps]]
 id = "phase2"
 title = "Phase 2 — Persona Inference"
-focus = "用户画像推断：统计聚合 + LLM persona 生成"
+needs = ["phase1"]
 description = """
 执行 Phase 2 的 loading → thinking 全流程。
 依赖 Phase 1 产出。
-如果 Phase 1 结果缺失，直接报告依赖缺失，不做额外探索。
-
-先同步当前 worktree：
-
-```bash
-git fetch origin master
-if git merge-base --is-ancestor HEAD origin/master; then
-  git merge --ff-only origin/master
-else
-  git rebase origin/master
-fi
-git merge-base --is-ancestor origin/master HEAD
-```
 
 ```bash
 bash scripts/phase2_loading.sh
 bash scripts/phase2_thinking.sh
 ```
 
-产出：`runtime/validation/phase-2/` 下的 persona 推断结果。
-最小验证：`runtime/validation/phase-2/context-pack.json`、`persona-hypotheses.yaml`、`business-hypotheses.yaml`
+产出验证：
+- `runtime/validation/phase-2/context-pack.json`
+- `runtime/validation/phase-2/persona-hypotheses.yaml`
+- `runtime/validation/phase-2/business-hypotheses.yaml`
+
+此步骤为 pre-step，不占 polecat session。
 """
 
-[[legs]]
+[[steps]]
 id = "phase3"
 title = "Phase 3 — Lifecycle Modeling"
-focus = "生命周期建模：线程分组 + LLM 阶段归类"
+needs = ["phase2"]
 description = """
 执行 Phase 3 的 loading → thinking 全流程。
 依赖 Phase 1 + Phase 2 产出。
-如果上游缺失，直接报告缺失文件，不做大范围排查。
-
-先同步当前 worktree：
-
-```bash
-git fetch origin master
-if git merge-base --is-ancestor HEAD origin/master; then
-  git merge --ff-only origin/master
-else
-  git rebase origin/master
-fi
-git merge-base --is-ancestor origin/master HEAD
-```
 
 ```bash
 bash scripts/phase3_loading.sh
 bash scripts/phase3_thinking.sh
 ```
 
-产出：`runtime/validation/phase-3/` 下的 lifecycle 模型。
-最小验证：`runtime/validation/phase-3/context-pack.json`、`lifecycle-model.yaml`、`thread-stage-samples.json`
+产出验证：
+- `runtime/validation/phase-3/context-pack.json`
+- `runtime/validation/phase-3/lifecycle-model.yaml`
+- `runtime/validation/phase-3/thread-stage-samples.json`
+
+此步骤为 pre-step，不占 polecat session。
 """
 
-[[legs]]
+[[steps]]
 id = "phase4"
-title = "Phase 4 — Value Outputs (Parallel)"
-focus = "价值输出：3 个并行 LLM 子任务 — urgent+pending / sla-risks / weekly-brief"
+title = "Phase 4 — Value Outputs"
+needs = ["phase3"]
 description = """
-执行 Phase 4 的 loading → parallel thinking 全流程。
+执行 Phase 4 的 loading → thinking 全流程。
 依赖 Phase 1 + Phase 2 + Phase 3 产出。
-这里允许调用 `scripts/phase4_thinking_parallel.sh`，因为这是 full-pipeline leg，不是拆分后的 phase4 workflow。
-
-先同步当前 worktree：
-
-```bash
-git fetch origin master
-if git merge-base --is-ancestor HEAD origin/master; then
-  git merge --ff-only origin/master
-else
-  git rebase origin/master
-fi
-git merge-base --is-ancestor origin/master HEAD
-```
 
 ```bash
 bash scripts/phase4_loading.sh
 bash scripts/phase4_thinking_parallel.sh
 ```
 
-并行子任务：
-- phase4_think_urgent.sh → urgent-pending-raw.json
-- phase4_think_sla.sh → sla-risks-raw.json
-- phase4_think_brief.sh → weekly-brief-raw.json
+产出验证：
+- `runtime/validation/phase-4/context-pack.json`
+- `runtime/validation/phase-4/daily-urgent.yaml`
+- `runtime/validation/phase-4/pending-replies.yaml`
+- `runtime/validation/phase-4/sla-risks.yaml`
+- `runtime/validation/phase-4/weekly-brief.md`
 
-合并产出：`runtime/validation/phase-4/` 下的 daily-urgent.yaml / pending-replies.yaml / sla-risks.yaml / weekly-brief.md
-最小验证：`runtime/validation/phase-4/context-pack.json` 以及 4 个最终输出文件
-"""
-
-[synthesis]
-title = "Pipeline Synthesis — Attention Budget"
-depends_on = ["phase1", "phase2", "phase3", "phase4"]
-description = """
-合并 4 个 Phase 的输出为最终 attention-budget。
-这里只做产物完整性校验和合并，不需要重新阅读上游脚本。
-
-校验各 Phase 产出完整性，合并为：
-- `runtime/attention-budget.yaml` — 综合注意力预算
-- `runtime/pipeline-report.md` — 全流程执行报告
-
-合并逻辑：
-1. 读取 phase-1 intent 分类 → 确定邮件优先级基线
-2. 读取 phase-2 persona → 叠加用户画像权重
-3. 读取 phase-3 lifecycle → 叠加生命周期阶段权重
-4. 读取 phase-4 value outputs → 生成最终 urgent/pending/risk 列表
+此步骤为 pre-step，不占 polecat session。
 """
