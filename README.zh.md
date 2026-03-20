@@ -77,10 +77,16 @@ flowchart LR
 
 | Phase | 核心工作 | 典型产物 | 这一阶段的意义 |
 |-------|----------|----------|----------------|
-| 1 | 在分布层面读懂邮箱 | `mailbox-census.json`、`intent-distribution.yaml`、第一版 `attention-budget.yaml` | 先建立全局基线，并尽早过滤明显噪声 |
-| 2 | 推断这个邮箱对应的人和业务 | `persona-hypotheses.yaml`、`business-hypotheses.yaml`、更收敛的 `attention-budget.yaml` | 用角色、业务和上下文相关性继续缩小范围 |
-| 3 | 从标签升级到 thread 级工作流状态 | `lifecycle-model.yaml`、`thread-stage-samples.json`、建模后的 `attention-budget.yaml` | 理解每条线程在重复流程中的当前位置 |
+| 1 | 在分布层面读懂邮箱 | `phase1-context.json`、`intent-classification.json`、派生普查视图 | 先建立全局基线，并尽早过滤明显噪声 |
+| 2 | 推断这个邮箱对应的人和业务 | `persona-hypotheses.yaml`、`business-hypotheses.yaml` | 用角色、业务和上下文相关性继续缩小范围 |
+| 3 | 从标签升级到 thread 级工作流状态 | `lifecycle-model.yaml`、`thread-stage-samples.json` | 理解每条线程在重复流程中的当前位置 |
 | 4 | 产出用户真正会看的价值面板 | `daily-urgent.yaml`、`pending-replies.yaml`、`sla-risks.yaml`、`weekly-brief.md` | 直接回答“今天我该看什么” |
+
+当前契约说明：
+
+- 当前实现里的运行时 handoff 仍主要依赖各 phase 的结构化状态文件，而不是一条已经打通的 `attention-budget.yaml`
+- `attention-budget` 目前应视为目标收敛契约，而不是已经被脚本强制执行的运行时依赖
+- 详见 [Validation Artifact Contract](docs/specs/validation-artifact-contract.md)
 
 每个阶段内部仍保持同一套结构：
 

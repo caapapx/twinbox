@@ -77,10 +77,16 @@ flowchart LR
 
 | Phase | Main job | Typical outputs | Why it exists |
 |-------|----------|-----------------|---------------|
-| 1 | Read the mailbox at distribution level | `mailbox-census.json`, `intent-distribution.yaml`, first `attention-budget.yaml` | Establish the baseline and remove obvious noise early |
-| 2 | Infer who this mailbox belongs to and what work matters | `persona-hypotheses.yaml`, `business-hypotheses.yaml`, narrower `attention-budget.yaml` | Filter threads through role, business, and context relevance |
-| 3 | Upgrade from labels to thread-level workflow state | `lifecycle-model.yaml`, `thread-stage-samples.json`, modeled-thread `attention-budget.yaml` | Understand where each thread is in a recurring lifecycle |
+| 1 | Read the mailbox at distribution level | `phase1-context.json`, `intent-classification.json`, derived census views | Establish the baseline and remove obvious noise early |
+| 2 | Infer who this mailbox belongs to and what work matters | `persona-hypotheses.yaml`, `business-hypotheses.yaml` | Filter threads through role, business, and context relevance |
+| 3 | Upgrade from labels to thread-level workflow state | `lifecycle-model.yaml`, `thread-stage-samples.json` | Understand where each thread is in a recurring lifecycle |
 | 4 | Produce user-visible value surfaces | `daily-urgent.yaml`, `pending-replies.yaml`, `sla-risks.yaml`, `weekly-brief.md` | Answer the operational question: "what should I look at today?" |
+
+Current contract note:
+
+- the implemented runtime handoff still relies on phase-specific structured artifacts, not a fully wired `attention-budget.yaml`
+- treat `attention-budget` as the planned convergence contract, not as an already-enforced runtime dependency
+- see [Validation Artifact Contract](docs/specs/validation-artifact-contract.md)
 
 Each phase still follows the same internal split:
 

@@ -15,6 +15,7 @@
 
 - 架构：`docs/architecture.md`
 - 渐进验证框架：`docs/plans/progressive-validation-framework.md`
+- 验证工件契约：`docs/specs/validation-artifact-contract.md`
 - 多 agent 集成：`docs/plans/gastown-multi-agent-integration.md`
 - 运行时规范：`docs/specs/thread-state-runtime.md`
 - 开源 V1 计划：`docs/plans/open-source-v1-plan.md`
