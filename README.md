@@ -168,6 +168,7 @@ bash scripts/run_pipeline.sh
 ```
 
 See [Gastown Operations Guide](docs/guides/gastown-operations.md) and [Gastown Integration Plan](docs/plans/gastown-multi-agent-integration.md).
+For the next-step language/runtime refactor direction, see [Language-Layer Optimization Plan](docs/plans/language-layer-optimization.md).
 
 Follow-up work is tracked in `bd`, not markdown TODOs:
 

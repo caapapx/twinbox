@@ -168,6 +168,7 @@ bash scripts/run_pipeline.sh
 ```
 
 详见 [Gastown 操作指南](docs/guides/gastown-operations.md) 和 [Gastown 集成方案](docs/plans/gastown-multi-agent-integration.md)。
+语言层与中编程层的下一步收敛方向，见 [语言层优化与全局架构收敛计划](docs/plans/language-layer-optimization.md)。
 
 后续补充项通过 `bd` 跟踪，不再追加 markdown TODO：
 
