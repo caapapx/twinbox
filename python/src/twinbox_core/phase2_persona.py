@@ -8,8 +8,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from twinbox_core.artifacts import generated_at, write_lines, yaml_string
 from twinbox_core.llm import LLMError, call_llm, clean_json_text, resolve_backend
+from twinbox_core.renderer import render_phase2_outputs
 
 
 @dataclass(frozen=True)
@@ -84,30 +84,6 @@ def _parse_response(raw: str) -> dict[str, object]:
     return parsed
 
 
-def _build_relationship_map(context: dict[str, object]) -> list[str]:
-    contacts = context.get("top_contacts", [])
-    domains = context.get("top_domains", [])
-
-    lines = ["graph TD", '  User["Mailbox Owner"]']
-    if isinstance(contacts, list):
-        for contact in contacts[:8]:
-            if not isinstance(contact, dict):
-                continue
-            key = str(contact.get("key", "unknown"))
-            safe = "".join(char if char.isascii() and char.isalnum() else "_" for char in key)
-            lines.append(f'  C_{safe}["{key}"]')
-            lines.append(f'  User ---|{contact.get("count", 0)}| C_{safe}')
-    if isinstance(domains, list):
-        for domain in domains[:3]:
-            if not isinstance(domain, dict):
-                continue
-            key = str(domain.get("key", "unknown"))
-            safe = "".join(char if char.isascii() and char.isalnum() else "_" for char in key)
-            lines.append(f'  D_{safe}["{key}"]')
-            lines.append(f"  User --> D_{safe}")
-    return lines
-
-
 def run_phase2_persona(config: Phase2RunConfig) -> dict[str, object]:
     context = _load_object(config.context_path)
     config.output_dir.mkdir(parents=True, exist_ok=True)
@@ -136,175 +112,16 @@ def run_phase2_persona(config: Phase2RunConfig) -> dict[str, object]:
         )
     )
 
-    llm_response_path = config.output_dir / "llm-response.json"
-    llm_response_path.write_text(
-        json.dumps(response, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
     print("LLM response saved.")
     print("Generating Phase 2 outputs...")
-
-    persona = response.get("persona_hypotheses", [])
-    business = response.get("business_hypotheses", [])
-    questions = response.get("confirmation_questions", [])
-
-    persona_lines = [
-        f'generated_at: "{generated_at()}"',
-        'method: "llm"',
-        f'model: "{model_name}"',
-        "persona_hypotheses:",
-    ]
-    if isinstance(persona, list):
-        for item in persona:
-            if not isinstance(item, dict):
-                continue
-            persona_lines.extend(
-                [
-                    f"  - id: {item.get('id', 'P?')}",
-                    f"    type: {item.get('type', 'unknown')}",
-                    f"    confidence: {float(item.get('confidence', 0) or 0):.2f}",
-                    f"    hypothesis: {yaml_string(item.get('hypothesis', ''))}",
-                    "    evidence:",
-                ]
-            )
-            evidence = item.get("evidence", [])
-            if isinstance(evidence, list):
-                for entry in evidence:
-                    persona_lines.append(f"      - {yaml_string(entry)}")
-    write_lines(config.output_dir / "persona-hypotheses.yaml", persona_lines)
-
-    business_lines = [
-        f'generated_at: "{generated_at()}"',
-        'method: "llm"',
-        f'model: "{model_name}"',
-        "business_hypotheses:",
-    ]
-    if isinstance(business, list):
-        for item in business:
-            if not isinstance(item, dict):
-                continue
-            business_lines.extend(
-                [
-                    f"  - id: {item.get('id', 'B?')}",
-                    f"    confidence: {float(item.get('confidence', 0) or 0):.2f}",
-                    f"    hypothesis: {yaml_string(item.get('hypothesis', ''))}",
-                    "    evidence:",
-                ]
-            )
-            evidence = item.get("evidence", [])
-            if isinstance(evidence, list):
-                for entry in evidence:
-                    business_lines.append(f"      - {yaml_string(entry)}")
-            business_lines.append("    ai_entry_points:")
-            entry_points = item.get("ai_entry_points", [])
-            if isinstance(entry_points, list):
-                for entry in entry_points:
-                    business_lines.append(f"      - {yaml_string(entry)}")
-    write_lines(config.output_dir / "business-hypotheses.yaml", business_lines)
-
-    write_lines(config.diagram_dir / "phase-2-relationship-map.mmd", _build_relationship_map(context))
-
-    mailbox_summary = context.get("mailbox_summary", {})
-    internal_external = {}
-    if isinstance(mailbox_summary, dict):
-        internal_external = mailbox_summary.get("internal_external", {})
-    intent_distribution = context.get("intent_distribution", [])
-    top_contacts = context.get("top_contacts", [])
-    top_domains = context.get("top_domains", [])
-    intent_summary = ", ".join(
-        f"{item.get('key')}({item.get('count')})"
-        for item in intent_distribution
-        if isinstance(item, dict)
+    render_phase2_outputs(
+        output_dir=config.output_dir,
+        doc_dir=config.doc_dir,
+        diagram_dir=config.diagram_dir,
+        context=context,
+        response=response,
+        model_name=model_name,
     )
-    contact_summary = ", ".join(
-        f"{item.get('key')}({item.get('count')})" for item in top_contacts[:5] if isinstance(item, dict)
-    )
-    domain_summary = ", ".join(
-        f"{item.get('key')}({item.get('count')})" for item in top_domains[:3] if isinstance(item, dict)
-    )
-
-    report_lines = [
-        "# Phase 2 Report: Persona and Business Profile Inference",
-        "",
-        "## Method",
-        f"- Inference engine: LLM ({model_name})",
-        "- Input: Phase 1 census + LLM intent results + 30 enriched body samples",
-        f"- Total envelopes in scope: {mailbox_summary.get('total_envelopes', 0) if isinstance(mailbox_summary, dict) else 0}",
-        "",
-        "## Evidence Base",
-        (
-            "- Internal vs external: "
-            f"internal={internal_external.get('internal', 0)}, "
-            f"external={internal_external.get('external', 0)}, "
-            f"unknown={internal_external.get('unknown', 0)}"
-        ),
-        f"- Top intents (LLM): {intent_summary}",
-        f"- Top contacts: {contact_summary}",
-        f"- Top domains: {domain_summary}",
-        "",
-        "## Persona Hypotheses",
-        "",
-    ]
-    if isinstance(persona, list):
-        for item in persona:
-            if not isinstance(item, dict):
-                continue
-            report_lines.extend(
-                [
-                    f"### [{item.get('id', 'P?')}] {item.get('type', 'unknown')} (confidence={float(item.get('confidence', 0) or 0):.2f})",
-                    "",
-                    str(item.get("hypothesis", "")),
-                    "",
-                    "Evidence:",
-                ]
-            )
-            evidence = item.get("evidence", [])
-            if isinstance(evidence, list):
-                for entry in evidence:
-                    report_lines.append(f"- {entry}")
-            report_lines.append("")
-
-    report_lines.extend(["## Business Hypotheses", ""])
-    if isinstance(business, list):
-        for item in business:
-            if not isinstance(item, dict):
-                continue
-            report_lines.extend(
-                [
-                    f"### [{item.get('id', 'B?')}] (confidence={float(item.get('confidence', 0) or 0):.2f})",
-                    "",
-                    str(item.get("hypothesis", "")),
-                    "",
-                    "Evidence:",
-                ]
-            )
-            evidence = item.get("evidence", [])
-            if isinstance(evidence, list):
-                for entry in evidence:
-                    report_lines.append(f"- {entry}")
-            report_lines.extend(["", "AI entry points:"])
-            entry_points = item.get("ai_entry_points", [])
-            if isinstance(entry_points, list):
-                for entry in entry_points:
-                    report_lines.append(f"- {entry}")
-            report_lines.append("")
-
-    report_lines.extend(["## Confirmation Questions (max 7)", ""])
-    if isinstance(questions, list):
-        for index, question in enumerate(questions, start=1):
-            report_lines.append(f"{index}. {question}")
-    report_lines.extend(
-        [
-            "",
-            "## Outputs",
-            "- runtime/validation/phase-2/persona-hypotheses.yaml",
-            "- runtime/validation/phase-2/business-hypotheses.yaml",
-            "- runtime/validation/phase-2/llm-response.json",
-            "- docs/validation/phase-2-report.md",
-            "- docs/validation/diagrams/phase-2-relationship-map.mmd",
-        ]
-    )
-    write_lines(config.doc_dir / "phase-2-report.md", report_lines)
     print("Phase 2 outputs generated.")
     print("")
     print("Phase 2 thinking complete.")

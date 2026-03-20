@@ -8,8 +8,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from twinbox_core.artifacts import generated_at, write_lines, yaml_string
 from twinbox_core.llm import LLMError, call_llm, clean_json_text, resolve_backend
+from twinbox_core.renderer import render_phase3_outputs
 
 
 @dataclass(frozen=True)
@@ -100,59 +100,6 @@ def _parse_response(raw: str) -> dict[str, object]:
     return parsed
 
 
-def _write_lifecycle_overview(path: Path, flows: list[dict[str, object]]) -> None:
-    lines = ["graph TD"]
-    for flow in flows:
-        flow_id = str(flow.get("id", "LF?"))
-        lines.append(f'  {flow_id}["{flow.get("name", flow_id)}"]')
-        stages = flow.get("stages", [])
-        if not isinstance(stages, list):
-            continue
-        for stage in stages:
-            if not isinstance(stage, dict):
-                continue
-            stage_id = str(stage.get("id", "stage")).replace("-", "_")
-            lines.append(f'  {stage_id}["{stage.get("name", stage.get("id", ""))}"]')
-        for index in range(len(stages) - 1):
-            current = stages[index]
-            nxt = stages[index + 1]
-            if not isinstance(current, dict) or not isinstance(nxt, dict):
-                continue
-            current_id = str(current.get("id", "stage")).replace("-", "_")
-            next_id = str(nxt.get("id", "stage")).replace("-", "_")
-            lines.append(f"  {current_id} --> {next_id}")
-    write_lines(path, lines)
-
-
-def _write_state_machine(path: Path, flows: list[dict[str, object]]) -> None:
-    lines = ["stateDiagram-v2"]
-    if flows:
-        first = flows[0]
-        if isinstance(first, dict):
-            stages = first.get("stages", [])
-            if isinstance(stages, list) and stages:
-                first_stage = stages[0]
-                if isinstance(first_stage, dict):
-                    lines.append(f"  [*] --> {str(first_stage.get('id', 'stage')).replace('-', '_')}")
-                for stage in stages:
-                    if not isinstance(stage, dict):
-                        continue
-                    stage_id = str(stage.get("id", "stage")).replace("-", "_")
-                    lines.append(f"  {stage_id} : {stage.get('name', stage.get('id', ''))}")
-                for index in range(len(stages) - 1):
-                    current = stages[index]
-                    nxt = stages[index + 1]
-                    if not isinstance(current, dict) or not isinstance(nxt, dict):
-                        continue
-                    current_id = str(current.get("id", "stage")).replace("-", "_")
-                    next_id = str(nxt.get("id", "stage")).replace("-", "_")
-                    lines.append(f"  {current_id} --> {next_id}")
-                last_stage = stages[-1]
-                if isinstance(last_stage, dict):
-                    lines.append(f"  {str(last_stage.get('id', 'stage')).replace('-', '_')} --> [*]")
-    write_lines(path, lines)
-
-
 def run_phase3_lifecycle(config: Phase3RunConfig) -> dict[str, object]:
     context = _load_object(config.context_path)
     config.output_dir.mkdir(parents=True, exist_ok=True)
@@ -178,138 +125,15 @@ def run_phase3_lifecycle(config: Phase3RunConfig) -> dict[str, object]:
         )
     )
 
-    llm_response_path = config.output_dir / "llm-response.json"
-    llm_response_path.write_text(
-        json.dumps(response, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
     print("LLM response saved.")
     print("Generating Phase 3 outputs...")
-
-    flows = [item for item in response.get("lifecycle_flows", []) if isinstance(item, dict)]
-    samples = [item for item in response.get("thread_stage_samples", []) if isinstance(item, dict)]
-    phase4_recommendations = [
-        item for item in response.get("phase4_recommendations", []) if isinstance(item, str)
-    ]
-    policy_suggestions = [item for item in response.get("policy_suggestions", []) if isinstance(item, str)]
-
-    lifecycle_lines = [
-        f'generated_at: "{generated_at()}"',
-        'method: "llm"',
-        f'model: "{model_name}"',
-        "",
-        "lifecycle_flows:",
-    ]
-    for flow in flows:
-        lifecycle_lines.extend(
-            [
-                "",
-                f"  - id: {flow.get('id', 'LF?')}",
-                f"    name: {yaml_string(flow.get('name', ''))}",
-                f"    description: {yaml_string(flow.get('description', ''))}",
-                "    evidence_threads:",
-            ]
-        )
-        evidence_threads = flow.get("evidence_threads", [])
-        if isinstance(evidence_threads, list):
-            for entry in evidence_threads:
-                lifecycle_lines.append(f"      - {yaml_string(entry)}")
-        lifecycle_lines.append("    stages:")
-        stages = flow.get("stages", [])
-        if isinstance(stages, list):
-            for stage in stages:
-                if not isinstance(stage, dict):
-                    continue
-                lifecycle_lines.extend(
-                    [
-                        f"      - id: {stage.get('id', 'stage')}",
-                        f"        name: {yaml_string(stage.get('name', ''))}",
-                        f"        entry_signal: {yaml_string(stage.get('entry_signal', ''))}",
-                        f"        exit_signal: {yaml_string(stage.get('exit_signal', ''))}",
-                        f"        owner_guess: {yaml_string(stage.get('owner_guess', ''))}",
-                        f"        waiting_on: {yaml_string(stage.get('waiting_on', ''))}",
-                        f"        due_hint: {yaml_string(stage.get('due_hint', ''))}",
-                        f"        risk_signal: {yaml_string(stage.get('risk_signal', ''))}",
-                        f"        ai_action: {yaml_string(stage.get('ai_action', ''))}",
-                    ]
-                )
-    write_lines(config.output_dir / "lifecycle-model.yaml", lifecycle_lines)
-    (config.output_dir / "thread-stage-samples.json").write_text(
-        json.dumps({"samples": samples}, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
+    render_phase3_outputs(
+        output_dir=config.output_dir,
+        doc_dir=config.doc_dir,
+        diagram_dir=config.diagram_dir,
+        response=response,
+        model_name=model_name,
     )
-    _write_lifecycle_overview(config.diagram_dir / "phase-3-lifecycle-overview.mmd", flows)
-    _write_state_machine(config.diagram_dir / "phase-3-thread-state-machine.mmd", flows)
-
-    report_lines = [
-        "# Phase 3 Report: Lifecycle Modeling",
-        "",
-        "## Method",
-        f"- Inference engine: LLM ({model_name})",
-        "- Input: Phase 1 census + Phase 2 persona + 20 top threads with body excerpts",
-        "",
-        "## Lifecycle Flows",
-        "",
-    ]
-    for flow in flows:
-        report_lines.extend(
-            [
-                f"### {flow.get('id', 'LF?')}: {flow.get('name', '')}",
-                "",
-                str(flow.get("description", "")),
-                "",
-                "Evidence threads: " + ", ".join(str(item) for item in flow.get("evidence_threads", [])),
-                "",
-                "| Stage | Name | Entry Signal | Risk Signal | AI Action |",
-                "|-------|------|-------------|-------------|-----------|",
-            ]
-        )
-        stages = flow.get("stages", [])
-        if isinstance(stages, list):
-            for stage in stages:
-                if not isinstance(stage, dict):
-                    continue
-                report_lines.append(
-                    "| "
-                    + f"{stage.get('id', '')} | {stage.get('name', '')} | "
-                    + f"{str(stage.get('entry_signal', ''))[:40]} | "
-                    + f"{str(stage.get('risk_signal', ''))[:30]} | "
-                    + f"{stage.get('ai_action', '')} |"
-                )
-        report_lines.append("")
-
-    report_lines.extend(
-        [
-            "## Thread Stage Samples",
-            "",
-            "| Thread | Flow | Stage | Confidence | Evidence |",
-            "|--------|------|-------|------------|----------|",
-        ]
-    )
-    for sample in samples[:15]:
-        report_lines.append(
-            "| "
-            + f"{str(sample.get('thread_key', ''))[:30]} | {sample.get('flow', '')} | "
-            + f"{sample.get('inferred_stage', '')} | {sample.get('confidence', 0)} | "
-            + f"{str(sample.get('evidence', ''))[:40]} |"
-        )
-    report_lines.extend(["", "## Phase 4 Recommendations", ""])
-    for recommendation in phase4_recommendations:
-        report_lines.append(f"- {recommendation}")
-    report_lines.extend(["", "## Policy Suggestions", ""])
-    for suggestion in policy_suggestions:
-        report_lines.append(f"- {suggestion}")
-    report_lines.extend(
-        [
-            "",
-            "## Outputs",
-            "- runtime/validation/phase-3/lifecycle-model.yaml",
-            "- runtime/validation/phase-3/thread-stage-samples.json",
-            "- docs/validation/diagrams/phase-3-lifecycle-overview.mmd",
-            "- docs/validation/diagrams/phase-3-thread-state-machine.mmd",
-        ]
-    )
-    write_lines(config.doc_dir / "phase-3-report.md", report_lines)
     print("Phase 3 outputs generated.")
     print("")
     print("Phase 3 thinking complete.")

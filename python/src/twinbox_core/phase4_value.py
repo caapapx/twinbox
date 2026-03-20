@@ -8,8 +8,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from twinbox_core.artifacts import generated_at, write_lines, yaml_string
 from twinbox_core.llm import LLMError, call_llm, clean_json_text, resolve_backend
+from twinbox_core.renderer import render_phase4_outputs
 
 
 FULL_PROMPT = """You are an enterprise email assistant producing daily actionable outputs for a mailbox owner. Based on the thread data, lifecycle model, and persona below, generate value outputs.
@@ -174,174 +174,6 @@ def _resolve_model(env_file: Path | None, model_override: str | None) -> str:
         return "unknown"
 
 
-def _yaml_header(method: str, model_name: str) -> list[str]:
-    return [f'generated_at: "{generated_at()}"', f'method: "{method}"', f'model: "{model_name}"']
-
-
-def _render_phase4_outputs(
-    *,
-    output_dir: Path,
-    doc_dir: Path,
-    response: dict[str, object],
-    method: str,
-    model_name: str,
-) -> None:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    doc_dir.mkdir(parents=True, exist_ok=True)
-
-    urgent = [item for item in response.get("daily_urgent", []) if isinstance(item, dict)]
-    pending = [item for item in response.get("pending_replies", []) if isinstance(item, dict)]
-    risks = [item for item in response.get("sla_risks", []) if isinstance(item, dict)]
-    weekly_brief = response.get("weekly_brief", {})
-    if not isinstance(weekly_brief, dict):
-        weekly_brief = {}
-
-    llm_response_path = output_dir / "llm-response.json"
-    llm_response_path.write_text(
-        json.dumps(
-            {
-                "daily_urgent": urgent,
-                "pending_replies": pending,
-                "sla_risks": risks,
-                "weekly_brief": weekly_brief,
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
-    urgent_lines = _yaml_header(method, model_name) + ["daily_urgent:"]
-    for item in urgent:
-        urgent_lines.extend(
-            [
-                f"  - thread_key: {yaml_string(item.get('thread_key', ''))}",
-                f"    flow: {item.get('flow', 'UNMODELED')}",
-                f"    stage: {item.get('stage', 'unknown')}",
-                f"    urgency_score: {item.get('urgency_score', 0)}",
-                f"    why: {yaml_string(item.get('why', ''))}",
-                f"    action_hint: {yaml_string(item.get('action_hint', ''))}",
-                f"    owner: {yaml_string(item.get('owner', ''))}",
-                f"    waiting_on: {yaml_string(item.get('waiting_on', ''))}",
-                f"    evidence_source: {item.get('evidence_source', 'mail_evidence')}",
-            ]
-        )
-    write_lines(output_dir / "daily-urgent.yaml", urgent_lines)
-
-    pending_lines = _yaml_header(method, model_name) + ["pending_replies:"]
-    for item in pending:
-        pending_lines.extend(
-            [
-                f"  - thread_key: {yaml_string(item.get('thread_key', ''))}",
-                f"    flow: {item.get('flow', 'UNMODELED')}",
-                f"    waiting_on_me: {'true' if item.get('waiting_on_me') else 'false'}",
-                f"    why: {yaml_string(item.get('why', ''))}",
-                f"    suggested_action: {yaml_string(item.get('suggested_action', ''))}",
-                f"    evidence_source: {item.get('evidence_source', 'mail_evidence')}",
-            ]
-        )
-    write_lines(output_dir / "pending-replies.yaml", pending_lines)
-
-    risk_lines = _yaml_header(method, model_name) + ["sla_risks:"]
-    for item in risks:
-        risk_lines.extend(
-            [
-                f"  - thread_key: {yaml_string(item.get('thread_key', ''))}",
-                f"    flow: {item.get('flow', 'UNMODELED')}",
-                f"    risk_type: {item.get('risk_type', 'unknown')}",
-                f"    risk_description: {yaml_string(item.get('risk_description', ''))}",
-                f"    days_since_last_activity: {item.get('days_since_last_activity', 0)}",
-                f"    suggested_action: {yaml_string(item.get('suggested_action', ''))}",
-            ]
-        )
-    write_lines(output_dir / "sla-risks.yaml", risk_lines)
-
-    brief_lines = [
-        "# Weekly Brief",
-        "",
-        f"Generated: {generated_at()}",
-        f"Model: {model_name}",
-        f"Period: {weekly_brief.get('period', 'N/A')}",
-        "",
-        "## Overview",
-        "",
-        f"Total threads in window: {weekly_brief.get('total_threads_in_window', 0)}",
-        "",
-    ]
-    flow_summary = weekly_brief.get("flow_summary", [])
-    if isinstance(flow_summary, list) and flow_summary:
-        brief_lines.extend(
-            [
-                "## Flow Summary",
-                "",
-                "| Flow | Name | Count | Highlight |",
-                "|------|------|-------|-----------|",
-            ]
-        )
-        for item in flow_summary:
-            if not isinstance(item, dict):
-                continue
-            brief_lines.append(
-                f"| {item.get('flow', '')} | {item.get('name', '')} | {item.get('count', 0)} | {item.get('highlight', '')} |"
-            )
-        brief_lines.append("")
-    top_actions = weekly_brief.get("top_actions", [])
-    if isinstance(top_actions, list) and top_actions:
-        brief_lines.extend(["## Top Actions", ""])
-        for action in top_actions:
-            brief_lines.append(f"- {action}")
-        brief_lines.append("")
-    rhythm = weekly_brief.get("rhythm_observation")
-    if rhythm:
-        brief_lines.extend(["## Rhythm Observation", "", str(rhythm), ""])
-    write_lines(output_dir / "weekly-brief.md", brief_lines)
-
-    report_lines = [
-        f"# Phase 4 Report{' (Parallel Mode)' if method == 'llm-parallel' else ': Daily Value Outputs'}",
-        "",
-        "## Method",
-        (
-            "- 3 parallel LLM calls: urgent+pending, sla-risks, weekly-brief"
-            if method == "llm-parallel"
-            else f"- Inference engine: LLM ({model_name})"
-        ),
-        (
-            f"- Model: {model_name}"
-            if method == "llm-parallel"
-            else "- Input: Phase 1 envelopes + Phase 3 lifecycle model + recent thread bodies"
-        ),
-        "",
-        f"## Daily Urgent ({len(urgent)} items)",
-        "",
-        "| Thread | Flow | Urgency | Action |",
-        "|--------|------|---------|--------|",
-    ]
-    for item in urgent[:10]:
-        report_lines.append(
-            f"| {str(item.get('thread_key', ''))[:30]} | {item.get('flow', '')} | {item.get('urgency_score', 0)} | {str(item.get('action_hint', ''))[:40]} |"
-        )
-    report_lines.extend(["", f"## Pending Replies ({len(pending)} items)", ""])
-    for item in pending[:5]:
-        report_lines.append(f"- {str(item.get('thread_key', ''))[:40]}: {item.get('why', '')}")
-    report_lines.extend(["", f"## SLA Risks ({len(risks)} items)", ""])
-    for item in risks[:5]:
-        report_lines.append(
-            f"- [{item.get('risk_type', '')}] {str(item.get('thread_key', ''))[:30]}: {item.get('risk_description', '')}"
-        )
-    report_lines.extend(
-        [
-            "",
-            "## Outputs",
-            "- runtime/validation/phase-4/daily-urgent.yaml",
-            "- runtime/validation/phase-4/pending-replies.yaml",
-            "- runtime/validation/phase-4/sla-risks.yaml",
-            "- runtime/validation/phase-4/weekly-brief.md",
-        ]
-    )
-    write_lines(doc_dir / "phase-4-report.md", report_lines)
-
-
 def _call_with_prompt(
     *,
     prompt_prefix: str,
@@ -381,7 +213,7 @@ def run_single(config: Phase4RunConfig) -> dict[str, object]:
     )
     print("LLM response saved.")
     print("Generating Phase 4 outputs...")
-    _render_phase4_outputs(
+    render_phase4_outputs(
         output_dir=config.output_dir,
         doc_dir=config.doc_dir,
         response=response,
@@ -469,7 +301,7 @@ def merge_phase4_outputs(
         "sla_risks": loaded["sla-risks-raw.json"].get("sla_risks", []),
         "weekly_brief": loaded["weekly-brief-raw.json"].get("weekly_brief", {}),
     }
-    _render_phase4_outputs(
+    render_phase4_outputs(
         output_dir=output_dir,
         doc_dir=doc_dir,
         response=merged,
