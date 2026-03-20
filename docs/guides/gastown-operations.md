@@ -245,17 +245,27 @@ tmux ls
 
 ---
 
-## 七、Fallback 编排（不依赖 gastown）
+## 七、本地 CLI / Fallback 编排（不依赖 gastown）
 
-纯 bash 串行执行，不需要 town/rig/daemon：
+优先使用共享编排 CLI；`run_pipeline.sh` 只是向后兼容 wrapper。
 
 ```bash
 cd /path/to/twinbox
 
+# 查看共享 contract
+bash scripts/twinbox_orchestrate.sh contract --format json
+
 # 全流程
-bash scripts/run_pipeline.sh
+bash scripts/twinbox_orchestrate.sh run
 
 # 单 Phase
+bash scripts/twinbox_orchestrate.sh run --phase 2
+
+# Dry-run
+bash scripts/twinbox_orchestrate.sh run --dry-run
+
+# 向后兼容 wrapper
+bash scripts/run_pipeline.sh
 bash scripts/run_pipeline.sh --phase 2
 
 # Phase 4 统一入口
@@ -264,14 +274,49 @@ bash scripts/phase4_gastown.sh think-urgent
 bash scripts/phase4_gastown.sh think-sla
 bash scripts/phase4_gastown.sh think-brief
 bash scripts/phase4_gastown.sh merge
-
-# Dry-run
-bash scripts/run_pipeline.sh --dry-run
 ```
 
 ---
 
-## 八、清理与重置
+## 八、最小测试矩阵
+
+```bash
+cd /path/to/twinbox
+
+# 0. 邮箱 preflight（只读）
+bash scripts/preflight_mailbox_smoke.sh --headless
+
+# 1. 编排 contract / dry-run
+bash scripts/twinbox_orchestrate.sh contract --format json
+bash scripts/twinbox_orchestrate.sh run --dry-run
+
+# 2. Python core 回归
+PYTHONPATH=python/src python3 -m unittest discover -s python/tests -v
+
+# 3. 轻量 smoke
+python3 -m compileall python/src
+bash -n scripts/twinbox_orchestrate.sh scripts/run_pipeline.sh scripts/phase4_gastown.sh
+
+# 4. Phase 4 分步验证
+bash scripts/phase4_gastown.sh loading
+bash scripts/phase4_gastown.sh think-urgent
+bash scripts/phase4_gastown.sh think-sla
+bash scripts/phase4_gastown.sh think-brief
+bash scripts/phase4_gastown.sh merge
+
+# 5. Gastown worker 链路
+gt sling twinbox-phase1 twinbox --create
+```
+
+建议顺序：
+
+1. 先做 preflight 和 dry-run，确认环境、路径和 contract 没问题。
+2. 再做 unit tests 和 compileall，确认共享 core 没回归。
+3. 最后按需要选择本地全流程、Phase 4 分步，或 Gastown worker 链路。
+
+---
+
+## 九、清理与重置
 
 ```bash
 # 停止 daemon

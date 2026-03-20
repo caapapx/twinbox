@@ -110,6 +110,24 @@ bash scripts/twinbox_orchestrate.sh run --phase 2
 bash scripts/run_pipeline.sh --phase 2
 ```
 
+### 几种常用运行/测试方式
+
+如果你只是想先选一条能直接执行的路径，按下面这张表挑就够了。
+
+| 目标 | 推荐命令 | 说明 |
+|------|----------|------|
+| 先验证邮箱连通性 | `bash scripts/preflight_mailbox_smoke.sh --headless` | 只做环境检查、配置渲染和只读拉取，适合进入 Phase 1 前的 preflight |
+| 看整条 pipeline 会跑什么 | `bash scripts/twinbox_orchestrate.sh run --dry-run` | 不执行真实 phase，只打印 Phase 1-4 的执行顺序 |
+| 本地跑完整流程 | `bash scripts/twinbox_orchestrate.sh run` | 共享编排 CLI，默认 Phase 4 走并行 thinking |
+| 本地只跑单个 Phase | `bash scripts/twinbox_orchestrate.sh run --phase 2` | 适合局部调试、单阶段重跑 |
+| 查看编排 contract | `bash scripts/twinbox_orchestrate.sh contract --format json` | 适合 operator、skill 或脚本读取 phase 依赖与入口 |
+| 手动验证 Phase 4 fan-out / merge | `bash scripts/phase4_gastown.sh loading`，再依次运行 `think-urgent` / `think-sla` / `think-brief` / `merge` | 适合排查 Phase 4 的并行子任务 |
+| 通过 Gastown 分发执行 | `gt sling twinbox-phase1 twinbox --create` | 验证 polecat / refinery / witness 链路 |
+| 跑 Python 单测 | `PYTHONPATH=python/src python3 -m unittest discover -s python/tests -v` | 覆盖 contract、paths、LLM、renderer 和 phase core |
+| 跑轻量 smoke | `python3 -m compileall python/src` 和 `bash -n scripts/twinbox_orchestrate.sh scripts/run_pipeline.sh scripts/phase4_gastown.sh` | 适合提交前做快速语法检查 |
+
+更细的 Gastown / fallback 命令清单见 [gastown-operations.md](docs/guides/gastown-operations.md)。
+
 ### Gastown 在哪里起作用
 
 Gastown 是这条流水线外侧的编排 adapter。它不决定邮件语义本身，而是围绕共享 orchestration contract 去打包、分发、监控和合并。

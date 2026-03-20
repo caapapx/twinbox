@@ -110,6 +110,24 @@ bash scripts/twinbox_orchestrate.sh run --phase 2
 bash scripts/run_pipeline.sh --phase 2
 ```
 
+### Common Run/Test Paths
+
+If you just want one concrete path to start with, pick from this table instead of scanning every script first.
+
+| Goal | Recommended command | What it gives you |
+|------|---------------------|-------------------|
+| Validate mailbox access first | `bash scripts/preflight_mailbox_smoke.sh --headless` | Environment checks, config render, and read-only fetch before Phase 1 |
+| See the full pipeline shape | `bash scripts/twinbox_orchestrate.sh run --dry-run` | Prints the Phase 1-4 execution plan without running it |
+| Run the full pipeline locally | `bash scripts/twinbox_orchestrate.sh run` | Shared orchestration CLI; Phase 4 uses parallel thinking by default |
+| Re-run one phase locally | `bash scripts/twinbox_orchestrate.sh run --phase 2` | Useful for focused debugging or partial reruns |
+| Inspect the orchestration contract | `bash scripts/twinbox_orchestrate.sh contract --format json` | Machine-readable phase dependencies and entrypoints for operators or skills |
+| Manually test Phase 4 fan-out / merge | `bash scripts/phase4_gastown.sh loading`, then `think-urgent` / `think-sla` / `think-brief` / `merge` | Stepwise debugging for the parallel Phase 4 path |
+| Dispatch through Gastown | `gt sling twinbox-phase1 twinbox --create` | End-to-end worker / refinery / witness verification |
+| Run Python unit tests | `PYTHONPATH=python/src python3 -m unittest discover -s python/tests -v` | Regression coverage for contracts, phase cores, paths, and rendering |
+| Run lightweight smoke checks | `python3 -m compileall python/src` and `bash -n scripts/twinbox_orchestrate.sh scripts/run_pipeline.sh scripts/phase4_gastown.sh` | Fast syntax and import checks before a commit |
+
+For the fuller Gastown and fallback command list, see [gastown-operations.md](docs/guides/gastown-operations.md).
+
 ### Where Gastown Fits
 
 Gastown is an orchestration adapter around the pipeline. It does not define mailbox semantics; it packages, dispatches, monitors, and merges phase work around the shared orchestration contract.
