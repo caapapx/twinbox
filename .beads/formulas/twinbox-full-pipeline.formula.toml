@@ -9,7 +9,7 @@ twinbox 全流程 pipeline 执行单。
 
 注意：Phase 间有数据依赖（Phase 2 依赖 Phase 1 产出，Phase 3 依赖 1+2，Phase 4 依赖 1+2+3），
 当前以 convoy 声明并发意图，实际执行时 synthesis 负责校验依赖完整性。
-对于严格顺序执行，使用 scripts/run_pipeline.sh fallback。
+对于严格顺序执行，使用 scripts/twinbox_orchestrate.sh（稳定 CLI 入口）。
 
 执行前提：源码仓库的 `master` 必须已经 `git push origin master`。
 每个 leg 开始前仍需把当前 worktree 同步到最新 `origin/master`，避免复用旧 worktree。
