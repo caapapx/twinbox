@@ -2,26 +2,8 @@
 # llm_common.sh — 公共 LLM 调用函数，供所有 thinking 脚本 source
 # 用法: source scripts/llm_common.sh
 
-_twinbox_python() {
-  local code_root script_dir repo_root python_src
-
-  if [[ -n "${TWINBOX_CODE_ROOT:-}" ]]; then
-    code_root="${TWINBOX_CODE_ROOT}"
-  else
-    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-    repo_root="$(cd "${script_dir}/.." && pwd -P)"
-    code_root="${repo_root}"
-  fi
-
-  python_src="${code_root}/python/src"
-
-  if ! command -v python3 >/dev/null 2>&1; then
-    echo "python3 is required for twinbox LLM helpers" >&2
-    return 1
-  fi
-
-  PYTHONPATH="${python_src}${PYTHONPATH:+:${PYTHONPATH}}" python3 "$@"
-}
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+source "${SCRIPT_DIR}/python_common.sh"
 
 init_llm_backend() {
   local env_file="${1:-.env}"
