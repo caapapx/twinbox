@@ -97,16 +97,22 @@ flowchart LR
 # 单 Phase 执行
 bash scripts/phase1_loading.sh && bash scripts/phase1_thinking.sh
 
-# 全流程串行 fallback
-bash scripts/run_pipeline.sh
+# 共享编排 CLI
+bash scripts/twinbox_orchestrate.sh run
 
-# 单跑某个 Phase
+# 查看可被 skill / adapter 消费的 contract
+bash scripts/twinbox_orchestrate.sh contract --format json
+
+# 通过编排 CLI 单跑某个 Phase
+bash scripts/twinbox_orchestrate.sh run --phase 2
+
+# 向后兼容 wrapper
 bash scripts/run_pipeline.sh --phase 2
 ```
 
 ### Gastown 在哪里起作用
 
-Gastown 是这条流水线外侧的编排层。它不决定邮件语义本身，而是负责把 phase 打包、分发、监控和合并。
+Gastown 是这条流水线外侧的编排 adapter。它不决定邮件语义本身，而是围绕共享 orchestration contract 去打包、分发、监控和合并。
 
 ```mermaid
 flowchart LR
@@ -134,6 +140,7 @@ flowchart LR
 - Phase 依赖仍然是顺序的：`1 -> 2 -> 3 -> 4`
 - 并发主要发生在阶段内部，而不是依赖链之间
 - `Phase 4` 是最典型的例子：`urgent/pending`、`sla-risks`、`weekly-brief` 可以并行跑，最后再 merge
+- 对本地执行或未来 skill 化来说，稳定真相源是 `scripts/twinbox_orchestrate.sh`，不是 formula 文件本身
 
 ### 共享状态根目录
 
@@ -158,7 +165,8 @@ bash scripts/phase4_gastown.sh roots
 2. 用 `bash scripts/phase4_gastown.sh roots` 验证解析结果。
 3. 在 `gt sling` 前先把 `master` 推到远端，确保 polecat worktree 能看到最新脚本和 formula。
 4. 任意 Phase 都继续走原有脚本入口，但 Phase 1-4 现在都会解析同一份 canonical state root。
-5. 需要 fan-out / merge 编排时，再通过 `bash scripts/phase4_gastown.sh <step>` 或对应的 `twinbox-phase4-*` formula 运行 Phase 4。
+5. 当 skill 或 operator 需要显式读取 pipeline contract 时，用 `bash scripts/twinbox_orchestrate.sh contract --format json`。
+6. 需要 fan-out / merge 编排时，再通过 `bash scripts/phase4_gastown.sh <step>` 或对应的 `twinbox-phase4-*` formula 运行 Phase 4。
 
 ```bash
 # 先把本地 master 推到 origin，确保 polecat worktree 能看到最新脚本
@@ -169,7 +177,11 @@ git push origin master
 # 通过 gastown 分发单个 phase
 gt sling twinbox-phase1 twinbox --create
 
-# 查看 formula，或直接跑本地串行 fallback
+# 查看共享 orchestration contract，或直接跑本地 CLI
+bash scripts/twinbox_orchestrate.sh contract
+bash scripts/twinbox_orchestrate.sh run
+
+# 查看 formula，或直接跑兼容 wrapper
 gt formula show twinbox-phase4
 bash scripts/run_pipeline.sh
 ```
@@ -180,7 +192,7 @@ bash scripts/run_pipeline.sh
 后续补充项通过 `bd` 跟踪，不再追加 markdown TODO：
 
 - `twinbox-d9j`：把完整的 Phase 4 fan-out / merge 固化成一条可复现的 Gastown 入口
-- `twinbox-04o`：把 shared canonical-root 模式扩展到 Phase 4 之外的上游阶段
+- `twinbox-5zk`：把 Gastown formula 和后续 skill adapter 继续收敛到共享 orchestration contract
 
 尚未实现：
 
@@ -278,7 +290,8 @@ twinbox/
 │   ├── phase{1-4}_thinking.sh      # LLM 推断
 │   ├── phase4_gastown.sh           # Phase 4 统一 gastown 入口
 │   ├── register_canonical_root.sh  # 给 worktree 注册共享状态根目录
-│   ├── run_pipeline.sh             # fallback 串行编排
+│   ├── twinbox_orchestrate.sh      # 共享编排 CLI
+│   ├── run_pipeline.sh             # 向后兼容 wrapper
 │   └── twinbox_paths.sh            # 统一解析 code root / state root
 └── runtime/
 ```

@@ -97,16 +97,22 @@ Each phase still follows the same internal split:
 # Single phase
 bash scripts/phase1_loading.sh && bash scripts/phase1_thinking.sh
 
-# Full pipeline (strict serial fallback)
-bash scripts/run_pipeline.sh
+# Shared orchestration CLI
+bash scripts/twinbox_orchestrate.sh run
 
-# Single phase via pipeline
+# Inspect the contract a skill or adapter can consume
+bash scripts/twinbox_orchestrate.sh contract --format json
+
+# Single phase via orchestration CLI
+bash scripts/twinbox_orchestrate.sh run --phase 2
+
+# Backward-compatible wrapper
 bash scripts/run_pipeline.sh --phase 2
 ```
 
 ### Where Gastown Fits
 
-Gastown is the orchestration layer around the pipeline. It does not define mailbox semantics; it packages, dispatches, monitors, and merges phase work.
+Gastown is an orchestration adapter around the pipeline. It does not define mailbox semantics; it packages, dispatches, monitors, and merges phase work around the shared orchestration contract.
 
 ```mermaid
 flowchart LR
@@ -134,6 +140,7 @@ Current execution model:
 - Phase dependencies stay sequential: `1 -> 2 -> 3 -> 4`
 - Parallelism mostly lives inside a phase, not across dependent phases
 - Phase 4 is the clearest example: `urgent/pending`, `sla-risks`, and `weekly-brief` can run in parallel and merge at the end
+- The stable source of truth for local or future skill-driven execution is `scripts/twinbox_orchestrate.sh`, not the formula files
 
 ### Shared State Root
 
@@ -158,7 +165,8 @@ bash scripts/phase4_gastown.sh roots
 2. Verify the resolved roots with `bash scripts/phase4_gastown.sh roots`.
 3. Push `master` before `gt sling` so polecat worktrees see the latest scripts and formulas.
 4. Run any phase through its normal script entrypoint; all Phase 1-4 scripts now resolve the same canonical state root.
-5. Run Phase 4 through `bash scripts/phase4_gastown.sh <step>` or the corresponding `twinbox-phase4-*` formulas when you need fan-out / merge orchestration.
+5. Use `bash scripts/twinbox_orchestrate.sh contract --format json` when a skill or operator needs the explicit pipeline contract.
+6. Run Phase 4 through `bash scripts/phase4_gastown.sh <step>` or the corresponding `twinbox-phase4-*` formulas when you need fan-out / merge orchestration.
 
 ```bash
 # Push local master before slinging so polecat worktrees see the latest scripts
@@ -169,7 +177,11 @@ git push origin master
 # Sling a single phase to gastown
 gt sling twinbox-phase1 twinbox --create
 
-# Inspect the formula or run the serial fallback locally
+# Inspect the shared orchestration contract or run the local CLI
+bash scripts/twinbox_orchestrate.sh contract
+bash scripts/twinbox_orchestrate.sh run
+
+# Inspect the formula or run the backward-compatible wrapper
 gt formula show twinbox-phase4
 bash scripts/run_pipeline.sh
 ```
@@ -180,7 +192,7 @@ For the next-step implementation/runtime refactor direction, see [Implementation
 Follow-up work is tracked in `bd`, not markdown TODOs:
 
 - `twinbox-d9j`: formalize the full Phase 4 fan-out / merge flow as one reproducible Gastown entrypoint
-- `twinbox-04o`: extend the shared canonical-root pattern beyond Phase 4
+- `twinbox-5zk`: converge Gastown formulas and future skill adapters onto the shared orchestration contract
 
 Not implemented yet:
 
@@ -278,7 +290,8 @@ twinbox/
 │   ├── phase{1-4}_thinking.sh      # LLM inference
 │   ├── phase4_gastown.sh           # unified Phase 4 gastown entrypoint
 │   ├── register_canonical_root.sh  # register shared state root for worktrees
-│   ├── run_pipeline.sh             # fallback serial orchestration
+│   ├── twinbox_orchestrate.sh      # shared orchestration CLI
+│   ├── run_pipeline.sh             # backward-compatible wrapper
 │   └── twinbox_paths.sh            # shared code-root/state-root resolution
 └── runtime/
 ```
