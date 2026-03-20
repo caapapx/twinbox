@@ -21,7 +21,7 @@ INTENT_CLASSIFICATION="${PHASE1_DIR}/intent-classification.json"
 # Human context files (optional — skip gracefully if missing)
 MANUAL_FACTS="${ROOT_DIR}/runtime/context/manual-facts.yaml"
 MANUAL_HABITS="${ROOT_DIR}/runtime/context/manual-habits.yaml"
-CALIBRATION="${ROOT_DIR}/docs/validation/instance-calibration-notes.md"
+CALIBRATION="${ROOT_DIR}/runtime/context/instance-calibration-notes.md"
 
 mkdir -p "${PHASE2_DIR}" "${DOC_DIR}" "${DIAGRAM_DIR}"
 

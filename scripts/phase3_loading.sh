@@ -21,7 +21,7 @@ BUSINESS="${PHASE2_DIR}/business-hypotheses.yaml"
 
 MANUAL_FACTS="${ROOT_DIR}/runtime/context/manual-facts.yaml"
 MANUAL_HABITS="${ROOT_DIR}/runtime/context/manual-habits.yaml"
-CALIBRATION="${ROOT_DIR}/docs/validation/instance-calibration-notes.md"
+CALIBRATION="${ROOT_DIR}/runtime/context/instance-calibration-notes.md"
 
 mkdir -p "${PHASE3_DIR}" "${DOC_DIR}" "${DIAGRAM_DIR}"
 
@@ -275,7 +275,7 @@ const context = {
 
 fs.writeFileSync(phase3Dir + '/context-pack.json', JSON.stringify(context, null, 2));
 console.log('Context pack: ' + threadSummaries.length + ' top threads, ' + census.scope.total_envelopes + ' total envelopes');
-console.log('  human_context: facts=' + (hasFacts ? 'yes' : 'no') + ' habits=' + (hasHabits ? 'yes' : 'no'));
+console.log('  human_context: facts=' + (hasFacts ? 'yes' : 'no') + ' habits=' + (hasHabits ? 'yes' : 'no') + ' calibration=' + (calibrationRaw.length > 50 ? 'yes' : 'no'));
 console.log('  -> ' + phase3Dir + '/context-pack.json');
 NODE
 

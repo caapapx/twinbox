@@ -24,7 +24,7 @@ PERSONA="${STATE_ROOT}/runtime/validation/phase-2/persona-hypotheses.yaml"
 
 MANUAL_FACTS="${STATE_ROOT}/runtime/context/manual-facts.yaml"
 MANUAL_HABITS="${STATE_ROOT}/runtime/context/manual-habits.yaml"
-CALIBRATION="${STATE_ROOT}/docs/validation/instance-calibration-notes.md"
+CALIBRATION="${STATE_ROOT}/runtime/context/instance-calibration-notes.md"
 
 LOOKBACK_DAYS="${PIPELINE_LOOKBACK_DAYS:-7}"
 MAX_BODY_FETCH=24
@@ -208,7 +208,7 @@ const context = {
 fs.writeFileSync(phase4Dir + '/context-pack.json', JSON.stringify(context, null, 2));
 console.log('Context pack: ' + threadContexts.length + ' threads, ' + recent.length + ' recent envelopes');
 console.log('  bodies: ' + fetched + ' fetched live, ' + (threadContexts.filter(t => t.body_excerpt).length - fetched) + ' from cache');
-console.log('  human_context: facts=' + (hasFacts ? 'yes' : 'no') + ' habits=' + (hasHabits ? 'yes' : 'no'));
+console.log('  human_context: facts=' + (hasFacts ? 'yes' : 'no') + ' habits=' + (hasHabits ? 'yes' : 'no') + ' calibration=' + (calibrationRaw.length > 50 ? 'yes' : 'no'));
 console.log('  -> ' + phase4Dir + '/context-pack.json');
 NODE
 
