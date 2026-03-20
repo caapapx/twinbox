@@ -2,12 +2,17 @@
 # Phase 3 Thinking: LLM-based lifecycle modeling
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PHASE3_DIR="${ROOT_DIR}/runtime/validation/phase-3"
-DOC_DIR="${ROOT_DIR}/docs/validation"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+source "${SCRIPT_DIR}/twinbox_paths.sh"
+twinbox_init_roots "${BASH_SOURCE[0]}"
+
+CODE_ROOT="${TWINBOX_CODE_ROOT}"
+STATE_ROOT="${TWINBOX_CANONICAL_ROOT}"
+PHASE3_DIR="${STATE_ROOT}/runtime/validation/phase-3"
+DOC_DIR="${STATE_ROOT}/docs/validation"
 DIAGRAM_DIR="${DOC_DIR}/diagrams"
 CONTEXT_PACK="${PHASE3_DIR}/context-pack.json"
-source "${ROOT_DIR}/scripts/llm_common.sh"
+source "${CODE_ROOT}/scripts/llm_common.sh"
 
 DRY_RUN=false
 while [[ $# -gt 0 ]]; do
@@ -26,7 +31,7 @@ if [[ ! -f "${CONTEXT_PACK}" ]]; then
   exit 1
 fi
 
-init_llm_backend "${ROOT_DIR}/.env" || exit 1
+init_llm_backend "${STATE_ROOT}/.env" || exit 1
 
 CONTEXT_CONTENT=$(cat "${CONTEXT_PACK}")
 

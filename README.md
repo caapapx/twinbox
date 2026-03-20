@@ -135,29 +135,30 @@ Current execution model:
 - Parallelism mostly lives inside a phase, not across dependent phases
 - Phase 4 is the clearest example: `urgent/pending`, `sla-risks`, and `weekly-brief` can run in parallel and merge at the end
 
-### Phase 4 Shared State Root
+### Shared State Root
 
-Phase 4 now separates `code root` from `state root` so Gastown linked worktrees stop writing isolated artifacts.
+Phase 1-4 now separate `code root` from `state root` so Gastown linked worktrees stop writing isolated artifacts.
 
 - `code root`: the current checkout that provides tracked scripts and formulas
 - `state root`: the canonical checkout that provides `.env`, `runtime/context/`, `runtime/validation/`, and `docs/validation/`
 - Resolution order: `TWINBOX_CANONICAL_ROOT` -> `~/.config/twinbox/canonical-root` -> current checkout
-- Safety rule: in a linked worktree, Phase 4 fails fast if no canonical root is configured
+- Safety rule: in a linked worktree, Phase 1-4 all fail fast if no canonical root is configured
 
 ```bash
 # Register the canonical state root once from the main checkout
 bash scripts/register_canonical_root.sh
 
-# Verify what a Phase 4 worker will use
+# Verify what a worker will use
 bash scripts/phase4_gastown.sh roots
 ```
 
-### Phase 4 Checklist
+### Pipeline Checklist
 
 1. Register the canonical root from the main checkout with `bash scripts/register_canonical_root.sh`.
 2. Verify the resolved roots with `bash scripts/phase4_gastown.sh roots`.
 3. Push `master` before `gt sling` so polecat worktrees see the latest scripts and formulas.
-4. Run Phase 4 through `bash scripts/phase4_gastown.sh <step>` or the corresponding `twinbox-phase4-*` formulas.
+4. Run any phase through its normal script entrypoint; all Phase 1-4 scripts now resolve the same canonical state root.
+5. Run Phase 4 through `bash scripts/phase4_gastown.sh <step>` or the corresponding `twinbox-phase4-*` formulas when you need fan-out / merge orchestration.
 
 ```bash
 # Push local master before slinging so polecat worktrees see the latest scripts

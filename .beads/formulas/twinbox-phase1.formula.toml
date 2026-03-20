@@ -1,10 +1,16 @@
 formula = "twinbox-phase1"
 type = "workflow"
-version = 3
+version = 4
 description = """
 Phase 1: Intent 分类执行单。
 
 目标：执行既有脚本，生成 Phase 1 的 intent 分类结果，不做代码审查，不重新理解 twinbox 架构。
+
+运行时根目录规则：
+- 脚本从当前 checkout 读取代码（code root）
+- `.env`、`runtime/`、`docs/validation/` 从 canonical root 读取和写入（state root）
+- 解析顺序：`TWINBOX_CANONICAL_ROOT` -> `~/.config/twinbox/canonical-root` -> 当前 checkout（仅普通仓库）
+- linked worktree 未配置 canonical root 时，loading/thinking 都应直接失败
 
 默认执行路径：
 1. 同步当前 worktree 到最新 `origin/master`
@@ -17,7 +23,7 @@ Phase 1: Intent 分类执行单。
 - 当前 formula
 - `scripts/phase1_loading.sh`
 - `scripts/phase1_thinking.sh`
-- `runtime/context/phase1-context.json`（仅在 loading 成功后）
+- canonical root 下的 `runtime/context/phase1-context.json`（仅在 loading 成功后）
 
 不要先读 README、`docs/plans/`、`docs/reports/`、其他 phase 脚本，也不要自行设计新 taxonomy。
 只有命令失败时，才回读当前 step 指定的脚本定位问题。
@@ -62,7 +68,7 @@ bash scripts/phase1_loading.sh
 ```
 
 成功条件：
-- `runtime/context/phase1-context.json` 存在且非空
+- canonical root 下的 `runtime/context/phase1-context.json` 存在且非空
 
 失败时只检查这些位置：
 - `scripts/phase1_loading.sh`
@@ -70,6 +76,7 @@ bash scripts/phase1_loading.sh
 - `scripts/render_himalaya_config.sh`
 
 失败分流：
+- linked worktree 缺 canonical root：先在源码 checkout 执行 `bash scripts/register_canonical_root.sh`
 - 缺 `.env`、`himalaya`、账号配置或认证失败：报告环境问题并停止
 - 邮箱拉取失败：报告 mailbox I/O 问题并停止
 - 不要进入 thinking，也不要去读其他 phase 或文档
@@ -82,7 +89,7 @@ id = "thinking"
 title = "Phase 1 Thinking — Intent Classification"
 needs = ["loading"]
 description = """
-目的：读取 `runtime/context/phase1-context.json`，调用 LLM 做 batch intent 分类。
+目的：读取 canonical root 下的 `runtime/context/phase1-context.json`，调用 LLM 做 batch intent 分类。
 不要重读邮箱，也不要改动脚本里的 taxonomy/prompt。
 
 ```bash
@@ -95,7 +102,7 @@ bash scripts/phase1_thinking.sh
 
 失败时只检查：
 - `scripts/phase1_thinking.sh`
-- `runtime/context/phase1-context.json`
+- canonical root 下的 `runtime/context/phase1-context.json`
 
 失败分流：
 - context-pack 缺失：说明 loading 未完成，返回上一 step

@@ -3,25 +3,29 @@
 # Reads Phase 1/2 outputs + human context, builds context pack.
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PHASE1_DIR="${ROOT_DIR}/runtime/validation/phase-1"
-PHASE2_DIR="${ROOT_DIR}/runtime/validation/phase-2"
-PHASE3_DIR="${ROOT_DIR}/runtime/validation/phase-3"
-DOC_DIR="${ROOT_DIR}/docs/validation"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+source "${SCRIPT_DIR}/twinbox_paths.sh"
+twinbox_init_roots "${BASH_SOURCE[0]}"
+
+STATE_ROOT="${TWINBOX_CANONICAL_ROOT}"
+PHASE1_DIR="${STATE_ROOT}/runtime/validation/phase-1"
+PHASE2_DIR="${STATE_ROOT}/runtime/validation/phase-2"
+PHASE3_DIR="${STATE_ROOT}/runtime/validation/phase-3"
+DOC_DIR="${STATE_ROOT}/docs/validation"
 DIAGRAM_DIR="${DOC_DIR}/diagrams"
 
 CENSUS="${PHASE1_DIR}/mailbox-census.json"
 BODIES="${PHASE1_DIR}/raw/sample-bodies.json"
 ENVELOPES="${PHASE1_DIR}/raw/envelopes-merged.json"
 INTENT_RESULTS_DIR="${PHASE1_DIR}/intent-results"
-PHASE1_CONTEXT="${ROOT_DIR}/runtime/context/phase1-context.json"
+PHASE1_CONTEXT="${STATE_ROOT}/runtime/context/phase1-context.json"
 INTENT_CLASSIFICATION="${PHASE1_DIR}/intent-classification.json"
 PERSONA="${PHASE2_DIR}/persona-hypotheses.yaml"
 BUSINESS="${PHASE2_DIR}/business-hypotheses.yaml"
 
-MANUAL_FACTS="${ROOT_DIR}/runtime/context/manual-facts.yaml"
-MANUAL_HABITS="${ROOT_DIR}/runtime/context/manual-habits.yaml"
-CALIBRATION="${ROOT_DIR}/runtime/context/instance-calibration-notes.md"
+MANUAL_FACTS="${STATE_ROOT}/runtime/context/manual-facts.yaml"
+MANUAL_HABITS="${STATE_ROOT}/runtime/context/manual-habits.yaml"
+CALIBRATION="${STATE_ROOT}/runtime/context/instance-calibration-notes.md"
 
 mkdir -p "${PHASE3_DIR}" "${DOC_DIR}" "${DIAGRAM_DIR}"
 

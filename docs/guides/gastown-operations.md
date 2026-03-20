@@ -168,15 +168,15 @@ git push origin master
 twinbox 的 formula 现在会在执行开始时再做一次 `git fetch + ff-only/rebase`，
 用于修复“worktree 创建后仍停在旧远端 commit”的情况；但它不能替代这一步 `push`。
 
-### Phase 4 共享状态根目录（新增）
+### 共享状态根目录（新增）
 
-Phase 4 的 loading / think / merge 现在会从统一的 `canonical root` 读取：
+Phase 1-4 的脚本现在都会从统一的 `canonical root` 读取：
 - `.env`
 - `runtime/context/`
 - `runtime/validation/phase-*`
 - `docs/validation/`
 
-这样多个 polecat worktree 可以共享同一份上下文和产物，而不是各写各的隔离 worktree。
+这样多个 polecat worktree 可以共享同一份上下文和产物，而不是各写各的隔离 worktree。Phase 4 只是最明显的 fan-out 场景。
 
 在源码仓库执行一次注册：
 

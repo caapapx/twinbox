@@ -84,7 +84,7 @@ Operational rules:
 - linked worktrees must fail fast if no canonical root is configured
 - parallel workers may execute from different `code root` paths, but they must read and write the same `state root`
 - instance-local artifacts stay in the state root; they are not copied into each worker checkout
-- this pattern is especially important for Phase 4, where `loading`, `urgent/pending`, `sla-risks`, `weekly-brief`, and `merge` need to share the same context pack and raw outputs
+- this pattern applies to Phase 1-4; it is especially visible in Phase 4, where `loading`, `urgent/pending`, `sla-risks`, `weekly-brief`, and `merge` need to share the same context pack and raw outputs
 
 ## Human Context Plane
 

@@ -3,11 +3,16 @@
 # Output: runtime/context/phase1-context.json
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ENV_FILE="${ROOT_DIR}/.env"
-CONTEXT_DIR="${ROOT_DIR}/runtime/context"
-RAW_DIR="${ROOT_DIR}/runtime/context/raw"
-CONFIG_FILE="${ROOT_DIR}/runtime/himalaya/config.toml"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+source "${SCRIPT_DIR}/twinbox_paths.sh"
+twinbox_init_roots "${BASH_SOURCE[0]}"
+
+CODE_ROOT="${TWINBOX_CODE_ROOT}"
+STATE_ROOT="${TWINBOX_CANONICAL_ROOT}"
+ENV_FILE="${STATE_ROOT}/.env"
+CONTEXT_DIR="${STATE_ROOT}/runtime/context"
+RAW_DIR="${STATE_ROOT}/runtime/context/raw"
+CONFIG_FILE="${STATE_ROOT}/runtime/himalaya/config.toml"
 
 MAX_PAGES_PER_FOLDER=20
 PAGE_SIZE=50
@@ -56,12 +61,12 @@ if [[ ! -f "${ENV_FILE}" ]]; then
 fi
 set -a; source "${ENV_FILE}"; set +a
 
-bash "${ROOT_DIR}/scripts/check_env.sh"
-bash "${ROOT_DIR}/scripts/render_himalaya_config.sh"
+bash "${CODE_ROOT}/scripts/check_env.sh"
+bash "${CODE_ROOT}/scripts/render_himalaya_config.sh"
 
 if ! command -v himalaya >/dev/null 2>&1; then
-  if [[ -x "${ROOT_DIR}/runtime/bin/himalaya" ]]; then
-    HIMALAYA_BIN="${ROOT_DIR}/runtime/bin/himalaya"
+  if [[ -x "${STATE_ROOT}/runtime/bin/himalaya" ]]; then
+    HIMALAYA_BIN="${STATE_ROOT}/runtime/bin/himalaya"
   else
     echo "himalaya CLI not found"; exit 1
   fi
@@ -241,7 +246,7 @@ console.log(`Context-pack written: ${outPath}`);
 console.log(`  ${envelopes.length} envelopes, ${bodies.length} body samples`);
 NODE
 
-PHASE1_RAW_DIR="${ROOT_DIR}/runtime/validation/phase-1/raw"
+PHASE1_RAW_DIR="${STATE_ROOT}/runtime/validation/phase-1/raw"
 mkdir -p "${PHASE1_RAW_DIR}"
 cp -f "${RAW_DIR}/envelopes-merged.json" "${PHASE1_RAW_DIR}/envelopes-merged.json"
 cp -f "${RAW_DIR}/sample-bodies.json" "${PHASE1_RAW_DIR}/sample-bodies.json"

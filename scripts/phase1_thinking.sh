@@ -5,10 +5,14 @@
 #         runtime/validation/phase-1/intent-report.md
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ENV_FILE="${ROOT_DIR}/.env"
-CONTEXT_PACK="${ROOT_DIR}/runtime/context/phase1-context.json"
-OUTPUT_DIR="${ROOT_DIR}/runtime/validation/phase-1"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+source "${SCRIPT_DIR}/twinbox_paths.sh"
+twinbox_init_roots "${BASH_SOURCE[0]}"
+
+STATE_ROOT="${TWINBOX_CANONICAL_ROOT}"
+ENV_FILE="${STATE_ROOT}/.env"
+CONTEXT_PACK="${STATE_ROOT}/runtime/context/phase1-context.json"
+OUTPUT_DIR="${STATE_ROOT}/runtime/validation/phase-1"
 BATCH_SIZE=15
 MODEL="${TWINBOX_LLM_MODEL:-claude-sonnet-4-20250514}"
 

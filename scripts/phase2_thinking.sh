@@ -3,12 +3,17 @@
 # Reads Phase 1 outputs + context pack, calls LLM for real inference.
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PHASE2_DIR="${ROOT_DIR}/runtime/validation/phase-2"
-DOC_DIR="${ROOT_DIR}/docs/validation"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+source "${SCRIPT_DIR}/twinbox_paths.sh"
+twinbox_init_roots "${BASH_SOURCE[0]}"
+
+CODE_ROOT="${TWINBOX_CODE_ROOT}"
+STATE_ROOT="${TWINBOX_CANONICAL_ROOT}"
+PHASE2_DIR="${STATE_ROOT}/runtime/validation/phase-2"
+DOC_DIR="${STATE_ROOT}/docs/validation"
 DIAGRAM_DIR="${DOC_DIR}/diagrams"
 CONTEXT_PACK="${PHASE2_DIR}/context-pack.json"
-source "${ROOT_DIR}/scripts/llm_common.sh"
+source "${CODE_ROOT}/scripts/llm_common.sh"
 
 DRY_RUN=false
 usage() {
@@ -38,7 +43,7 @@ if [[ ! -f "${CONTEXT_PACK}" ]]; then
   exit 1
 fi
 
-init_llm_backend "${ROOT_DIR}/.env" || exit 1
+init_llm_backend "${STATE_ROOT}/.env" || exit 1
 
 # --- Build prompt ---
 CONTEXT_CONTENT=$(cat "${CONTEXT_PACK}")
@@ -90,7 +95,7 @@ Produce a JSON object with exactly this structure:
 
 if [[ "${DRY_RUN}" == "true" ]]; then
   echo "=== PROMPT (first 200 lines) ==="
-  echo "${PERSONA_PROMPT}" | head -200
+  printf '%s\n' "${PERSONA_PROMPT}" | sed -n '1,200p'
   echo "..."
   echo "=== DRY RUN, no LLM call ==="
   exit 0
