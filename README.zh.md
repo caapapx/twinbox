@@ -13,9 +13,9 @@
 它是一个可自托管的基础框架，用于构建具有以下特性的邮件 Copilot：
 
 - 从只读邮箱引导开始
-- 从 Thread 中重建工作流状态，而不是简单的单一消息
-- 摄取用户提供的 Context，如工作材料和习惯
-- 将邮箱状态转化为可见队列，如 `daily-urgent` 和 `pending-replies`
+- 从 Thread 中重建 workflow state，而不是简单的单一 message
+- ingest 用户提供的 context（如工作材料和习惯）
+- 将邮箱 state 投影为可见 queue（如 `daily-urgent` 和 `pending-replies`）
 - 仅逐步提升操作权限：只读 -> 草稿 -> 受控发送
 
 目前已实现：
@@ -33,12 +33,12 @@
 本项目针对一套不同的目标进行了调整：
 
 - 企业安全部署
-- 以 Thread 为中心的工作流理解
-- 人机协作决策
+- 以 Thread 为中心的 workflow 理解
+- human-in-the-loop 决策
 - OpenClaw 原生自托管和调度
 - 从一个真实邮箱逐步适配为可重用的 Agent 工作流
 
-结果应该感觉不像是"AI 读取一封邮件"，而更像是"AI 成为一个人真实工作方式的可用邮箱 Copilot"。
+结果应该感觉不像是 "AI 读取一封邮件"，而更像是 "AI 融入真实工作方式的 mailbox Copilot"。
 
 ## 当前进度
 
@@ -57,8 +57,8 @@
 
 ### 渐进式验证流水线
 
-当前仓库实现的是一个 `4` 阶段、`read-only-first` 的分析漏斗。
-每个阶段都会收窄注意力范围，并把结构化产物交给下一阶段继续处理。
+当前仓库实现的是一个 `4` 阶段、`read-only-first` 的 analysis funnel。
+每个阶段都会收窄 attention window，并把结构化 artifact 交给下一阶段继续处理。
 
 ```mermaid
 flowchart LR
@@ -81,21 +81,21 @@ flowchart LR
 
 | Phase | 核心工作 | 典型产物 | 这一阶段的意义 |
 |-------|----------|----------|----------------|
-| 1 | 在分布层面读懂邮箱 | `phase1-context.json`、`intent-classification.json`、派生普查视图 | 先建立全局基线，并尽早过滤明显噪声 |
-| 2 | 推断这个邮箱对应的人和业务 | `persona-hypotheses.yaml`、`business-hypotheses.yaml` | 用角色、业务和上下文相关性继续缩小范围 |
-| 3 | 从标签升级到 thread 级工作流状态 | `lifecycle-model.yaml`、`thread-stage-samples.json` | 理解每条线程在重复流程中的当前位置 |
-| 4 | 产出用户真正会看的价值面板 | `daily-urgent.yaml`、`pending-replies.yaml`、`sla-risks.yaml`、`weekly-brief.md` | 直接回答“今天我该看什么” |
+| 1 | 在分布层面读懂邮箱 | `phase1-context.json`、`intent-classification.json`、派生 census views | 先建立全局 baseline，并尽早过滤明显噪声 |
+| 2 | 推断这个邮箱对应的人和业务 | `persona-hypotheses.yaml`、`business-hypotheses.yaml` | 用 role、business 和 context relevance 继续缩小范围 |
+| 3 | 从标签升级到 thread 级 lifecycle state | `lifecycle-model.yaml`、`thread-stage-samples.json` | 理解每条 thread 在重复 workflow 中的当前位置 |
+| 4 | 产出用户真正会看的 value surfaces | `daily-urgent.yaml`、`pending-replies.yaml`、`sla-risks.yaml`、`weekly-brief.md` | 直接回答“今天我该看什么” |
 
-当前契约说明：
+当前 contract 说明：
 
-- 当前实现里的运行时 handoff 仍主要依赖各 phase 的结构化状态文件，而不是一条已经打通的 `attention-budget.yaml`
-- `attention-budget` 目前应视为目标收敛契约，而不是已经被脚本强制执行的运行时依赖
+- 当前实现里的 runtime handoff 仍主要依赖各 phase 的结构化 state files，而不是一条已经打通的 `attention-budget.yaml`
+- `attention-budget` 目前应视为目标收敛 contract，而不是已经被脚本强制执行的 runtime dependency
 - 详见 [Validation Artifact Contract](docs/specs/validation-artifact-contract.md)
 
 每个阶段内部仍保持同一套结构：
 
-- `Loading`：确定性 I/O、采样和 context-pack 构建
-- `Thinking`：带证据与置信度的 LLM 推断
+- `Loading`: 确定性 I/O、采样和 context-pack 构建
+- `Thinking`: 带 evidence 与 confidence 的 LLM inference
 
 ```bash
 # 单 Phase 执行
@@ -134,7 +134,7 @@ bash scripts/run_pipeline.sh --phase 2
 
 ### Gastown 在哪里起作用
 
-Gastown 是这条流水线外侧的编排 adapter。它不决定邮件语义本身，而是围绕共享 orchestration contract 去打包、分发、监控和合并。
+Gastown 是这条 pipeline 外侧的 orchestration adapter。它不决定邮件语义本身，而是围绕共享 orchestration contract 去打包、分发、监控和合并。
 
 ```mermaid
 flowchart LR
@@ -153,8 +153,8 @@ flowchart LR
 | `Formula` | 把每个 phase 封装成 `loading -> thinking` workflow，把全流程封装成 convoy |
 | `Sling` | 将某个 phase formula 分发给 worker |
 | `Polecat` | 真正执行阶段任务或子任务 |
-| `Refinery` | 串行化合并，并汇总子任务输出 |
-| `Witness` | 监控卡死或失联 worker，保证执行健康 |
+| `Refinery` | 串行 merge，并汇总子任务输出 |
+| `Witness` | 监控卡死或失联 worker，保证 execution health |
 | `Convoy` | 把多阶段流程作为一个更高层级的执行单元追踪 |
 
 当前执行模型有三个关键点：
@@ -162,16 +162,16 @@ flowchart LR
 - Phase 依赖仍然是顺序的：`1 -> 2 -> 3 -> 4`
 - 并发主要发生在阶段内部，而不是依赖链之间
 - `Phase 4` 是最典型的例子：`urgent/pending`、`sla-risks`、`weekly-brief` 可以并行跑，最后再 merge
-- 对本地执行或未来 skill 化来说，稳定真相源是 `scripts/twinbox_orchestrate.sh`，不是 formula 文件本身
+- 对本地执行或未来 skill 化来说，source of truth 是 `scripts/twinbox_orchestrate.sh`，不是 formula 文件本身
 
 ### 共享状态根目录
 
-Phase 1-4 现在都显式区分 `code root` 和 `state root`，避免 Gastown linked worktree 把产物写进各自隔离目录。
+Phase 1-4 现在都显式区分 `code root` 和 `state root`，避免 Gastown linked worktree 把 artifact 写进各自隔离目录。
 
 - `code root`：当前 checkout，提供受版本控制的脚本和 formula
 - `state root`：canonical checkout，提供 `.env`、`runtime/context/`、`runtime/validation/` 和 `docs/validation/`
 - 解析顺序：`TWINBOX_CANONICAL_ROOT` -> `~/.config/twinbox/canonical-root` -> 当前 checkout
-- 安全规则：如果在 linked worktree 里没有配置 canonical root，Phase 1-4 都会直接失败，不再静默回退
+- 安全规则：如果在 linked worktree 里没有配置 canonical root，Phase 1-4 都会直接 fail fast，不再静默回退
 
 ```bash
 # 在主 checkout 中执行一次，注册 canonical state root
@@ -227,13 +227,13 @@ bash scripts/run_pipeline.sh
 ## 关键权衡
 
 1. `Thread over Message`
-   决策基于 Thread Context、工作流阶段和证据，而不是孤立的消息快照。
+   决策基于 Thread context、workflow stage 和 evidence，而不是孤立的 message snapshot。
 2. `Value before Automation`
-   系统必须在起草之前证明只读价值，并在发送之前证明草稿价值。
+   系统必须在 drafting 之前证明 read-only value，并在 sending 之前证明 draft value。
 3. `Context is First-class`
-   用户上传的材料、反复出现的习惯和已确认的事实会被规范化，不会埋没在聊天记录中。
+   用户上传的 materials、反复出现的 habits 和已确认 facts 会被规范化，不会埋没在聊天记录中。
 4. `OpenClaw-native Operation`
-   仓库设计为在 OpenClaw 风格的自托管环境中运行，也支持手动聊天驱动的初始化。
+   仓库设计为在 OpenClaw 风格的 self-hosted 环境中运行，也支持手动聊天驱动的 initialization。
 
 ## 架构图 (ASCII) 🧭
 
@@ -333,16 +333,16 @@ twinbox/
    - [thread-state-runtime.md](docs/specs/thread-state-runtime.md)
    - [types.ts](agent/custom_scripts/types.ts)
 
-## 运行时未来方向
+## Runtime 未来方向
 
-下一个 Runtime 层不会直接克隆 Anthropic 的 `email-agent`。
+下一个 runtime 层不会直接克隆 Anthropic 的 `email-agent`。
 
 它将保持本仓库的优势：
 
-- 渐进式验证
-- 以 Thread 为中心的工作流状态
-- 人工 Context Plane
-- 受控 Automation Gates
+- 渐进 validation
+- 以 Thread 为中心的 workflow state
+- human context plane
+- controlled automation gates
 
 并将吸收重要的工程组件：
 
@@ -350,7 +350,7 @@ twinbox/
 - `Template` / `Instance` 分离
 - Typed Execution Context
 - Execution Audit Trail
-- 易于扩展的 Enable/Disable 接口
+- 易于扩展的 enable/disable 接口
 
 ## 安全边界
 

@@ -84,7 +84,7 @@ Operational rules:
 - linked worktrees must fail fast if no canonical root is configured
 - parallel workers may execute from different `code root` paths, but they must read and write the same `state root`
 - instance-local artifacts stay in the state root; they are not copied into each worker checkout
-- this pattern applies to Phase 1-4; it is especially visible in Phase 4, where `loading`, `urgent/pending`, `sla-risks`, `weekly-brief`, and `merge` need to share the same context pack and raw outputs
+- this pattern applies to Phase 1-5; it is especially visible in Phase 4-5, where `loading`, `urgent/pending`, `sla-risks`, `weekly-brief`, `merge`, and draft gating need to share the same context pack and raw outputs
 
 ## Human Context Plane
 
@@ -132,6 +132,13 @@ Merge rules:
 - user-confirmed facts may override low-confidence inference, but the override must stay visible
 - recurring habits and external materials may add due windows, owner hints, glossary mappings, and reporting obligations even when mail alone cannot
 - expired or stale context should reduce confidence automatically
+
+Binding rules:
+
+- user text, imported materials, and long-term profile updates should enter through normalized context facts or profile config, not direct thread mutation
+- `context_updated` should trigger targeted recomputation of affected thread snapshots, queues, and digests
+- generic profile config may affect ranking, queue membership, and presentation, but should not silently rewrite mailbox facts
+- only explicit user-confirmed facts should relabel a thread-state conclusion such as `cc_only`, `waiting_on_me`, or `monitor_only`, and that override must remain visible
 
 ## Seven-Layer Model
 
@@ -264,6 +271,15 @@ These surfaces may contain two kinds of urgency:
 
 The source of urgency must remain explicit.
 
+Projection rules:
+
+- thread state is cadence-independent truth; `daily-urgent`, `pending-replies`, and `weekly-brief` are cadence-specific projections
+- daily and weekly views do not need identical output, but they must be derivable from the same underlying thread state and context facts
+- `weekly-brief` should not collapse into a prose-only summary; by default it should combine `action-now`, `unresolved-but-not-urgent backlog`, and `important weekly changes`
+- `urgent` and `pending` are orthogonal dimensions: one thread may be both, either, or neither
+- items should not be auto-downgraded only because time passed; instead they should accumulate aging signals such as `carry_over` or `stuck`
+- high-risk FYI threads may appear as `monitor_only` items when they matter now even if no direct reply is required
+
 Important rule:
 
 - if this layer is not useful, the system should not move on to more aggressive automation
@@ -287,7 +303,8 @@ Examples:
 
 Important rule:
 
-- profile config may shape interpretation and presentation, but should not fork the core lifecycle engine
+- profile config may shape interpretation, ranking, queue membership, and presentation, but should not fork the core lifecycle engine
+- generic profile updates should not relabel lifecycle state directly; only explicit user-confirmed facts may do that
 
 ### 6. Draft and Action Layer
 
@@ -345,8 +362,15 @@ Preferred event types:
 - `thread_entered_state`
 - `thread_sla_risk`
 - `daily_digest_time`
+- `weekly_digest_time`
 - `context_updated`
 - `confidence_below_threshold`
+
+Cadence rules:
+
+- daily and weekly value surfaces should be precomputed on schedule by default
+- ad hoc user actions may trigger partial recomputation, but scheduled surfaces remain the default experience
+- if a scheduled surface is stale or failed, the runtime may serve the last successful projection marked `stale` and enqueue a background refresh
 
 ### Action Template Layer
 
@@ -359,6 +383,7 @@ Examples:
 
 - `summarize_thread`
 - `build_daily_digest`
+- `build_weekly_digest`
 - `remind_owner`
 - `draft_reply`
 
@@ -398,23 +423,27 @@ These are easier for end users to perceive than abstract categories or generic a
 ## Recommended Repository Shape
 
 ```text
-email-bot/
+twinbox/
 ├── agent/
 │   ├── README.md
 │   └── custom_scripts/
 │       ├── actions/
 │       ├── listeners/
 │       └── types.ts
-├── SKILL.md
+├── AGENTS.md
 ├── .env
 ├── docs/
 │   ├── architecture.md
-│   ├── release/
+│   ├── plans/
+│   ├── reports/
 │   ├── specs/
 │   └── validation/
 │       └── README.md
 ├── scripts/
 │   ├── check_env.sh
+│   ├── run_pipeline.sh
+│   ├── twinbox
+│   ├── twinbox_orchestrate.sh
 │   ├── render_himalaya_config.sh
 │   ├── phase1_mailbox_census.sh
 │   └── phase2_profile_inference.sh

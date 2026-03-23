@@ -413,6 +413,144 @@ def cmd_context_refresh(args: argparse.Namespace) -> int:
     return 0
 
 
+def _find_thread_in_artifacts(thread_id: str) -> dict | None:
+    """Find thread information from Phase 3/4 artifacts."""
+    canonical_root = Path.cwd()
+    if "TWINBOX_CANONICAL_ROOT" in os.environ:
+        canonical_root = Path(os.environ["TWINBOX_CANONICAL_ROOT"])
+
+    validation_root = canonical_root / "runtime" / "validation"
+
+    # Search in Phase 4 artifacts
+    phase4_files = [
+        validation_root / "phase-4" / "daily-urgent.yaml",
+        validation_root / "phase-4" / "pending-replies.yaml",
+        validation_root / "phase-4" / "sla-risks.yaml",
+    ]
+
+    for artifact_path in phase4_files:
+        if not artifact_path.exists():
+            continue
+
+        data = yaml.safe_load(artifact_path.read_text(encoding="utf-8"))
+        queue_key = artifact_path.stem.replace("-", "_")
+
+        if queue_key in data and isinstance(data[queue_key], list):
+            for item in data[queue_key]:
+                if item.get("thread_key") == thread_id:
+                    return {
+                        "thread_id": thread_id,
+                        "queue_type": queue_key,
+                        "data": item,
+                        "source": str(artifact_path),
+                    }
+
+    return None
+
+
+def cmd_thread_inspect(args: argparse.Namespace) -> int:
+    """Inspect thread current state."""
+    thread_info = _find_thread_in_artifacts(args.thread_id)
+
+    if not thread_info:
+        print(f"错误: 未找到线程 '{args.thread_id}'", file=sys.stderr)
+        return 1
+
+    data = thread_info["data"]
+
+    if args.json:
+        output = {
+            "thread_id": thread_info["thread_id"],
+            "state": data.get("stage", "unknown"),
+            "waiting_on": data.get("waiting_on", "unknown"),
+            "last_activity_at": data.get("last_activity_at", "unknown"),
+            "confidence": data.get("urgency_score", 0) / 100.0,
+            "evidence_refs": [data.get("evidence_source", "unknown")],
+            "context_refs": [data.get("flow", "unknown")],
+            "why": data.get("why", ""),
+            "explainability": {
+                "state_reasoning": data.get("why", ""),
+                "confidence_factors": [
+                    f"Urgency score: {data.get('urgency_score', 0)}",
+                    f"Owner: {data.get('owner', 'unknown')}",
+                    f"Action hint: {data.get('action_hint', 'none')}",
+                ],
+            },
+        }
+        print(json.dumps(output, ensure_ascii=False, indent=2))
+    else:
+        lines = [
+            f"线程: {thread_info['thread_id']}",
+            f"状态: {data.get('stage', 'unknown')}",
+            f"等待: {data.get('waiting_on', 'unknown')}",
+            f"置信度: {data.get('urgency_score', 0) / 100.0:.2f}",
+            "",
+            "证据:",
+            f"- {data.get('evidence_source', 'unknown')}",
+            "",
+            "上下文:",
+            f"- flow: {data.get('flow', 'unknown')}",
+            f"- owner: {data.get('owner', 'unknown')}",
+            "",
+            f"原因: {data.get('why', '')}",
+        ]
+        print("\n".join(lines))
+
+    return 0
+
+
+def cmd_thread_explain(args: argparse.Namespace) -> int:
+    """Explain thread state reasoning."""
+    thread_info = _find_thread_in_artifacts(args.thread_id)
+
+    if not thread_info:
+        print(f"错误: 未找到线程 '{args.thread_id}'", file=sys.stderr)
+        return 1
+
+    data = thread_info["data"]
+    urgency_score = data.get("urgency_score", 0)
+
+    if args.json:
+        output = {
+            "thread_id": thread_info["thread_id"],
+            "state": data.get("stage", "unknown"),
+            "explainability": {
+                "reasoning_steps": [
+                    f"线程位于 {data.get('flow', 'unknown')} 流程的 {data.get('stage', 'unknown')} 阶段",
+                    f"当前等待: {data.get('waiting_on', 'unknown')}",
+                    f"负责人: {data.get('owner', 'unknown')}",
+                    f"紧急度评分: {urgency_score}",
+                ],
+                "confidence": urgency_score / 100.0,
+                "confidence_breakdown": {
+                    "urgency_score": urgency_score / 100.0,
+                },
+                "alternative_states": [],
+            },
+        }
+        print(json.dumps(output, ensure_ascii=False, indent=2))
+    else:
+        lines = [
+            f"线程: {thread_info['thread_id']}",
+            f"当前状态: {data.get('stage', 'unknown')}",
+            "",
+            "状态推断依据:",
+            f"1. 线程位于 {data.get('flow', 'unknown')} 流程的 {data.get('stage', 'unknown')} 阶段",
+            f"2. 当前等待: {data.get('waiting_on', 'unknown')}",
+            f"3. 负责人: {data.get('owner', 'unknown')}",
+            f"4. 紧急度评分: {urgency_score}",
+            "",
+            f"置信度: {urgency_score / 100.0:.2f}",
+            f"- 紧急度评分: +{urgency_score / 100.0:.2f}",
+            "",
+            f"原因: {data.get('why', '')}",
+            f"建议行动: {data.get('action_hint', 'none')}",
+        ]
+        print("\n".join(lines))
+
+    return 0
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="twinbox",
@@ -452,6 +590,18 @@ def _build_parser() -> argparse.ArgumentParser:
     queue_show.add_argument("--json", action="store_true", help="Output as JSON")
 
     queue_explain = queue_sub.add_parser("explain", help="Explain queue projection")
+
+    # thread commands
+    thread_parser = subparsers.add_parser("thread", help="Thread inspection")
+    thread_sub = thread_parser.add_subparsers(dest="thread_command", required=True)
+
+    thread_inspect = thread_sub.add_parser("inspect", help="Inspect thread state")
+    thread_inspect.add_argument("thread_id", help="Thread ID")
+    thread_inspect.add_argument("--json", action="store_true", help="Output as JSON")
+
+    thread_explain = thread_sub.add_parser("explain", help="Explain thread state reasoning")
+    thread_explain.add_argument("thread_id", help="Thread ID")
+    thread_explain.add_argument("--json", action="store_true", help="Output as JSON")
 
     return parser
 
