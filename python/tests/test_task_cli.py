@@ -13,6 +13,7 @@ import yaml
 from twinbox_core.task_cli import (
     ThreadCard,
     QueueView,
+    DigestView,
     _get_phase4_dir,
     _is_stale,
     _load_yaml_artifact,
@@ -83,6 +84,64 @@ class TestQueueView:
         result = view.to_dict()
         assert result["queue_type"] == "urgent"
         assert len(result["items"]) == 1
+        assert result["stale"] is False
+
+
+class TestDigestView:
+    """Test DigestView data model."""
+
+    def test_to_dict_daily(self):
+        """DigestView should serialize daily digest correctly."""
+        card = ThreadCard(
+            thread_id="thread-123",
+            state="waiting_on_me",
+            waiting_on="me",
+            last_activity_at="2026-03-23T10:00:00Z",
+            confidence=0.85,
+            evidence_refs=["env-1"],
+            context_refs=["ctx-1"],
+            why="Test",
+        )
+        view = DigestView(
+            digest_type="daily",
+            sections={
+                "urgent": {"items": [card.to_dict()]},
+                "pending": {"items": []},
+            },
+            generated_at="2026-03-23T10:00:00Z",
+            stale=False,
+        )
+        result = view.to_dict()
+        assert result["digest_type"] == "daily"
+        assert "urgent" in result["sections"]
+        assert result["stale"] is False
+
+    def test_to_dict_weekly(self):
+        """DigestView should serialize weekly digest correctly."""
+        card = ThreadCard(
+            thread_id="thread-123",
+            state="waiting_on_me",
+            waiting_on="me",
+            last_activity_at="2026-03-23T10:00:00Z",
+            confidence=0.85,
+            evidence_refs=["env-1"],
+            context_refs=["ctx-1"],
+            why="Test",
+        )
+        view = DigestView(
+            digest_type="weekly",
+            sections={
+                "action_now": [card.to_dict()],
+                "backlog": [],
+                "important_changes": "Test changes",
+            },
+            generated_at="2026-03-23T10:00:00Z",
+            stale=False,
+        )
+        result = view.to_dict()
+        assert result["digest_type"] == "weekly"
+        assert "action_now" in result["sections"]
+        assert "important_changes" in result["sections"]
         assert result["stale"] is False
 
 

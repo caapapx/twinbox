@@ -59,6 +59,23 @@ class QueueView:
         }
 
 
+@dataclass(frozen=True)
+class DigestView:
+    """Digest view projected from Phase 4 artifacts."""
+    digest_type: str
+    sections: dict[str, Any]
+    generated_at: str
+    stale: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "digest_type": self.digest_type,
+            "sections": self.sections,
+            "generated_at": self.generated_at,
+            "stale": self.stale,
+        }
+
+
 def _load_yaml_artifact(path: Path) -> dict[str, Any]:
     """Load YAML artifact from Phase 4 output."""
     if not path.exists():
