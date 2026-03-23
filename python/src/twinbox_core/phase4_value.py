@@ -24,6 +24,7 @@ Produce a JSON object with this structure:
       "flow": "<lifecycle flow id or UNMODELED>",
       "stage": "<lifecycle stage id>",
       "urgency_score": <0-100>,
+      "reason_code": "<due_soon | waiting_on_me | sla_risk | carry_over | monitor_only>",
       "why": "<one sentence in Chinese explaining urgency>",
       "action_hint": "<concrete next action in Chinese>",
       "owner": "<who should act>",
@@ -36,6 +37,7 @@ Produce a JSON object with this structure:
       "thread_key": "<thread key>",
       "flow": "<flow id>",
       "waiting_on_me": true,
+      "reason_code": "<waiting_on_me | approval_needed | missing_confirmation>",
       "why": "<why I need to reply, in Chinese>",
       "suggested_action": "<what to do, in Chinese>",
       "evidence_source": "<mail_evidence | user_declared_rule>"
@@ -54,6 +56,15 @@ Produce a JSON object with this structure:
   "weekly_brief": {
     "period": "<date range>",
     "total_threads_in_window": <number>,
+    "action_now": [
+      {"thread_key":"<key>", "flow":"<flow>", "why":"<Chinese>", "action":"<Chinese>"}
+    ],
+    "backlog": [
+      {"thread_key":"<key>", "flow":"<flow>", "why":"<Chinese>", "next_step":"<Chinese>"}
+    ],
+    "important_changes": [
+      {"thread_key":"<key>", "change":"<Chinese>", "impact":"<Chinese>"}
+    ],
     "flow_summary": [
       {"flow": "<flow id>", "name": "<flow name>", "count": <number>, "highlight": "<key observation in Chinese>"}
     ],
@@ -82,10 +93,10 @@ URGENT_PROMPT = """You are an enterprise email assistant. Based on the thread da
 
 {
   "daily_urgent": [
-    {"thread_key":"<key>","flow":"<flow>","stage":"<stage>","urgency_score":<0-100>,"why":"<Chinese>","action_hint":"<Chinese>","owner":"<who>","waiting_on":"<who>","evidence_source":"mail_evidence|user_declared_rule"}
+    {"thread_key":"<key>","flow":"<flow>","stage":"<stage>","urgency_score":<0-100>,"reason_code":"due_soon|waiting_on_me|sla_risk|carry_over|monitor_only","why":"<Chinese>","action_hint":"<Chinese>","owner":"<who>","waiting_on":"<who>","evidence_source":"mail_evidence|user_declared_rule"}
   ],
   "pending_replies": [
-    {"thread_key":"<key>","flow":"<flow>","waiting_on_me":true,"why":"<Chinese>","suggested_action":"<Chinese>","evidence_source":"mail_evidence|user_declared_rule"}
+    {"thread_key":"<key>","flow":"<flow>","waiting_on_me":true,"reason_code":"waiting_on_me|approval_needed|missing_confirmation","why":"<Chinese>","suggested_action":"<Chinese>","evidence_source":"mail_evidence|user_declared_rule"}
   ]
 }
 
@@ -121,6 +132,9 @@ BRIEF_PROMPT = """You are an enterprise email assistant producing a weekly brief
   "weekly_brief": {
     "period":"<date range>",
     "total_threads_in_window":<number>,
+    "action_now":[{"thread_key":"<key>","flow":"<flow>","why":"<Chinese>","action":"<Chinese>"}],
+    "backlog":[{"thread_key":"<key>","flow":"<flow>","why":"<Chinese>","next_step":"<Chinese>"}],
+    "important_changes":[{"thread_key":"<key>","change":"<Chinese>","impact":"<Chinese>"}],
     "flow_summary":[{"flow":"<id>","name":"<name>","count":<n>,"highlight":"<Chinese>"}],
     "top_actions":["<Chinese action 1>","<Chinese action 2>","<Chinese action 3>"],
     "rhythm_observation":"<one paragraph in Chinese about work rhythm>"

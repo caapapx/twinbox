@@ -4,6 +4,8 @@
 
 `twinbox` 是一个基于 OpenClaw 的、以 Thread 为中心的邮件 Copilot：先理解 Thread 状态，再逐步解锁自动化。
 
+截至 `2026-03-23` 的实际状态：仓库处于实现收敛阶段，以只读能力优先。当前已经具备 Phase 1-4 的共享 Python Core、稳定的编排契约 CLI，以及 Phase 4 的准确率/回归门禁入口（`twinbox-eval-phase4`）；还不是包含 listener/action 常驻服务的完整生产运行时。
+
 ## 它是什么
 
 `twinbox` 不是一个通用的自动发邮件机器人，也不是一个完善的收件箱客户端演示。
@@ -19,9 +21,10 @@
 目前已实现：
 
 - 基于 shell 的邮箱验证和采样脚本
-- 适用于 OpenClaw 或手动初始化的稳定渐进式验证模板
-- 用于用户提供材料和习惯的 Context Ingestion 模型
-- 用于 Listener、Action、Template 和 Audit Logging 的新 Spec-first Runtime Skeleton
+- Phase 1-4 loading/thinking 与渲染的共享 Python Core
+- 共享编排契约入口（`scripts/twinbox_orchestrate.sh`）
+- Phase 4 准确率/回归评测入口（`twinbox-eval-phase4`）
+- 用于用户材料、习惯、确认事实的 Context Ingestion 能力
 
 ## 为什么存在这个仓库
 
@@ -50,6 +53,7 @@
 - 未来 `Listener`、`Action`、`Template` 和 `Audit` 层的 Runtime Skeleton
 - Phase 1-4 的 Loading/Thinking 分离（LLM 替代硬编码推断）
 - Gastown 多 Agent 编排集成（formula + sling + witness）
+- Phase 4 baseline 回退门禁评测
 
 ### 渐进式验证流水线
 
@@ -204,8 +208,8 @@ gt formula show twinbox-phase4
 bash scripts/run_pipeline.sh
 ```
 
-详见 [Gastown 操作指南](docs/guides/gastown-operations.md) 和 [Gastown 集成方案](docs/plans/gastown-multi-agent-integration.md)。
-实现层与运行时收敛的下一步方向，见 [实现层重构与全局架构收敛计划](docs/plans/implementation-core-refactor-plan.md)。
+详见 [Gastown 操作指南](docs/guides/gastown-operations.md) 和 [Gastown 集成方案](docs/plans/gastown-integration.md)。
+实现层与运行时收敛的下一步方向，见 [核心重构计划](docs/plans/core-refactor-plan.md)。
 
 后续补充项通过 `bd` 跟踪，不再追加 markdown TODO：
 
@@ -299,9 +303,10 @@ twinbox/
 │   ├── guides/
 │   │   └── gastown-operations.md   # gt 操作指南
 │   ├── plans/
-│   │   ├── progressive-validation-framework.md
-│   │   ├── gastown-multi-agent-integration.md
-│   │   └── open-source-v1-plan.md
+│   │   ├── validation-framework.md
+│   │   ├── gastown-integration.md
+│   │   ├── oss-v1-plan.md
+│   │   └── development-progress.md  # 周期性开发进度快照
 │   └── specs/thread-state-runtime.md
 ├── scripts/
 │   ├── phase{1-4}_loading.sh       # 确定性 I/O
@@ -317,8 +322,8 @@ twinbox/
 ## 快速开始 🚀
 
 1. 阅读 [architecture.md](docs/architecture.md)。
-2. 阅读 [progressive-validation-framework.md](docs/plans/progressive-validation-framework.md)。
-3. 阅读 [open-source-v1-plan.md](docs/plans/open-source-v1-plan.md)。
+2. 阅读 [validation-framework.md](docs/plans/validation-framework.md)。
+3. 阅读 [oss-v1-plan.md](docs/plans/oss-v1-plan.md)。
 4. 如果你想在本地验证邮箱访问权限，运行：
    - `bash scripts/check_env.sh`
    - `bash scripts/render_himalaya_config.sh`

@@ -112,23 +112,57 @@ def _classification_metrics(predicted: set[str], expected: set[str]) -> Classifi
 
 
 def _weekly_action_hit_at_5(predicted: object, expected: object) -> float:
-    pred_actions = []
-    exp_actions = []
-    if isinstance(predicted, dict):
-        top_actions = predicted.get("top_actions", [])
-        if isinstance(top_actions, list):
-            pred_actions = [entry for entry in top_actions if isinstance(entry, str)]
-    if isinstance(expected, dict):
-        top_actions = expected.get("top_actions", [])
-        if isinstance(top_actions, list):
-            exp_actions = [entry for entry in top_actions if isinstance(entry, str)]
+    def action_keys(brief: object) -> list[str]:
+        if not isinstance(brief, dict):
+            return []
 
-    expected_top5 = exp_actions[:5]
-    if not expected_top5:
+        layered = brief.get("action_now")
+        if isinstance(layered, list):
+            keys: list[str] = []
+            for item in layered:
+                if isinstance(item, dict):
+                    thread_key = item.get("thread_key")
+                    if isinstance(thread_key, str) and thread_key:
+                        keys.append(thread_key)
+                        continue
+                    action_text = item.get("action")
+                    if isinstance(action_text, str) and action_text:
+                        keys.append(action_text)
+            if keys:
+                return keys
+
+        top_actions = brief.get("top_actions", [])
+        if isinstance(top_actions, list):
+            return [entry for entry in top_actions if isinstance(entry, str)]
+        return []
+
+    predicted_actions = action_keys(predicted)[:5]
+    expected_actions = action_keys(expected)[:5]
+    if not expected_actions:
         return 1.0
-    predicted_top5 = set(pred_actions[:5])
-    matched = sum(1 for entry in expected_top5 if entry in predicted_top5)
-    return matched / len(expected_top5)
+    predicted_set = set(predicted_actions)
+    matched = sum(1 for item in expected_actions if item in predicted_set)
+    return matched / len(expected_actions)
+
+
+def _explainability_coverage(items: object) -> float:
+    if not isinstance(items, list) or not items:
+        return 1.0
+    covered = 0
+    total = 0
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        total += 1
+        why = item.get("why")
+        reason_code = item.get("reason_code")
+        has_why = isinstance(why, str) and bool(why.strip())
+        has_reason = isinstance(reason_code, str) and bool(reason_code.strip())
+        if has_why and has_reason:
+            covered += 1
+    if total == 0:
+        return 1.0
+    return covered / total
 
 
 def evaluate_phase4(
@@ -149,6 +183,8 @@ def evaluate_phase4(
         predicted_payload.get("weekly_brief", {}),
         expected_payload.get("weekly_brief", {}),
     )
+    urgent_explainability = _explainability_coverage(predicted_payload.get("daily_urgent", []))
+    pending_explainability = _explainability_coverage(predicted_payload.get("pending_replies", []))
 
     return {
         "generated_at": _now_iso(),
@@ -158,6 +194,8 @@ def evaluate_phase4(
         "weekly_action_hit_at_5": weekly_hit,
         "contract_pass_rate": contract_pass_rate,
         "golden_diff_count": int(golden_diff_count),
+        "urgent_explainability": urgent_explainability,
+        "pending_explainability": pending_explainability,
         "metrics": {
             "daily_urgent": {
                 "precision": urgent_metrics.precision,
@@ -176,6 +214,10 @@ def evaluate_phase4(
                 "true_positive_count": pending_metrics.true_positive_count,
             },
             "weekly_action_hit_at_5": weekly_hit,
+            "explainability": {
+                "daily_urgent": urgent_explainability,
+                "pending_replies": pending_explainability,
+            },
         },
     }
 
@@ -211,6 +253,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", help="Output report path (default: alongside prediction)")
     parser.add_argument("--baseline", help="Optional baseline evaluation-report.json for regression gate")
     parser.add_argument("--max-regression-pp", type=float, default=1.0, help="Allowed drop against baseline in percentage points")
+    parser.add_argument("--min-explainability", type=float, default=0.0, help="Optional floor for urgent/pending explainability coverage")
     parser.add_argument("--contract-pass-rate", type=float, default=100.0)
     parser.add_argument("--golden-diff-count", type=int, default=0)
     return parser
@@ -244,9 +287,24 @@ def main(argv: list[str] | None = None) -> int:
                 max_regression_pp=args.max_regression_pp,
             )
 
+        min_explainability = float(args.min_explainability)
+        if report["urgent_explainability"] < min_explainability:
+            gate_passed = False
+            gate_failures.append(
+                "urgent_explainability below floor: "
+                f"{report['urgent_explainability']:.4f} < {min_explainability:.4f}"
+            )
+        if report["pending_explainability"] < min_explainability:
+            gate_passed = False
+            gate_failures.append(
+                "pending_explainability below floor: "
+                f"{report['pending_explainability']:.4f} < {min_explainability:.4f}"
+            )
+
         report["gate"] = {
             "passed": gate_passed,
             "max_regression_pp": args.max_regression_pp,
+            "min_explainability": min_explainability,
             "failures": gate_failures,
         }
         output_path.parent.mkdir(parents=True, exist_ok=True)

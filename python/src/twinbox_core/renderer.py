@@ -418,6 +418,7 @@ def render_phase4_outputs(
                 f"    flow: {item.get('flow', 'UNMODELED')}",
                 f"    stage: {item.get('stage', 'unknown')}",
                 f"    urgency_score: {item.get('urgency_score', 0)}",
+                f"    reason_code: {item.get('reason_code', 'unknown')}",
                 f"    why: {yaml_string(item.get('why', ''))}",
                 f"    action_hint: {yaml_string(item.get('action_hint', ''))}",
                 f"    owner: {yaml_string(item.get('owner', ''))}",
@@ -434,6 +435,7 @@ def render_phase4_outputs(
                 f"  - thread_key: {yaml_string(item.get('thread_key', ''))}",
                 f"    flow: {item.get('flow', 'UNMODELED')}",
                 f"    waiting_on_me: {'true' if item.get('waiting_on_me') else 'false'}",
+                f"    reason_code: {item.get('reason_code', 'unknown')}",
                 f"    why: {yaml_string(item.get('why', ''))}",
                 f"    suggested_action: {yaml_string(item.get('suggested_action', ''))}",
                 f"    evidence_source: {item.get('evidence_source', 'mail_evidence')}",
@@ -489,6 +491,41 @@ def render_phase4_outputs(
         brief_lines.extend(["## Top Actions", ""])
         for action in top_actions:
             brief_lines.append(f"- {action}")
+        brief_lines.append("")
+    action_now = weekly_brief.get("action_now", [])
+    if isinstance(action_now, list) and action_now:
+        brief_lines.extend(["## Action Now", ""])
+        for item in action_now:
+            if isinstance(item, dict):
+                brief_lines.append(
+                    "- "
+                    + f"[{item.get('flow', 'UNMODELED')}] "
+                    + f"{item.get('thread_key', 'unknown')}: "
+                    + f"{item.get('action', '')} ({item.get('why', '')})"
+                )
+        brief_lines.append("")
+    backlog = weekly_brief.get("backlog", [])
+    if isinstance(backlog, list) and backlog:
+        brief_lines.extend(["## Backlog", ""])
+        for item in backlog:
+            if isinstance(item, dict):
+                brief_lines.append(
+                    "- "
+                    + f"[{item.get('flow', 'UNMODELED')}] "
+                    + f"{item.get('thread_key', 'unknown')}: "
+                    + f"{item.get('next_step', '')} ({item.get('why', '')})"
+                )
+        brief_lines.append("")
+    important_changes = weekly_brief.get("important_changes", [])
+    if isinstance(important_changes, list) and important_changes:
+        brief_lines.extend(["## Important Changes", ""])
+        for item in important_changes:
+            if isinstance(item, dict):
+                brief_lines.append(
+                    "- "
+                    + f"{item.get('thread_key', 'unknown')}: "
+                    + f"{item.get('change', '')} -> {item.get('impact', '')}"
+                )
         brief_lines.append("")
     rhythm = weekly_brief.get("rhythm_observation")
     if rhythm:

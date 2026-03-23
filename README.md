@@ -4,6 +4,8 @@
 
 An OpenClaw-native, thread-centric email copilot: understand thread state first, then unlock automation step by step.
 
+Status as of `2026-03-23`: this repository is in an implementation-heavy, read-only-first stage. It already has a shared Python core for Phase 1-4, a stable orchestration contract CLI, and an initial Phase 4 evaluation gate (`twinbox-eval-phase4`). It is not yet a full production runtime with listener/action services.
+
 ## What This Is
 
 `twinbox` is not a generic auto-send mail bot and not a polished inbox client demo.
@@ -19,9 +21,10 @@ It is a self-hostable foundation for building an email copilot with these traits
 What's already here:
 
 - shell-based mailbox validation and sampling scripts
-- a stable progressive validation template for OpenClaw or manual initialization
-- a context-ingestion model for user-provided materials and habits
-- a new spec-first runtime skeleton for listeners, actions, templates, and audit logging
+- a shared Python core for Phase 1-4 loading/thinking and rendering
+- a shared orchestration contract (`scripts/twinbox_orchestrate.sh`)
+- a Phase 4 accuracy/regression evaluation entrypoint (`twinbox-eval-phase4`)
+- context-ingestion support for user-provided materials, habits, and confirmed facts
 
 ## Why This Exists
 
@@ -50,6 +53,7 @@ What is already in the repository:
 - runtime skeleton for future `listener`, `action`, `template`, and `audit` layers
 - Phase 1-4 Loading/Thinking separation (LLM replaces hardcoded inference)
 - Gastown multi-agent orchestration integration (formula + sling + witness)
+- Phase 4 evaluation gate with baseline regression checks
 
 ### Progressive Validation Pipeline
 
@@ -204,8 +208,8 @@ gt formula show twinbox-phase4
 bash scripts/run_pipeline.sh
 ```
 
-See [Gastown Operations Guide](docs/guides/gastown-operations.md) and [Gastown Integration Plan](docs/plans/gastown-multi-agent-integration.md).
-For the next-step implementation/runtime refactor direction, see [Implementation-Core Refactor Plan](docs/plans/implementation-core-refactor-plan.md).
+See [Gastown Operations Guide](docs/guides/gastown-operations.md) and [Gastown Integration Plan](docs/plans/gastown-integration.md).
+For the next-step implementation/runtime refactor direction, see [Core Refactor Plan](docs/plans/core-refactor-plan.md).
 
 Follow-up work is tracked in `bd`, not markdown TODOs:
 
@@ -299,9 +303,10 @@ twinbox/
 │   ├── guides/
 │   │   └── gastown-operations.md   # gt operations guide
 │   ├── plans/
-│   │   ├── progressive-validation-framework.md
-│   │   ├── gastown-multi-agent-integration.md
-│   │   └── open-source-v1-plan.md
+│   │   ├── validation-framework.md
+│   │   ├── gastown-integration.md
+│   │   ├── oss-v1-plan.md
+│   │   └── development-progress.md   # periodic dev snapshots
 │   └── specs/thread-state-runtime.md
 ├── scripts/
 │   ├── phase{1-4}_loading.sh       # deterministic I/O
@@ -317,8 +322,8 @@ twinbox/
 ## Quick Start 🚀
 
 1. Read [architecture.md](docs/architecture.md).
-2. Read [progressive-validation-framework.md](docs/plans/progressive-validation-framework.md).
-3. Read [open-source-v1-plan.md](docs/plans/open-source-v1-plan.md).
+2. Read [validation-framework.md](docs/plans/validation-framework.md).
+3. Read [oss-v1-plan.md](docs/plans/oss-v1-plan.md).
 4. If you want to validate mailbox access locally, run:
    - `bash scripts/check_env.sh`
    - `bash scripts/render_himalaya_config.sh`
