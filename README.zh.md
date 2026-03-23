@@ -2,7 +2,7 @@
 
 [English](./README.md) | [中文](./README.zh.md)
 
-`twinbox` 是一个基于 OpenClaw 的、以 Thread 为中心的邮件 Copilot：先理解 Thread 状态，再逐步解锁自动化。
+`twinbox` 是一个以线程为中心的邮件 Copilot 基础设施：从线程重建工作流状态，而非处理单条消息；先理解状态，再逐步解锁自动化。
 
 截至 `2026-03-23` 的实际状态：仓库处于实现收敛阶段，以只读能力优先。当前已经具备 Phase 1-4 的共享 Python Core、稳定的编排契约 CLI，以及 Phase 4 的准确率/回归门禁入口（`twinbox-eval-phase4`）；还不是包含 listener/action 常驻服务的完整生产运行时。
 

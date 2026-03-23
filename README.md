@@ -2,7 +2,7 @@
 
 [English](./README.md) | [中文](./README.zh.md)
 
-An OpenClaw-native, thread-centric email copilot: understand thread state first, then unlock automation step by step.
+A thread-centric email copilot infrastructure: reconstructs workflow state from threads instead of single messages; understand state first, then unlock automation step by step.
 
 Status as of `2026-03-23`: this repository is in an implementation-heavy, read-only-first stage. It already has a shared Python core for Phase 1-4, a stable orchestration contract CLI, and an initial Phase 4 evaluation gate (`twinbox-eval-phase4`). It is not yet a full production runtime with listener/action services.
 
