@@ -628,6 +628,11 @@ def main(argv: list[str] | None = None) -> int:
                 return cmd_queue_show(args)
             elif args.queue_command == "explain":
                 return cmd_queue_explain(args)
+        elif args.command == "thread":
+            if args.thread_command == "inspect":
+                return cmd_thread_inspect(args)
+            elif args.thread_command == "explain":
+                return cmd_thread_explain(args)
     except Exception as exc:
         print(f"错误: {exc}", file=sys.stderr)
         return 1
