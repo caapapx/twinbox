@@ -551,6 +551,137 @@ def cmd_thread_explain(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_digest_daily(args: argparse.Namespace) -> int:
+    """Show daily digest."""
+    canonical_root = Path.cwd()
+    if "TWINBOX_CANONICAL_ROOT" in os.environ:
+        canonical_root = Path(os.environ["TWINBOX_CANONICAL_ROOT"])
+
+    validation_root = canonical_root / "runtime" / "validation" / "phase-4"
+
+    # Load queue artifacts
+    urgent_path = validation_root / "daily-urgent.yaml"
+    pending_path = validation_root / "pending-replies.yaml"
+    sla_path = validation_root / "sla-risks.yaml"
+
+    if args.json:
+        output = {
+            "digest_type": "daily",
+            "sections": {},
+            "generated_at": "",
+            "stale": False,
+        }
+
+        if urgent_path.exists():
+            urgent_data = yaml.safe_load(urgent_path.read_text(encoding="utf-8"))
+            output["sections"]["urgent"] = {"items": urgent_data.get("daily_urgent", [])}
+            output["generated_at"] = urgent_data.get("generated_at", "")
+
+        if pending_path.exists():
+            pending_data = yaml.safe_load(pending_path.read_text(encoding="utf-8"))
+            output["sections"]["pending"] = {"items": pending_data.get("pending_replies", [])}
+
+        if sla_path.exists():
+            sla_data = yaml.safe_load(sla_path.read_text(encoding="utf-8"))
+            output["sections"]["sla_risks"] = {"items": sla_data.get("sla_risks", [])}
+
+        print(json.dumps(output, ensure_ascii=False, indent=2))
+    else:
+        lines = ["每日摘要", "=" * 40, ""]
+
+        if urgent_path.exists():
+            urgent_data = yaml.safe_load(urgent_path.read_text(encoding="utf-8"))
+            urgent_items = urgent_data.get("daily_urgent", [])
+            lines.extend([
+                f"紧急事项 ({len(urgent_items)} 项):",
+                "",
+            ])
+            for item in urgent_items[:5]:  # Show top 5
+                lines.append(f"- {item.get('thread_key', 'unknown')}: {item.get('why', '')}")
+            lines.append("")
+
+        if pending_path.exists():
+            pending_data = yaml.safe_load(pending_path.read_text(encoding="utf-8"))
+            pending_items = pending_data.get("pending_replies", [])
+            lines.extend([
+                f"待回复 ({len(pending_items)} 项):",
+                "",
+            ])
+            for item in pending_items[:5]:  # Show top 5
+                lines.append(f"- {item.get('thread_key', 'unknown')}")
+            lines.append("")
+
+        if sla_path.exists():
+            sla_data = yaml.safe_load(sla_path.read_text(encoding="utf-8"))
+            sla_items = sla_data.get("sla_risks", [])
+            lines.extend([
+                f"SLA 风险 ({len(sla_items)} 项):",
+                "",
+            ])
+            for item in sla_items[:5]:  # Show top 5
+                lines.append(f"- {item.get('thread_key', 'unknown')}")
+            lines.append("")
+
+        print("\n".join(lines))
+
+    return 0
+
+
+def cmd_digest_weekly(args: argparse.Namespace) -> int:
+    """Show weekly digest."""
+    canonical_root = Path.cwd()
+    if "TWINBOX_CANONICAL_ROOT" in os.environ:
+        canonical_root = Path(os.environ["TWINBOX_CANONICAL_ROOT"])
+
+    validation_root = canonical_root / "runtime" / "validation" / "phase-4"
+    weekly_path = validation_root / "weekly-brief-raw.json"
+
+    if not weekly_path.exists():
+        print("错误: 未找到 weekly-brief-raw.json", file=sys.stderr)
+        return 1
+
+    weekly_data = json.loads(weekly_path.read_text(encoding="utf-8"))
+    brief = weekly_data.get("weekly_brief", {})
+
+    if args.json:
+        output = {
+            "digest_type": "weekly",
+            "sections": {
+                "action_now": brief.get("top_actions", []),
+                "backlog": [],
+                "important_changes": brief.get("rhythm_observation", ""),
+            },
+            "generated_at": "",
+            "stale": False,
+        }
+        print(json.dumps(output, ensure_ascii=False, indent=2))
+    else:
+        lines = [
+            "每周简报",
+            "=" * 40,
+            "",
+            f"周期: {brief.get('period', 'unknown')}",
+            f"线程总数: {brief.get('total_threads_in_window', 0)}",
+            "",
+            "必须处理的行动:",
+            "",
+        ]
+
+        for action in brief.get("top_actions", []):
+            lines.append(f"- {action}")
+
+        lines.extend([
+            "",
+            "本周重要变化:",
+            "",
+            brief.get("rhythm_observation", ""),
+        ])
+
+        print("\n".join(lines))
+
+    return 0
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="twinbox",
@@ -603,6 +734,16 @@ def _build_parser() -> argparse.ArgumentParser:
     thread_explain.add_argument("thread_id", help="Thread ID")
     thread_explain.add_argument("--json", action="store_true", help="Output as JSON")
 
+    # digest commands
+    digest_parser = subparsers.add_parser("digest", help="Digest views")
+    digest_sub = digest_parser.add_subparsers(dest="digest_command", required=True)
+
+    digest_daily = digest_sub.add_parser("daily", help="Show daily digest")
+    digest_daily.add_argument("--json", action="store_true", help="Output as JSON")
+
+    digest_weekly = digest_sub.add_parser("weekly", help="Show weekly digest")
+    digest_weekly.add_argument("--json", action="store_true", help="Output as JSON")
+
     return parser
 
 
@@ -633,6 +774,11 @@ def main(argv: list[str] | None = None) -> int:
                 return cmd_thread_inspect(args)
             elif args.thread_command == "explain":
                 return cmd_thread_explain(args)
+        elif args.command == "digest":
+            if args.digest_command == "daily":
+                return cmd_digest_daily(args)
+            elif args.digest_command == "weekly":
+                return cmd_digest_weekly(args)
     except Exception as exc:
         print(f"错误: {exc}", file=sys.stderr)
         return 1
