@@ -19,6 +19,8 @@
 - 多 agent 集成：`docs/plans/gastown-multi-agent-integration.md`
 - 运行时规范：`docs/specs/thread-state-runtime.md`
 - 开源 V1 计划：`docs/plans/open-source-v1-plan.md`
+- 项目开发进度（周期性快照）：`docs/plans/project-development-progress.md`
+- gogcli 与 ClawHub Gog skill（外部工具链笔记）：`docs/plans/gogcli-clawhub-gog-skill-analysis.md`
 - Phase 1 intent LLM 改造记录：`docs/reports/phase1-intent-llm-migration.md`
 - Phase 2 persona LLM 改造记录：`docs/reports/phase2-persona-llm-migration.md`
 - Phase 3 前架构审视：`docs/reports/architecture-review-before-phase3.md`
