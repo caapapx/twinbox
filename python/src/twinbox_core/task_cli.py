@@ -293,12 +293,152 @@ twinbox 的队列视图从 Phase 4 artifacts 投影而来，不是独立的数�
     return 0
 
 
+def cmd_context_import_material(args: argparse.Namespace) -> int:
+    """Import user material to runtime/context/materials/."""
+    canonical_root = Path.cwd()
+    if "TWINBOX_CANONICAL_ROOT" in os.environ:
+        canonical_root = Path(os.environ["TWINBOX_CANONICAL_ROOT"]).expanduser()
+
+    materials_dir = canonical_root / "runtime" / "context" / "material-extracts"
+    materials_dir.mkdir(parents=True, exist_ok=True)
+
+    source_path = Path(args.source).expanduser()
+    if not source_path.exists():
+        print(f"错误: 源文件不存在: {args.source}", file=sys.stderr)
+        return 1
+
+    # Copy material to materials directory
+    import shutil
+    dest_path = materials_dir / source_path.name
+    shutil.copy2(source_path, dest_path)
+
+    # Update material-manifest.json
+    manifest_path = canonical_root / "runtime" / "context" / "material-manifest.json"
+    manifest = {"generated_at": "", "materials": []}
+    if manifest_path.exists():
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    from datetime import datetime
+    manifest["generated_at"] = datetime.now().isoformat()
+    if source_path.name not in [m.get("filename") for m in manifest.get("materials", [])]:
+        manifest.setdefault("materials", []).append({
+            "filename": source_path.name,
+            "imported_at": datetime.now().isoformat(),
+            "source": str(source_path),
+        })
+
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    print(f"已导入材料: {source_path.name} -> {dest_path}")
+    print(f"更新清单: {manifest_path}")
+    return 0
+
+
+def cmd_context_upsert_fact(args: argparse.Namespace) -> int:
+    """Add or update manual fact to runtime/context/manual-facts.yaml."""
+    canonical_root = Path.cwd()
+    if "TWINBOX_CANONICAL_ROOT" in os.environ:
+        canonical_root = Path(os.environ["TWINBOX_CANONICAL_ROOT"]).expanduser()
+
+    facts_path = canonical_root / "runtime" / "context" / "manual-facts.yaml"
+    facts_data = {"facts": []}
+    if facts_path.exists():
+        facts_data = yaml.safe_load(facts_path.read_text(encoding="utf-8")) or {"facts": []}
+
+    from datetime import datetime
+    new_fact = {
+        "id": args.id,
+        "type": args.type,
+        "source": args.source,
+        "updated_at": datetime.now().strftime("%Y-%m-%d"),
+        "content": args.content,
+    }
+
+    # Update existing fact or append new one
+    facts = facts_data.setdefault("facts", [])
+    existing_idx = next((i for i, f in enumerate(facts) if f.get("id") == args.id), None)
+    if existing_idx is not None:
+        facts[existing_idx] = new_fact
+        print(f"已更新事实: {args.id}")
+    else:
+        facts.append(new_fact)
+        print(f"已添加事实: {args.id}")
+
+    facts_path.write_text(yaml.dump(facts_data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    print(f"保存到: {facts_path}")
+    return 0
+
+
+def cmd_context_profile_set(args: argparse.Namespace) -> int:
+    """Set user profile configuration."""
+    canonical_root = Path.cwd()
+    if "TWINBOX_CANONICAL_ROOT" in os.environ:
+        canonical_root = Path(os.environ["TWINBOX_CANONICAL_ROOT"]).expanduser()
+
+    profiles_dir = canonical_root / "config" / "profiles"
+    profiles_dir.mkdir(parents=True, exist_ok=True)
+
+    profile_path = profiles_dir / f"{args.profile}.yaml"
+
+    if args.key and args.value:
+        # Update specific key
+        profile_data = {}
+        if profile_path.exists():
+            profile_data = yaml.safe_load(profile_path.read_text(encoding="utf-8")) or {}
+
+        # Support nested keys like "style.language"
+        keys = args.key.split(".")
+        current = profile_data
+        for key in keys[:-1]:
+            current = current.setdefault(key, {})
+        current[keys[-1]] = args.value
+
+        profile_path.write_text(yaml.dump(profile_data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        print(f"已更新配置: {args.profile}.{args.key} = {args.value}")
+    else:
+        # Show current profile
+        if profile_path.exists():
+            print(profile_path.read_text(encoding="utf-8"))
+        else:
+            print(f"配置文件不存在: {profile_path}", file=sys.stderr)
+            return 1
+
+    return 0
+
+
+def cmd_context_refresh(args: argparse.Namespace) -> int:
+    """Refresh Phase 1 context-pack."""
+    print("刷新 Phase 1 context-pack...")
+    print("提示: 使用 'twinbox orchestrate run phase1' 重新生成 Phase 1 artifacts")
+    return 0
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="twinbox",
         description="Task-facing CLI for twinbox email copilot",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # context commands
+    context_parser = subparsers.add_parser("context", help="Context management")
+    context_sub = context_parser.add_subparsers(dest="context_command", required=True)
+
+    import_mat = context_sub.add_parser("import-material", help="Import user material")
+    import_mat.add_argument("source", help="Source file path")
+
+    upsert_fact = context_sub.add_parser("upsert-fact", help="Add or update manual fact")
+    upsert_fact.add_argument("--id", required=True, help="Fact ID")
+    upsert_fact.add_argument("--type", required=True, help="Fact type")
+    upsert_fact.add_argument("--source", default="user_confirmed_fact", help="Fact source")
+    upsert_fact.add_argument("--content", required=True, help="Fact content")
+
+    profile_set = context_sub.add_parser("profile-set", help="Set user profile")
+    profile_set.add_argument("profile", help="Profile name")
+    profile_set.add_argument("--key", help="Config key (e.g., style.language)")
+    profile_set.add_argument("--value", help="Config value")
+
+    context_sub.add_parser("refresh", help="Refresh Phase 1 context-pack")
 
     # queue commands
     queue_parser = subparsers.add_parser("queue", help="Queue management")
@@ -322,7 +462,16 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        if args.command == "queue":
+        if args.command == "context":
+            if args.context_command == "import-material":
+                return cmd_context_import_material(args)
+            elif args.context_command == "upsert-fact":
+                return cmd_context_upsert_fact(args)
+            elif args.context_command == "profile-set":
+                return cmd_context_profile_set(args)
+            elif args.context_command == "refresh":
+                return cmd_context_refresh(args)
+        elif args.command == "queue":
             if args.queue_command == "list":
                 return cmd_queue_list(args)
             elif args.queue_command == "show":
