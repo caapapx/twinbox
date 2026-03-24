@@ -56,10 +56,11 @@ done
 mkdir -p "${CONTEXT_DIR}" "${RAW_DIR}"
 
 # --- env + himalaya setup ---
-if [[ ! -f "${ENV_FILE}" ]]; then
-  echo "Missing .env at ${ENV_FILE}"; exit 1
+if [[ -f "${ENV_FILE}" ]]; then
+  set -a
+  source "${ENV_FILE}"
+  set +a
 fi
-set -a; source "${ENV_FILE}"; set +a
 
 bash "${CODE_ROOT}/scripts/check_env.sh"
 bash "${CODE_ROOT}/scripts/render_himalaya_config.sh"
@@ -74,7 +75,8 @@ else
   HIMALAYA_BIN="$(command -v himalaya)"
 fi
 
-ACCOUNT="${ACCOUNT_OVERRIDE:-${MAIL_ACCOUNT_NAME}}"
+ACCOUNT="${ACCOUNT_OVERRIDE:-${MAIL_ACCOUNT_NAME:-myTwinbox}}"
+: "${MAIL_ADDRESS:?Missing MAIL_ADDRESS after mailbox validation.}"
 FOLDERS_JSON="${RAW_DIR}/folders.json"
 
 # --- Step 1: folder list ---

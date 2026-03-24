@@ -13,6 +13,8 @@ from typing import Any
 
 import yaml
 
+from .mailbox import format_preflight_text, run_preflight
+
 @dataclass(frozen=True)
 class ThreadCard:
     """Thread card for queue display."""
@@ -477,6 +479,23 @@ def cmd_context_refresh(args: argparse.Namespace) -> int:
     print("刷新 Phase 1 context-pack...")
     print("提示: 使用 'twinbox orchestrate run phase1' 重新生成 Phase 1 artifacts")
     return 0
+
+
+def cmd_mailbox_preflight(args: argparse.Namespace) -> int:
+    """Run read-only mailbox preflight for password-env mode."""
+    exit_code, result = run_preflight(
+        state_root=args.state_root,
+        account_override=args.account,
+        folder=args.folder,
+        page_size=args.page_size,
+    )
+
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(format_preflight_text(result))
+
+    return exit_code
 
 
 def _find_thread_in_artifacts(thread_id: str) -> dict | None:
@@ -1023,6 +1042,17 @@ def _build_parser() -> argparse.ArgumentParser:
 
     context_sub.add_parser("refresh", help="Refresh Phase 1 context-pack")
 
+    # mailbox commands
+    mailbox_parser = subparsers.add_parser("mailbox", help="Mailbox login and preflight")
+    mailbox_sub = mailbox_parser.add_subparsers(dest="mailbox_command", required=True)
+
+    mailbox_preflight = mailbox_sub.add_parser("preflight", help="Run read-only mailbox preflight")
+    mailbox_preflight.add_argument("--state-root", help="Override twinbox state root")
+    mailbox_preflight.add_argument("--account", default="", help="Override MAIL_ACCOUNT_NAME")
+    mailbox_preflight.add_argument("--folder", default="INBOX", help="Folder for read-only envelope list")
+    mailbox_preflight.add_argument("--page-size", default=5, type=int, help="Envelope page size")
+    mailbox_preflight.add_argument("--json", action="store_true", help="Output as JSON")
+
     # queue commands
     queue_parser = subparsers.add_parser("queue", help="Queue management")
     queue_sub = queue_parser.add_subparsers(dest="queue_command", required=True)
@@ -1098,6 +1128,9 @@ def main(argv: list[str] | None = None) -> int:
                 return cmd_context_profile_set(args)
             elif args.context_command == "refresh":
                 return cmd_context_refresh(args)
+        elif args.command == "mailbox":
+            if args.mailbox_command == "preflight":
+                return cmd_mailbox_preflight(args)
         elif args.command == "queue":
             if args.queue_command == "list":
                 return cmd_queue_list(args)
@@ -1135,4 +1168,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

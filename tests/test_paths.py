@@ -3,7 +3,6 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
-from unittest import mock
 
 from twinbox_core.paths import (
     PathResolutionError,
@@ -74,16 +73,6 @@ class PathsTest(unittest.TestCase):
             resolved = resolve_canonical_root(code_root, env={})
 
             self.assertEqual(resolved, code_root.resolve())
-
-    def test_resolve_canonical_root_requires_explicit_root_for_worktree(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            code_root = Path(tmp)
-
-            with mock.patch("twinbox_core.paths.is_linked_worktree", return_value=True):
-                with self.assertRaises(PathResolutionError) as exc:
-                    resolve_canonical_root(code_root, env={})
-
-            self.assertIn("Missing canonical root for linked worktree", str(exc.exception))
 
     def test_init_roots_uses_parent_of_script_directory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

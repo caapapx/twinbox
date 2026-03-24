@@ -52,7 +52,6 @@
 - 关于以 Thread 为中心的工作流和人工 Context Ingestion 的架构文档
 - 未来 `Listener`、`Action`、`Template` 和 `Audit` 层的 Runtime Skeleton
 - Phase 1-4 的 Loading/Thinking 分离（LLM 替代硬编码推断）
-- Gastown 多 Agent 编排集成（formula + sling + witness）
 - Phase 4 baseline 回退门禁评测
 
 ### 渐进式验证流水线
@@ -90,7 +89,7 @@ flowchart LR
 
 - 当前实现里的 runtime handoff 仍主要依赖各 phase 的结构化 state files，而不是一条已经打通的 `attention-budget.yaml`
 - `attention-budget` 目前应视为目标收敛 contract，而不是已经被脚本强制执行的 runtime dependency
-- 详见 [Validation Artifact Contract](docs/specs/validation-artifact-contract.md)
+- 详见 [Validation Artifact Contract](docs/ref/validation.md)
 
 每个阶段内部仍保持同一套结构：
 
@@ -120,101 +119,44 @@ bash scripts/run_pipeline.sh --phase 2
 
 | 目标 | 推荐命令 | 说明 |
 |------|----------|------|
-| 先验证邮箱连通性 | `bash scripts/preflight_mailbox_smoke.sh --headless` | 只做环境检查、配置渲染和只读拉取，适合进入 Phase 1 前的 preflight |
+| 先验证邮箱登录/连通性 | `twinbox mailbox preflight --json` | 统一执行 env 检查、默认值补全、himalaya 配置渲染和只读 IMAP 预检，适合 OpenClaw 消费 |
+| 兼容旧脚本方式做 preflight | `bash scripts/preflight_mailbox_smoke.sh --json` | `twinbox mailbox preflight` 的兼容 wrapper，适合本地脚本迁移期 |
 | 看整条 pipeline 会跑什么 | `bash scripts/twinbox_orchestrate.sh run --dry-run` | 不执行真实 phase，只打印 Phase 1-4 的执行顺序 |
 | 本地跑完整流程 | `bash scripts/twinbox_orchestrate.sh run` | 共享编排 CLI，默认 Phase 4 走并行 thinking |
 | 本地只跑单个 Phase | `bash scripts/twinbox_orchestrate.sh run --phase 2` | 适合局部调试、单阶段重跑 |
 | 查看编排 contract | `bash scripts/twinbox_orchestrate.sh contract --format json` | 适合 operator、skill 或脚本读取 phase 依赖与入口 |
-| 手动验证 Phase 4 fan-out / merge | `bash scripts/phase4_gastown.sh loading`，再依次运行 `think-urgent` / `think-sla` / `think-brief` / `merge` | 适合排查 Phase 4 的并行子任务 |
-| 通过 Gastown 分发执行 | `gt sling twinbox-phase1 twinbox --create` | 验证 polecat / refinery / witness 链路 |
 | 跑 Python 单测 | `pytest tests/` | 覆盖 contract、paths、LLM、renderer 和 phase core |
-| 跑轻量 smoke | `python3 -m compileall src` 和 `bash -n scripts/twinbox_orchestrate.sh scripts/run_pipeline.sh scripts/phase4_gastown.sh` | 适合提交前做快速语法检查 |
-
-更细的 Gastown / fallback 命令清单见 [gastown-operations.md](docs/guides/gastown-operations.md)。
-
-### Gastown 在哪里起作用
-
-Gastown 是这条 pipeline 外侧的 orchestration adapter。它不决定邮件语义本身，而是围绕共享 orchestration contract 去打包、分发、监控和合并。
-
-```mermaid
-flowchart LR
-    F["Formula<br/>workflow or convoy"]
-    S["gt sling"]
-    P["Polecat workers<br/>phase tasks / subtasks"]
-    R["Refinery<br/>merge outputs and MRs"]
-    W["Witness<br/>health monitoring"]
-
-    F --> S --> P --> R
-    W -. monitors .-> P
-```
-
-| Gastown 概念 | 在 twinbox 里的角色 |
-|--------------|---------------------|
-| `Formula` | 把每个 phase 封装成 `loading -> thinking` workflow，把全流程封装成 convoy |
-| `Sling` | 将某个 phase formula 分发给 worker |
-| `Polecat` | 真正执行阶段任务或子任务 |
-| `Refinery` | 串行 merge，并汇总子任务输出 |
-| `Witness` | 监控卡死或失联 worker，保证 execution health |
-| `Convoy` | 把多阶段流程作为一个更高层级的执行单元追踪 |
-
-当前执行模型有三个关键点：
-
-- Phase 依赖仍然是顺序的：`1 -> 2 -> 3 -> 4`
-- 并发主要发生在阶段内部，而不是依赖链之间
-- `Phase 4` 是最典型的例子：`urgent/pending`、`sla-risks`、`weekly-brief` 可以并行跑，最后再 merge
-- 对本地执行或未来 skill 化来说，source of truth 是 `scripts/twinbox_orchestrate.sh`，不是 formula 文件本身
+| 跑轻量 smoke | `python3 -m compileall src` 和 `bash -n scripts/twinbox_orchestrate.sh scripts/run_pipeline.sh` | 适合提交前做快速语法检查 |
 
 ### 共享状态根目录
 
-Phase 1-4 现在都显式区分 `code root` 和 `state root`，避免 Gastown linked worktree 把 artifact 写进各自隔离目录。
+Phase 1-4 显式区分 `code root` 和 `state root`，确保所有脚本写入同一 canonical 位置。
 
-- `code root`：当前 checkout，提供受版本控制的脚本和 formula
+- `code root`：当前 checkout，提供受版本控制的脚本
 - `state root`：canonical checkout，提供 `.env`、`runtime/context/`、`runtime/validation/` 和 `docs/validation/`
 - 解析顺序：`TWINBOX_CANONICAL_ROOT` -> `~/.config/twinbox/canonical-root` -> 当前 checkout
-- 安全规则：如果在 linked worktree 里没有配置 canonical root，Phase 1-4 都会直接 fail fast，不再静默回退
 
 ```bash
 # 在主 checkout 中执行一次，注册 canonical state root
 bash scripts/register_canonical_root.sh
-
-# 查看 worker 实际会使用的根目录
-bash scripts/phase4_gastown.sh roots
 ```
 
 ### 流水线 Checklist
 
 1. 在主 checkout 里执行 `bash scripts/register_canonical_root.sh` 注册 canonical root。
-2. 用 `bash scripts/phase4_gastown.sh roots` 验证解析结果。
-3. 在 `gt sling` 前先把 `master` 推到远端，确保 polecat worktree 能看到最新脚本和 formula。
-4. 任意 Phase 都继续走原有脚本入口，但 Phase 1-4 现在都会解析同一份 canonical state root。
-5. 当 skill 或 operator 需要显式读取 pipeline contract 时，用 `bash scripts/twinbox_orchestrate.sh contract --format json`。
-6. 需要 fan-out / merge 编排时，再通过 `bash scripts/phase4_gastown.sh <step>` 或对应的 `twinbox-phase4-*` formula 运行 Phase 4。
+2. 任意 Phase 都继续走原有脚本入口，Phase 1-4 都会解析同一份 canonical state root。
+3. 当 skill 或 operator 需要显式读取 pipeline contract 时，用 `bash scripts/twinbox_orchestrate.sh contract --format json`。
 
 ```bash
-# 先把本地 master 推到 origin，确保 polecat worktree 能看到最新脚本
-git checkout master
-git pull --ff-only origin master
-git push origin master
-
-# 通过 gastown 分发单个 phase
-gt sling twinbox-phase1 twinbox --create
-
 # 查看共享 orchestration contract，或直接跑本地 CLI
 bash scripts/twinbox_orchestrate.sh contract
 bash scripts/twinbox_orchestrate.sh run
 
-# 查看 formula，或直接跑兼容 wrapper
-gt formula show twinbox-phase4
+# 直接跑兼容 wrapper
 bash scripts/run_pipeline.sh
 ```
 
-详见 [Gastown 操作指南](docs/guides/gastown-operations.md) 和 [Gastown 集成方案](docs/plans/gastown-integration.md)。
-实现层与运行时收敛的下一步方向，见 [核心重构计划](docs/plans/core-refactor-plan.md)。
-
-后续补充项通过 `bd` 跟踪，不再追加 markdown TODO：
-
-- `twinbox-d9j`：把完整的 Phase 4 fan-out / merge 固化成一条可复现的 Gastown 入口
-- `twinbox-5zk`：把 Gastown formula 和后续 skill adapter 继续收敛到共享 orchestration contract
+详见统一文档入口 [docs/README.md](docs/README.md) 和 [核心重构计划](docs/core-refactor.md)。
 
 尚未实现：
 
@@ -285,9 +227,7 @@ twinbox/
 ├── README.md
 ├── README.zh.md
 ├── SKILL.md
-├── .beads/formulas/          # gastown formula 定义
-│   ├── twinbox-phase{1-4}.formula.toml
-│   └── twinbox-full-pipeline.formula.toml
+├── pyproject.toml
 ├── agent/
 │   ├── README.md
 │   └── custom_scripts/
@@ -299,20 +239,20 @@ twinbox/
 │   ├── context/
 │   └── profiles/
 ├── docs/
-│   ├── architecture.md
-│   ├── guides/
-│   │   └── gastown-operations.md   # gt 操作指南
-│   ├── plans/
-│   │   ├── validation-framework.md
-│   │   ├── gastown-integration.md
-│   │   ├── oss-v1-plan.md
-│   │   └── development-progress.md  # 周期性开发进度快照
-│   └── specs/thread-state-runtime.md
+│   ├── README.md
+│   ├── core-refactor.md
+│   ├── ref/
+│   │   ├── architecture.md
+│   │   └── runtime.md
+│   ├── guide/
+│   │   └── openclaw-compose.md
+│   ├── archive/
+│   └── validation/
+│       └── phase-<n>-report.md
 ├── scripts/
 │   ├── phase{1-4}_loading.sh       # 确定性 I/O
 │   ├── phase{1-4}_thinking.sh      # LLM 推断
-│   ├── phase4_gastown.sh           # Phase 4 统一 gastown 入口
-│   ├── register_canonical_root.sh  # 给 worktree 注册共享状态根目录
+│   ├── register_canonical_root.sh  # 注册共享状态根目录
 │   ├── twinbox_orchestrate.sh      # 共享编排 CLI
 │   ├── run_pipeline.sh             # 向后兼容 wrapper
 │   └── twinbox_paths.sh            # 统一解析 code root / state root
@@ -321,17 +261,24 @@ twinbox/
 
 ## 快速开始 🚀
 
-1. 阅读 [architecture.md](docs/architecture.md)。
-2. 阅读 [validation-framework.md](docs/plans/validation-framework.md)。
-3. 阅读 [oss-v1-plan.md](docs/plans/oss-v1-plan.md)。
+1. 阅读 [docs/README.md](docs/README.md)。
+2. 阅读 [architecture.md](docs/ref/architecture.md)。
+3. 阅读 [core-refactor.md](docs/core-refactor.md)。
 4. 如果你想在本地验证邮箱访问权限，运行：
-   - `bash scripts/check_env.sh`
-   - `bash scripts/render_himalaya_config.sh`
-   - `bash scripts/preflight_mailbox_smoke.sh --headless`
+   - `twinbox mailbox preflight --json`
+   - 或兼容 wrapper：`bash scripts/preflight_mailbox_smoke.sh --json`
 5. 如果你想扩展 Runtime Skeleton，从以下文件开始：
    - [agent/README.md](agent/README.md)
-   - [thread-state-runtime.md](docs/specs/thread-state-runtime.md)
+   - [runtime.md](docs/ref/runtime.md)
    - [types.ts](agent/custom_scripts/types.ts)
+
+### 首次登录排错速查
+
+- `missing_env`：补齐 `MAIL_ADDRESS` 与 IMAP/SMTP 的 host/port/login/pass。
+- `imap_auth_failed`：检查用户名密码，或确认服务商是否要求应用专用密码。
+- `imap_tls_failed`：优先核对端口与加密组合，常见是 `993 + tls` 或 `143 + starttls/plain`。
+- `imap_network_failed`：检查主机名、DNS、容器网络和防火墙。
+- `mailbox-connected + warn`：只读 IMAP 已通过，SMTP 在只读模式下仅作提示，不阻塞 Phase 1-4。
 
 ## Runtime 未来方向
 

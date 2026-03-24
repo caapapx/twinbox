@@ -52,7 +52,6 @@ What is already in the repository:
 - architecture docs for thread-centric workflow and human context ingestion
 - runtime skeleton for future `listener`, `action`, `template`, and `audit` layers
 - Phase 1-4 Loading/Thinking separation (LLM replaces hardcoded inference)
-- Gastown multi-agent orchestration integration (formula + sling + witness)
 - Phase 4 evaluation gate with baseline regression checks
 
 ### Progressive Validation Pipeline
@@ -90,7 +89,7 @@ Current contract note:
 
 - the implemented runtime handoff still relies on phase-specific structured artifacts, not a fully wired `attention-budget.yaml`
 - treat `attention-budget` as the planned convergence contract, not as an already-enforced runtime dependency
-- see [Validation Artifact Contract](docs/specs/validation-artifact-contract.md)
+- see [Validation Artifact Contract](docs/ref/validation.md)
 
 Each phase still follows the same internal split:
 
@@ -120,101 +119,44 @@ If you just want one concrete path to start with, pick from this table instead o
 
 | Goal | Recommended command | What it gives you |
 |------|---------------------|-------------------|
-| Validate mailbox access first | `bash scripts/preflight_mailbox_smoke.sh --headless` | Environment checks, config render, and read-only fetch before Phase 1 |
+| Validate mailbox login/access first | `twinbox mailbox preflight --json` | Unified env checks, defaults, himalaya config render, and read-only IMAP preflight for OpenClaw or local use |
+| Run the compatibility preflight wrapper | `bash scripts/preflight_mailbox_smoke.sh --json` | Wrapper around `twinbox mailbox preflight`, useful during script migration |
 | See the full pipeline shape | `bash scripts/twinbox_orchestrate.sh run --dry-run` | Prints the Phase 1-4 execution plan without running it |
 | Run the full pipeline locally | `bash scripts/twinbox_orchestrate.sh run` | Shared orchestration CLI; Phase 4 uses parallel thinking by default |
 | Re-run one phase locally | `bash scripts/twinbox_orchestrate.sh run --phase 2` | Useful for focused debugging or partial reruns |
 | Inspect the orchestration contract | `bash scripts/twinbox_orchestrate.sh contract --format json` | Machine-readable phase dependencies and entrypoints for operators or skills |
-| Manually test Phase 4 fan-out / merge | `bash scripts/phase4_gastown.sh loading`, then `think-urgent` / `think-sla` / `think-brief` / `merge` | Stepwise debugging for the parallel Phase 4 path |
-| Dispatch through Gastown | `gt sling twinbox-phase1 twinbox --create` | End-to-end worker / refinery / witness verification |
 | Run Python unit tests | `pytest tests/` | Regression coverage for contracts, phase cores, paths, and rendering |
-| Run lightweight smoke checks | `python3 -m compileall src` and `bash -n scripts/twinbox_orchestrate.sh scripts/run_pipeline.sh scripts/phase4_gastown.sh` | Fast syntax and import checks before a commit |
-
-For the fuller Gastown and fallback command list, see [gastown-operations.md](docs/guides/gastown-operations.md).
-
-### Where Gastown Fits
-
-Gastown is an orchestration adapter around the pipeline. It does not define mailbox semantics; it packages, dispatches, monitors, and merges phase work around the shared orchestration contract.
-
-```mermaid
-flowchart LR
-    F["Formula<br/>workflow or convoy"]
-    S["gt sling"]
-    P["Polecat workers<br/>phase tasks / subtasks"]
-    R["Refinery<br/>merge outputs and MRs"]
-    W["Witness<br/>health monitoring"]
-
-    F --> S --> P --> R
-    W -. monitors .-> P
-```
-
-| Gastown concept | Role in twinbox |
-|-----------------|-----------------|
-| `Formula` | Encodes each phase as a `loading -> thinking` workflow and the full pipeline as a convoy |
-| `Sling` | Dispatches a phase formula to a worker |
-| `Polecat` | Runs the actual phase work or subtask work |
-| `Refinery` | Serializes merge and combines child outputs |
-| `Witness` | Detects stalled or zombie workers and keeps execution healthy |
-| `Convoy` | Tracks the multi-phase pipeline as one higher-level unit |
-
-Current execution model:
-
-- Phase dependencies stay sequential: `1 -> 2 -> 3 -> 4`
-- Parallelism mostly lives inside a phase, not across dependent phases
-- Phase 4 is the clearest example: `urgent/pending`, `sla-risks`, and `weekly-brief` can run in parallel and merge at the end
-- The stable source of truth for local or future skill-driven execution is `scripts/twinbox_orchestrate.sh`, not the formula files
+| Run lightweight smoke checks | `python3 -m compileall src` and `bash -n scripts/twinbox_orchestrate.sh scripts/run_pipeline.sh` | Fast syntax and import checks before a commit |
 
 ### Shared State Root
 
-Phase 1-4 now separate `code root` from `state root` so Gastown linked worktrees stop writing isolated artifacts.
+Phase 1-4 separate `code root` from `state root` so all scripts write to the same canonical location.
 
-- `code root`: the current checkout that provides tracked scripts and formulas
+- `code root`: the current checkout that provides tracked scripts
 - `state root`: the canonical checkout that provides `.env`, `runtime/context/`, `runtime/validation/`, and `docs/validation/`
 - Resolution order: `TWINBOX_CANONICAL_ROOT` -> `~/.config/twinbox/canonical-root` -> current checkout
-- Safety rule: in a linked worktree, Phase 1-4 all fail fast if no canonical root is configured
 
 ```bash
 # Register the canonical state root once from the main checkout
 bash scripts/register_canonical_root.sh
-
-# Verify what a worker will use
-bash scripts/phase4_gastown.sh roots
 ```
 
 ### Pipeline Checklist
 
 1. Register the canonical root from the main checkout with `bash scripts/register_canonical_root.sh`.
-2. Verify the resolved roots with `bash scripts/phase4_gastown.sh roots`.
-3. Push `master` before `gt sling` so polecat worktrees see the latest scripts and formulas.
-4. Run any phase through its normal script entrypoint; all Phase 1-4 scripts now resolve the same canonical state root.
-5. Use `bash scripts/twinbox_orchestrate.sh contract --format json` when a skill or operator needs the explicit pipeline contract.
-6. Run Phase 4 through `bash scripts/phase4_gastown.sh <step>` or the corresponding `twinbox-phase4-*` formulas when you need fan-out / merge orchestration.
+2. Run any phase through its normal script entrypoint; all Phase 1-4 scripts resolve the same canonical state root.
+3. Use `bash scripts/twinbox_orchestrate.sh contract --format json` when a skill or operator needs the explicit pipeline contract.
 
 ```bash
-# Push local master before slinging so polecat worktrees see the latest scripts
-git checkout master
-git pull --ff-only origin master
-git push origin master
-
-# Sling a single phase to gastown
-gt sling twinbox-phase1 twinbox --create
-
 # Inspect the shared orchestration contract or run the local CLI
 bash scripts/twinbox_orchestrate.sh contract
 bash scripts/twinbox_orchestrate.sh run
 
-# Inspect the formula or run the backward-compatible wrapper
-gt formula show twinbox-phase4
+# Run the backward-compatible wrapper
 bash scripts/run_pipeline.sh
 ```
 
-See [Gastown Operations Guide](docs/guides/gastown-operations.md) and [Gastown Integration Plan](docs/plans/gastown-integration.md).
-For the next-step implementation/runtime refactor direction, see [Core Refactor Plan](docs/plans/core-refactor-plan.md).
-
-Follow-up work is tracked in `bd`, not markdown TODOs:
-
-- `twinbox-d9j`: formalize the full Phase 4 fan-out / merge flow as one reproducible Gastown entrypoint
-- `twinbox-5zk`: converge Gastown formulas and future skill adapters onto the shared orchestration contract
+See the central [Docs Index](docs/README.md) and [Core Refactor Plan](docs/core-refactor.md).
 
 Not implemented yet:
 
@@ -285,9 +227,7 @@ twinbox/
 ├── README.md
 ├── README.zh.md
 ├── SKILL.md
-├── .beads/formulas/          # gastown formula definitions
-│   ├── twinbox-phase{1-4}.formula.toml
-│   └── twinbox-full-pipeline.formula.toml
+├── pyproject.toml
 ├── agent/
 │   ├── README.md
 │   └── custom_scripts/
@@ -299,20 +239,20 @@ twinbox/
 │   ├── context/
 │   └── profiles/
 ├── docs/
-│   ├── architecture.md
-│   ├── guides/
-│   │   └── gastown-operations.md   # gt operations guide
-│   ├── plans/
-│   │   ├── validation-framework.md
-│   │   ├── gastown-integration.md
-│   │   ├── oss-v1-plan.md
-│   │   └── development-progress.md   # periodic dev snapshots
-│   └── specs/thread-state-runtime.md
+│   ├── README.md
+│   ├── core-refactor.md
+│   ├── ref/
+│   │   ├── architecture.md
+│   │   └── runtime.md
+│   ├── guide/
+│   │   └── openclaw-docker-compose.md
+│   ├── archive/
+│   └── validation/
+│       └── phase-<n>-report.md
 ├── scripts/
 │   ├── phase{1-4}_loading.sh       # deterministic I/O
 │   ├── phase{1-4}_thinking.sh      # LLM inference
-│   ├── phase4_gastown.sh           # unified Phase 4 gastown entrypoint
-│   ├── register_canonical_root.sh  # register shared state root for worktrees
+│   ├── register_canonical_root.sh  # register shared state root
 │   ├── twinbox_orchestrate.sh      # shared orchestration CLI
 │   ├── run_pipeline.sh             # backward-compatible wrapper
 │   └── twinbox_paths.sh            # shared code-root/state-root resolution
@@ -321,17 +261,24 @@ twinbox/
 
 ## Quick Start 🚀
 
-1. Read [architecture.md](docs/architecture.md).
-2. Read [validation-framework.md](docs/plans/validation-framework.md).
-3. Read [oss-v1-plan.md](docs/plans/oss-v1-plan.md).
+1. Read [docs/README.md](docs/README.md).
+2. Read [architecture.md](docs/ref/architecture.md).
+3. Read [core-refactor.md](docs/core-refactor.md).
 4. If you want to validate mailbox access locally, run:
-   - `bash scripts/check_env.sh`
-   - `bash scripts/render_himalaya_config.sh`
-   - `bash scripts/preflight_mailbox_smoke.sh --headless`
+   - `twinbox mailbox preflight --json`
+   - or the compatibility wrapper: `bash scripts/preflight_mailbox_smoke.sh --json`
 5. If you want to extend the runtime skeleton, start from:
    - [agent/README.md](agent/README.md)
-   - [thread-state-runtime.md](docs/specs/thread-state-runtime.md)
+   - [runtime.md](docs/ref/runtime.md)
    - [types.ts](agent/custom_scripts/types.ts)
+
+### First Login Troubleshooting
+
+- `missing_env`: provide `MAIL_ADDRESS` plus the IMAP/SMTP host, port, login, and password fields.
+- `imap_auth_failed`: check username/password or whether your provider requires an app password.
+- `imap_tls_failed`: verify the port and encryption pairing; common pairs are `993 + tls` or `143 + starttls/plain`.
+- `imap_network_failed`: check hostname, DNS, container networking, and firewall reachability.
+- `mailbox-connected + warn`: read-only IMAP is good enough for Phase 1-4; SMTP is reported as a warning only in read-only mode.
 
 ## Runtime Direction Next
 

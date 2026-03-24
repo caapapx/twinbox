@@ -147,6 +147,45 @@ OPENCLAW_TZ=UTC
 
 ## 6. 验证与日常操作
 
+### 6.1 Twinbox 邮箱登录快速路径（3 分钟）
+
+如果你要在 OpenClaw 中挂载 twinbox skill，优先走这条最短路径：
+
+```bash
+export MAIL_ADDRESS="you@example.com"
+export IMAP_HOST="imap.example.com"
+export IMAP_PORT="993"
+export IMAP_LOGIN="you@example.com"
+export IMAP_PASS="<app-password>"
+export SMTP_HOST="smtp.example.com"
+export SMTP_PORT="465"
+export SMTP_LOGIN="you@example.com"
+export SMTP_PASS="<app-password>"
+
+twinbox mailbox preflight --json
+```
+
+命令会自动补默认值：
+
+- `MAIL_ACCOUNT_NAME=myTwinbox`
+- `MAIL_DISPLAY_NAME={MAIL_ACCOUNT_NAME}`
+- `IMAP_ENCRYPTION=tls`
+- `SMTP_ENCRYPTION=tls`
+
+返回结果重点看这些字段：
+
+- `login_stage`: `unconfigured | validated | mailbox-connected`
+- `status`: `success | warn | fail`
+- `missing_env`: 缺失环境变量列表
+- `actionable_hint`: 面向用户的修复提示
+- `next_action`: 下一步建议
+
+只读模式下，SMTP 只作为提示项，不阻塞 `mailbox-connected`。预检通过后，下一步通常是：
+
+```bash
+twinbox orchestrate run phase1
+```
+
 **健康检查（无需鉴权）**：
 
 ```bash

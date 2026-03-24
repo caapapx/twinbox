@@ -506,3 +506,55 @@ class TestQueueDigestThreadCli:
         missing = required - body.keys()
         assert not missing, f"ThreadCard contract fields missing: {missing}"
         assert body["thread_id"] == "thread-xyz"
+
+
+class TestMailboxCli:
+    """Mailbox preflight routing and JSON passthrough."""
+
+    def test_mailbox_preflight_json_route(self, monkeypatch, capsys):
+        def fake_run_preflight(**kwargs):
+            return 0, {
+                "login_stage": "mailbox-connected",
+                "status": "warn",
+                "checks": {
+                    "env": {"status": "success"},
+                    "config_render": {"status": "success"},
+                    "imap": {"status": "success"},
+                    "smtp": {"status": "warn", "error_code": "smtp_skipped_read_only"},
+                },
+                "missing_env": [],
+                "defaults_applied": {"MAIL_ACCOUNT_NAME": "myTwinbox"},
+                "actionable_hint": "Mailbox read-only preflight passed.",
+                "next_action": "Run phase1.",
+            }
+
+        monkeypatch.setattr("twinbox_core.task_cli.run_preflight", fake_run_preflight)
+
+        assert main(["mailbox", "preflight", "--json"]) == 0
+        body = json.loads(capsys.readouterr().out)
+        assert body["login_stage"] == "mailbox-connected"
+        assert body["checks"]["smtp"]["error_code"] == "smtp_skipped_read_only"
+
+    def test_mailbox_preflight_text_route(self, monkeypatch, capsys):
+        def fake_run_preflight(**kwargs):
+            return 2, {
+                "login_stage": "unconfigured",
+                "status": "fail",
+                "checks": {
+                    "env": {"status": "fail", "fix_commands": ["export MAIL_ADDRESS=user@example.com"]},
+                    "config_render": {"status": "skipped"},
+                    "imap": {"status": "skipped"},
+                    "smtp": {"status": "warn", "error_code": "smtp_skipped_read_only"},
+                },
+                "missing_env": ["MAIL_ADDRESS"],
+                "defaults_applied": {},
+                "actionable_hint": "Provide the missing mailbox settings before validating the account.",
+                "next_action": "Set env and rerun.",
+            }
+
+        monkeypatch.setattr("twinbox_core.task_cli.run_preflight", fake_run_preflight)
+
+        assert main(["mailbox", "preflight"]) == 2
+        out = capsys.readouterr().out
+        assert "Mailbox Preflight" in out
+        assert "missing_env: MAIL_ADDRESS" in out

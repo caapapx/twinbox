@@ -1,4 +1,4 @@
-"""Shared orchestration contract for local CLI and Gastown adapters."""
+"""Shared orchestration contract for local CLI execution."""
 
 from __future__ import annotations
 
@@ -51,8 +51,6 @@ class PhaseContract:
     loading: StepContract
     thinking: StepContract
     parallel_thinking: StepContract | None = None
-    gastown_formula: str | None = None
-    gastown_subtasks: tuple[str, ...] = ()
 
     def selected_steps(self, *, serial_phase4: bool) -> list[StepContract]:
         steps = [self.loading]
@@ -77,10 +75,6 @@ class PhaseContract:
                 if self.number != 4 or self.parallel_thinking is None
                 else [self.parallel_thinking.payload(code_root), self.thinking.payload(code_root)]
             ),
-            "gastown_adapter": {
-                "formula": self.gastown_formula,
-                "subtasks": list(self.gastown_subtasks),
-            },
         }
 
 
@@ -111,7 +105,6 @@ PHASE_CONTRACTS: tuple[PhaseContract, ...] = (
                 "docs/validation/phase-1-report.md",
             ),
         ),
-        gastown_formula=".beads/formulas/twinbox-phase1.formula.toml",
     ),
     PhaseContract(
         number=2,
@@ -144,7 +137,6 @@ PHASE_CONTRACTS: tuple[PhaseContract, ...] = (
                 "docs/validation/phase-2-report.md",
             ),
         ),
-        gastown_formula=".beads/formulas/twinbox-phase2.formula.toml",
     ),
     PhaseContract(
         number=3,
@@ -178,7 +170,6 @@ PHASE_CONTRACTS: tuple[PhaseContract, ...] = (
                 "docs/validation/phase-3-report.md",
             ),
         ),
-        gastown_formula=".beads/formulas/twinbox-phase3.formula.toml",
     ),
     PhaseContract(
         number=4,
@@ -227,18 +218,9 @@ PHASE_CONTRACTS: tuple[PhaseContract, ...] = (
             ),
             notes="Default local mode: fan out urgent/sla/brief, then merge.",
         ),
-        gastown_formula=".beads/formulas/twinbox-phase4.formula.toml",
-        gastown_subtasks=(
-            "scripts/phase4_gastown.sh loading",
-            "scripts/phase4_gastown.sh think-urgent",
-            "scripts/phase4_gastown.sh think-sla",
-            "scripts/phase4_gastown.sh think-brief",
-            "scripts/phase4_gastown.sh merge",
-        ),
     ),
 )
 
-FULL_PIPELINE_FORMULA = ".beads/formulas/twinbox-full-pipeline.formula.toml"
 CLI_ENTRYPOINT = "scripts/twinbox_orchestrate.sh"
 LEGACY_ENTRYPOINT = "scripts/run_pipeline.sh"
 
@@ -287,7 +269,6 @@ def contract_payload(
         "entrypoints": {
             "cli": CLI_ENTRYPOINT,
             "legacy_fallback": LEGACY_ENTRYPOINT,
-            "gastown_convoy_formula": FULL_PIPELINE_FORMULA,
         },
         "phases": phases,
     }
@@ -307,7 +288,6 @@ def render_contract_text(
         f"state_root: {payload['state_root']}",
         f"cli: {CLI_ENTRYPOINT}",
         f"legacy_fallback: {LEGACY_ENTRYPOINT}",
-        f"gastown_convoy: {FULL_PIPELINE_FORMULA}",
         "",
     ]
     for phase_data in payload["phases"]:
@@ -316,13 +296,8 @@ def render_contract_text(
         lines.append(f"  required_artifacts: {len(phase_data['required_artifacts'])}")
         lines.append(f"  produced_artifacts: {len(phase_data['produced_artifacts'])}")
         lines.append(f"  default_mode: {phase_data['default_mode']}")
-        lines.append(f"  gastown_formula: {phase_data['gastown_adapter']['formula']}")
         for step in phase_data["steps"]:
             lines.append(f"  - {step['label']}: {shlex.join(step['argv'])}")
-        if phase_data["gastown_adapter"]["subtasks"]:
-            lines.append("  gastown_subtasks:")
-            for subtask in phase_data["gastown_adapter"]["subtasks"]:
-                lines.append(f"    - {subtask}")
         lines.append("")
     return "\n".join(lines).rstrip()
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared path resolution for local repo runs and Gastown linked worktrees.
+# Shared path resolution for twinbox.
 
 _twinbox_paths_py() {
   local script_dir repo_root python_src
@@ -30,12 +30,6 @@ twinbox_resolve_existing_dir() {
 
 twinbox_resolve_canonical_root() {
   _twinbox_paths_py resolve-canonical-root "$1"
-}
-
-twinbox_is_linked_worktree() {
-  local result
-  result="$(_twinbox_paths_py is-linked-worktree "$1")" || return 1
-  [[ "${result}" == "true" ]]
 }
 
 twinbox_init_roots() {

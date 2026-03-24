@@ -19,13 +19,13 @@ class OrchestrationTest(unittest.TestCase):
     def setUp(self) -> None:
         self.repo_root = Path(__file__).resolve().parents[2]
 
-    def test_contract_payload_exposes_cli_and_gastown_adapter(self) -> None:
+    def test_contract_payload_exposes_cli_entrypoints(self) -> None:
         payload = contract_payload(self.repo_root, self.repo_root, phase=None, serial_phase4=False)
 
         self.assertEqual(payload["entrypoints"]["cli"], CLI_ENTRYPOINT)
         self.assertEqual(payload["entrypoints"]["legacy_fallback"], LEGACY_ENTRYPOINT)
         self.assertEqual(len(payload["phases"]), 4)
-        self.assertEqual(payload["phases"][3]["gastown_adapter"]["formula"], ".beads/formulas/twinbox-phase4.formula.toml")
+        self.assertNotIn("gastown_adapter", payload["phases"][3])
 
     def test_phase4_defaults_to_parallel_step(self) -> None:
         phase4 = get_phase_contract(4)

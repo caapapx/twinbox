@@ -1,10 +1,9 @@
-"""Shared path resolution for local repo runs and Gastown linked worktrees."""
+"""Shared path resolution for twinbox."""
 
 from __future__ import annotations
 
 import argparse
 import os
-import subprocess
 import sys
 from pathlib import Path
 
@@ -39,26 +38,6 @@ def resolve_existing_dir(candidate: str | os.PathLike[str] | None) -> Path:
         raise PathResolutionError(f"Unable to resolve path: {candidate}") from exc
 
 
-def _git_path(repo_root: Path, arg: str) -> str:
-    try:
-        result = subprocess.run(
-            ["git", "-C", str(repo_root), "rev-parse", arg],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return ""
-    return result.stdout.strip()
-
-
-def is_linked_worktree(repo_root: str | os.PathLike[str]) -> bool:
-    root = Path(repo_root)
-    git_dir = _git_path(root, "--git-dir")
-    git_common_dir = _git_path(root, "--git-common-dir")
-    return bool(git_dir and git_common_dir and git_dir != git_common_dir)
-
-
 def _read_first_line(path: Path) -> str:
     lines = path.read_text(encoding="utf-8").splitlines()
     return lines[0].strip() if lines else ""
@@ -84,13 +63,6 @@ def resolve_canonical_root(
             raise PathResolutionError(
                 f"Configured canonical root does not exist: {candidate}"
             ) from exc
-
-    if is_linked_worktree(resolved_code_root):
-        raise PathResolutionError(
-            f"Missing canonical root for linked worktree: {resolved_code_root}\n"
-            f"Run: bash {resolved_code_root}/scripts/register_canonical_root.sh\n"
-            "Or set TWINBOX_CANONICAL_ROOT=/abs/path/to/twinbox"
-        )
 
     return resolved_code_root
 
@@ -118,9 +90,6 @@ def _build_parser() -> argparse.ArgumentParser:
     resolve_root = subparsers.add_parser("resolve-canonical-root")
     resolve_root.add_argument("code_root")
 
-    linked = subparsers.add_parser("is-linked-worktree")
-    linked.add_argument("repo_root")
-
     init = subparsers.add_parser("init-roots")
     init.add_argument("script_path")
 
@@ -140,8 +109,6 @@ def main(argv: list[str] | None = None) -> int:
             print(resolve_existing_dir(args.candidate))
         elif args.command == "resolve-canonical-root":
             print(resolve_canonical_root(args.code_root))
-        elif args.command == "is-linked-worktree":
-            print("true" if is_linked_worktree(args.repo_root) else "false")
         elif args.command == "init-roots":
             code_root, canonical_root = init_roots(args.script_path)
             print(code_root)

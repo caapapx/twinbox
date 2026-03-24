@@ -53,8 +53,11 @@ done
 
 mkdir -p "${PHASE4_DIR}"
 
-if [[ ! -f "${ENV_FILE}" ]]; then echo "Missing .env"; exit 1; fi
-set -a; source "${ENV_FILE}"; set +a
+if [[ -f "${ENV_FILE}" ]]; then
+  set -a
+  source "${ENV_FILE}"
+  set +a
+fi
 bash "${CODE_ROOT}/scripts/check_env.sh"
 bash "${CODE_ROOT}/scripts/render_himalaya_config.sh"
 
@@ -68,7 +71,8 @@ else
   HIMALAYA_BIN="$(command -v himalaya)"
 fi
 
-ACCOUNT="${ACCOUNT_OVERRIDE:-${MAIL_ACCOUNT_NAME}}"
+ACCOUNT="${ACCOUNT_OVERRIDE:-${MAIL_ACCOUNT_NAME:-myTwinbox}}"
+: "${MAIL_ADDRESS:?Missing MAIL_ADDRESS after mailbox validation.}"
 
 for required in "${ENVELOPES}" "${THREAD_SAMPLES}"; do
   if [[ ! -f "${required}" ]]; then
@@ -217,4 +221,4 @@ echo "Phase 4 loading complete."
 echo "Lookback days: ${LOOKBACK_DAYS}"
 echo "Output: ${PHASE4_DIR}/context-pack.json"
 echo ""
-echo "Next: bash scripts/phase4_gastown.sh think-urgent"
+echo "Next: bash scripts/phase4_thinking.sh"
