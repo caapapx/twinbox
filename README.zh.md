@@ -228,12 +228,6 @@ twinbox/
 ├── README.zh.md
 ├── SKILL.md
 ├── pyproject.toml
-├── agent/
-│   ├── README.md
-│   └── custom_scripts/
-│       ├── types.ts
-│       ├── listeners/
-│       └── actions/
 ├── config/
 │   ├── action-templates/
 │   ├── context/
@@ -267,10 +261,10 @@ twinbox/
 4. 如果你想在本地验证邮箱访问权限，运行：
    - `twinbox mailbox preflight --json`
    - 或兼容 wrapper：`bash scripts/preflight_mailbox_smoke.sh --json`
-5. 如果你想扩展 Runtime Skeleton，从以下文件开始：
-   - [agent/README.md](agent/README.md)
+5. 如果你想扩展 runtime 契约，从以下文件开始：
    - [runtime.md](docs/ref/runtime.md)
-   - [types.ts](agent/custom_scripts/types.ts)
+   - [scheduling.md](docs/ref/scheduling.md)
+   - [Action Templates README](config/action-templates/README.md)
 
 ### 首次登录排错速查
 

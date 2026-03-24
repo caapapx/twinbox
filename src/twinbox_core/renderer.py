@@ -469,6 +469,53 @@ def render_phase4_outputs(
         f"Total threads in window: {weekly_brief.get('total_threads_in_window', 0)}",
         "",
     ]
+    material_summary = weekly_brief.get("material_summary", {})
+    if isinstance(material_summary, dict) and material_summary:
+        brief_lines.extend(["## Material Summary", ""])
+        sources = material_summary.get("sources", [])
+        if isinstance(sources, list) and sources:
+            brief_lines.append(f"Sources: {', '.join(str(item) for item in sources)}")
+        table_title = material_summary.get("table_title")
+        if table_title:
+            brief_lines.append(f"Title: {table_title}")
+        table_section = material_summary.get("table_section")
+        if table_section:
+            brief_lines.append(f"Section: {table_section}")
+        brief_lines.append(f"Period hint: {material_summary.get('period_hint', 'N/A')}")
+        brief_lines.append(f"Row count: {material_summary.get('row_count', 0)}")
+        headers = material_summary.get("table_headers", [])
+        if isinstance(headers, list) and headers:
+            brief_lines.append("Headers: " + " | ".join(str(item) for item in headers))
+        brief_lines.append("")
+
+        column_stats = material_summary.get("column_stats", [])
+        if isinstance(column_stats, list) and column_stats:
+            brief_lines.extend(
+                [
+                    "### Column Stats",
+                    "",
+                    "| Column | Summary |",
+                    "|--------|---------|",
+                ]
+            )
+            for item in column_stats:
+                if not isinstance(item, dict):
+                    continue
+                brief_lines.append(
+                    f"| {item.get('column', '')} | {item.get('summary', '')} |"
+                )
+            brief_lines.append("")
+
+        open_risks = material_summary.get("open_risks", [])
+        if isinstance(open_risks, list) and open_risks:
+            brief_lines.extend(["### Open Risks", ""])
+            for item in open_risks:
+                brief_lines.append(f"- {item}")
+            brief_lines.append("")
+
+        notes = material_summary.get("notes")
+        if notes:
+            brief_lines.extend(["### Notes", "", str(notes), ""])
     flow_summary = weekly_brief.get("flow_summary", [])
     if isinstance(flow_summary, list) and flow_summary:
         brief_lines.extend(

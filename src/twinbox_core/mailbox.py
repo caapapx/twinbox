@@ -534,7 +534,7 @@ def run_preflight(
             "smtp": smtp_check,
         },
         actionable_hint="Mailbox read-only preflight passed. SMTP is not blocking in read-only mode.",
-        next_action="Run `twinbox orchestrate run phase1` to start the read-only pipeline.",
+        next_action="Run `twinbox-orchestrate run` (full pipeline) or `twinbox-orchestrate run --phase 1` to start the read-only pipeline.",
         error_code="smtp_skipped_read_only",
         exit_code=EXIT_OK,
         paths=paths,

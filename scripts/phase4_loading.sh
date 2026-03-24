@@ -25,9 +25,11 @@ PERSONA="${STATE_ROOT}/runtime/validation/phase-2/persona-hypotheses.yaml"
 MANUAL_FACTS="${STATE_ROOT}/runtime/context/manual-facts.yaml"
 MANUAL_HABITS="${STATE_ROOT}/runtime/context/manual-habits.yaml"
 CALIBRATION="${STATE_ROOT}/runtime/context/instance-calibration-notes.md"
+MATERIAL_EXTRACTS="${STATE_ROOT}/runtime/context/material-extracts"
 
 LOOKBACK_DAYS="${PIPELINE_LOOKBACK_DAYS:-7}"
 MAX_BODY_FETCH=24
+MAX_THREAD_CANDIDATES="${PIPELINE_PHASE4_MAX_THREADS:-45}"
 ACCOUNT_OVERRIDE=""
 
 usage() {
@@ -37,6 +39,7 @@ Options:
   --account <name>         Override MAIL_ACCOUNT_NAME
   --lookback-days <n>      Lookback window (default: PIPELINE_LOOKBACK_DAYS or 7)
   --max-body-fetch <n>     Max bodies to fetch live (default: 24)
+  --max-thread-candidates <n>  Max candidate threads kept for Phase 4 (default: PIPELINE_PHASE4_MAX_THREADS or 45)
   -h, --help
 USAGE
 }
@@ -46,6 +49,7 @@ while [[ $# -gt 0 ]]; do
     --account) ACCOUNT_OVERRIDE="${2:-}"; shift 2 ;;
     --lookback-days) LOOKBACK_DAYS="${2:-}"; shift 2 ;;
     --max-body-fetch) MAX_BODY_FETCH="${2:-}"; shift 2 ;;
+    --max-thread-candidates) MAX_THREAD_CANDIDATES="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown: $1"; exit 1 ;;
   esac
@@ -80,11 +84,29 @@ for required in "${ENVELOPES}" "${THREAD_SAMPLES}"; do
   fi
 done
 
+mkdir -p "${MATERIAL_EXTRACTS}"
+
 # Build context pack: recent threads + live body fetch + lifecycle model + human context
-node - <<'NODE' "${ENVELOPES}" "${BODIES}" "${THREAD_SAMPLES}" "${LIFECYCLE}" "${PERSONA}" "${CENSUS}" "${PHASE4_DIR}" "${HIMALAYA_BIN}" "${CONFIG_FILE}" "${ACCOUNT}" "${MAIL_ADDRESS}" "${LOOKBACK_DAYS}" "${MAX_BODY_FETCH}" "${MANUAL_FACTS}" "${MANUAL_HABITS}" "${CALIBRATION}"
+node - <<'NODE' "${ENVELOPES}" "${BODIES}" "${THREAD_SAMPLES}" "${LIFECYCLE}" "${PERSONA}" "${CENSUS}" "${PHASE4_DIR}" "${HIMALAYA_BIN}" "${CONFIG_FILE}" "${ACCOUNT}" "${MAIL_ADDRESS}" "${LOOKBACK_DAYS}" "${MAX_BODY_FETCH}" "${MAX_THREAD_CANDIDATES}" "${MANUAL_FACTS}" "${MANUAL_HABITS}" "${CALIBRATION}" "${MATERIAL_EXTRACTS}"
 const fs = require('fs');
+const path = require('path');
 const cp = require('child_process');
-const [envelopesPath, bodiesPath, threadSamplesPath, lifecyclePath, personaPath, censusPath, phase4Dir, himalayaBin, configPath, account, mailAddress, lookbackDaysRaw, maxBodyFetchRaw, factsPath, habitsPath, calibrationPath] = process.argv.slice(2);
+const [envelopesPath, bodiesPath, threadSamplesPath, lifecyclePath, personaPath, censusPath, phase4Dir, himalayaBin, configPath, account, mailAddress, lookbackDaysRaw, maxBodyFetchRaw, maxThreadCandidatesRaw, factsPath, habitsPath, calibrationPath, materialExtractsDir] = process.argv.slice(2);
+
+function readMaterialExtractBundle(dir) {
+  try {
+    if (!fs.existsSync(dir)) return '';
+    const names = fs.readdirSync(dir).filter((f) => f.endsWith('.extracted.md')).sort();
+    let acc = '';
+    for (const name of names) {
+      const full = path.join(dir, name);
+      acc += '\n\n<!-- ' + name + ' -->\n\n' + fs.readFileSync(full, 'utf8');
+    }
+    return acc.slice(0, 8000);
+  } catch {
+    return '';
+  }
+}
 
 function readIfExists(p) {
   try { return fs.readFileSync(p, 'utf8').trim(); } catch { return ''; }
@@ -98,6 +120,7 @@ const personaRaw = readIfExists(personaPath);
 const censusRaw = readIfExists(censusPath);
 const lookbackDays = Number(lookbackDaysRaw);
 const maxBodyFetch = Number(maxBodyFetchRaw);
+const maxThreadCandidates = Number(maxThreadCandidatesRaw);
 
 // Existing body map for cache
 const bodyMap = new Map(existingBodies.map(b => [String(b.id), b]));
@@ -130,17 +153,48 @@ for (const e of recent) {
   threads.get(key).push(e);
 }
 
-// Pick threads worth analyzing (multi-message or lifecycle-modeled)
+function signalScore(subject, cachedBody) {
+  const haystack = (String(subject || '') + '\n' + String(cachedBody || '')).toLowerCase();
+  let score = 0;
+  if (/(部署结果反馈|资源反馈|部署反馈)/i.test(haystack)) score += 6;
+  if (/(周报|工作周报|交付周报|台账)/i.test(haystack)) score += 5;
+  if (/(一次成功|问题反馈|风险|漏洞|整改|联调)/i.test(haystack)) score += 4;
+  return score;
+}
+
+// Pick threads worth analyzing (multi-message or lifecycle-modeled), but keep
+// signal-heavy single threads so deployment feedback / weekly summaries do not get crowded out.
 const modeledKeys = new Set((threadSamples.samples || []).map(s => s.thread_key));
-const candidates = [...threads.entries()]
+const ranked = [...threads.entries()]
   .map(([key, rows]) => ({
     key,
     count: rows.length,
     modeled: modeledKeys.has(key),
     latest: rows.sort((a, b) => new Date(b.date) - new Date(a.date))[0],
   }))
-  .sort((a, b) => (b.modeled ? 1 : 0) - (a.modeled ? 1 : 0) || b.count - a.count)
-  .slice(0, 30);
+  .map((item) => {
+    const cachedBody = bodyMap.get(String(item.latest.id))?.body || '';
+    return {
+      ...item,
+      latest_ts: item.latest?.date ? new Date(item.latest.date).getTime() : 0,
+      signal_score: signalScore(item.latest?.subject || item.key, cachedBody),
+    };
+  });
+
+const primary = [...ranked]
+  .sort((a, b) => (b.modeled ? 1 : 0) - (a.modeled ? 1 : 0) || b.count - a.count || b.signal_score - a.signal_score || b.latest_ts - a.latest_ts)
+  .slice(0, maxThreadCandidates);
+const signalHeavy = [...ranked]
+  .filter((item) => item.signal_score > 0)
+  .sort((a, b) => b.signal_score - a.signal_score || (b.modeled ? 1 : 0) - (a.modeled ? 1 : 0) || b.latest_ts - a.latest_ts)
+  .slice(0, Math.min(12, maxThreadCandidates));
+const candidateMap = new Map();
+for (const item of [...primary, ...signalHeavy]) {
+  candidateMap.set(item.key, item);
+}
+const candidates = [...candidateMap.values()]
+  .sort((a, b) => (b.modeled ? 1 : 0) - (a.modeled ? 1 : 0) || b.signal_score - a.signal_score || b.count - a.count || b.latest_ts - a.latest_ts)
+  .slice(0, maxThreadCandidates);
 
 // Fetch bodies for candidates (use cache when available)
 let fetched = 0;
@@ -185,8 +239,10 @@ for (const c of candidates) {
 const factsRaw = readIfExists(factsPath);
 const habitsRaw = readIfExists(habitsPath);
 const calibrationRaw = readIfExists(calibrationPath);
+const materialBundle = readMaterialExtractBundle(materialExtractsDir);
 const hasFacts = factsRaw && factsRaw !== 'facts: []';
 const hasHabits = habitsRaw && habitsRaw !== 'habits: []';
+const hasMaterialExtracts = materialBundle.trim().length > 50;
 
 const context = {
   generated_at: now.toLocaleString('sv-SE', {timeZone:'Asia/Shanghai'}).replace(' ','T') + '+08:00',
@@ -203,16 +259,18 @@ const context = {
     has_facts: hasFacts,
     has_habits: hasHabits,
     has_calibration: calibrationRaw.length > 50,
+    has_material_extracts: hasMaterialExtracts,
     manual_facts_raw: hasFacts ? factsRaw : null,
     manual_habits_raw: hasHabits ? habitsRaw : null,
     calibration_notes: calibrationRaw.length > 50 ? calibrationRaw.slice(0, 1500) : null,
+    material_extracts_notes: hasMaterialExtracts ? materialBundle : null,
   },
 };
 
 fs.writeFileSync(phase4Dir + '/context-pack.json', JSON.stringify(context, null, 2));
 console.log('Context pack: ' + threadContexts.length + ' threads, ' + recent.length + ' recent envelopes');
 console.log('  bodies: ' + fetched + ' fetched live, ' + (threadContexts.filter(t => t.body_excerpt).length - fetched) + ' from cache');
-console.log('  human_context: facts=' + (hasFacts ? 'yes' : 'no') + ' habits=' + (hasHabits ? 'yes' : 'no') + ' calibration=' + (calibrationRaw.length > 50 ? 'yes' : 'no'));
+console.log('  human_context: facts=' + (hasFacts ? 'yes' : 'no') + ' habits=' + (hasHabits ? 'yes' : 'no') + ' calibration=' + (calibrationRaw.length > 50 ? 'yes' : 'no') + ' materials=' + (hasMaterialExtracts ? 'yes' : 'no'));
 console.log('  -> ' + phase4Dir + '/context-pack.json');
 NODE
 

@@ -37,4 +37,16 @@ fi
 
 echo "All sub-tasks done. Merging outputs..."
 
-exec bash "${CODE_ROOT}/scripts/phase4_merge.sh"
+source "${CODE_ROOT}/scripts/llm_common.sh"
+
+for f in urgent-pending-raw.json sla-risks-raw.json weekly-brief-raw.json; do
+  if [[ ! -f "${PHASE4_DIR}/${f}" ]]; then
+    echo "Missing ${f}. Run think sub-tasks first." >&2
+    exit 1
+  fi
+done
+
+_twinbox_python -m twinbox_core.phase4_value merge \
+  --output-dir "${PHASE4_DIR}" \
+  --doc-dir "${DOC_DIR}" \
+  --env-file "${STATE_ROOT}/.env"

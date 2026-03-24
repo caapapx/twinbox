@@ -11,13 +11,26 @@ from twinbox_core.orchestration import (
     contract_payload,
     get_phase_contract,
     render_contract_text,
+    resolve_roots,
     run_steps,
 )
 
 
 class OrchestrationTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.repo_root = Path(__file__).resolve().parents[2]
+        # tests/test_orchestration.py -> repo root is parents[1]
+        self.repo_root = Path(__file__).resolve().parents[1]
+
+    def test_resolve_roots_default_points_at_repo_with_scripts(self) -> None:
+        import os
+
+        old = os.environ.pop("TWINBOX_CODE_ROOT", None)
+        try:
+            code_root, _state = resolve_roots(None)
+            self.assertTrue((code_root / "scripts" / "phase4_loading.sh").is_file())
+        finally:
+            if old is not None:
+                os.environ["TWINBOX_CODE_ROOT"] = old
 
     def test_contract_payload_exposes_cli_entrypoints(self) -> None:
         payload = contract_payload(self.repo_root, self.repo_root, phase=None, serial_phase4=False)

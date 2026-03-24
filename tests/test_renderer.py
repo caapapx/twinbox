@@ -57,7 +57,24 @@ class RendererTest(unittest.TestCase):
             "daily_urgent": [{"thread_key": "资源申请", "flow": "LF1", "stage": "LF1-S2", "urgency_score": 80, "why": "待审批", "action_hint": "跟进", "owner": "alice", "waiting_on": "bob", "evidence_source": "mail_evidence"}],
             "pending_replies": [{"thread_key": "资源申请", "flow": "LF1", "waiting_on_me": True, "why": "需回复", "suggested_action": "答复", "evidence_source": "mail_evidence"}],
             "sla_risks": [{"thread_key": "部署失败", "flow": "LF2", "risk_type": "deployment_failure", "risk_description": "失败", "days_since_last_activity": 1, "suggested_action": "复盘"}],
-            "weekly_brief": {"period": "本周", "total_threads_in_window": 5, "flow_summary": [{"flow": "LF1", "name": "资源流", "count": 3, "highlight": "积压"}], "top_actions": ["处理积压"], "rhythm_observation": "周中忙"},
+            "weekly_brief": {
+                "period": "本周",
+                "total_threads_in_window": 5,
+                "material_summary": {
+                    "sources": ["weekly-deployment-ledger-sample_md.extracted.md"],
+                    "table_title": "周部署台账",
+                    "table_section": "台账明细",
+                    "period_hint": "2026-03-17 至 2026-03-23",
+                    "row_count": 2,
+                    "table_headers": ["资源/版本", "产品", "结果"],
+                    "column_stats": [{"column": "结果", "summary": "一次成功=2"}],
+                    "open_risks": ["项目B: RAID 异常"],
+                    "notes": "确定性列统计",
+                },
+                "flow_summary": [{"flow": "LF1", "name": "资源流", "count": 3, "highlight": "积压"}],
+                "top_actions": ["处理积压"],
+                "rhythm_observation": "周中忙",
+            },
         }
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -69,7 +86,12 @@ class RendererTest(unittest.TestCase):
                 model_name="test-model",
             )
             self.assertIn("资源申请", (root / "phase-4/daily-urgent.yaml").read_text(encoding="utf-8"))
-            self.assertIn("Weekly Brief", (root / "phase-4/weekly-brief.md").read_text(encoding="utf-8"))
+            weekly_text = (root / "phase-4/weekly-brief.md").read_text(encoding="utf-8")
+            self.assertIn("Weekly Brief", weekly_text)
+            self.assertIn("Material Summary", weekly_text)
+            self.assertIn("周部署台账", weekly_text)
+            self.assertIn("结果", weekly_text)
+            self.assertIn("RAID 异常", weekly_text)
 
 
 if __name__ == "__main__":

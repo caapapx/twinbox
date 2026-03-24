@@ -180,10 +180,89 @@ twinbox mailbox preflight --json
 - `actionable_hint`: 面向用户的修复提示
 - `next_action`: 下一步建议
 
+邮箱登录原理可以简化成下面这条链路：
+
+```text
++------------------+
+| OpenClaw / 用户   |
+| 填 env 表单       |
++---------+--------+
+          |
+          | IMAP_*, SMTP_*, MAIL_ADDRESS
+          v
++-------------------------------+
+| twinbox mailbox preflight     |
+| task-facing CLI               |
+| 统一入口                      |
++---------------+---------------+
+                |
+                v
++-------------------------------+
+| mailbox.py                    |
+| 1. 读 .env + 进程环境变量      |
+| 2. 补默认值                   |
+|    - MAIL_ACCOUNT_NAME        |
+|    - MAIL_DISPLAY_NAME        |
+|    - IMAP/SMTP_ENCRYPTION     |
+| 3. 检查缺项                   |
++---------------+---------------+
+                |
+      missing?  | yes
+                v
+      +-------------------------+
+      | status=fail             |
+      | login_stage=unconfigured|
+      | missing_env + 修复建议   |
+      +-------------------------+
+
+                no
+                |
+                v
++-------------------------------+
+| 渲染 himalaya config.toml     |
+| 把 env 转成邮件客户端配置      |
++---------------+---------------+
+                |
+                v
++-------------------------------+
+| 调用 himalaya                 |
+| envelope list --output json   |
+| 对 IMAP 做只读连通性验证       |
++---------------+---------------+
+                |
+      fail?     | yes
+                v
+      +-------------------------+
+      | status=fail             |
+      | login_stage=validated   |
+      | 分类: auth/tls/network  |
+      | actionable_hint         |
+      +-------------------------+
+
+                no
+                |
+                v
++-------------------------------+
+| IMAP 通过                     |
+| SMTP 在只读模式不阻塞         |
+| 记为 warn/skip                |
++---------------+---------------+
+                |
+                v
++-------------------------------+
+| 返回给 OpenClaw               |
+| login_stage=mailbox-connected |
+| status=success 或 warn        |
+| next_action                   |
++-------------------------------+
+```
+
+也就是说，这里的“登录”不是网页会话登录，而是 twinbox 用环境变量生成一份临时的 Himalaya 邮件配置，再执行一次只读 IMAP 拉取测试。能读到 envelope，就认为邮箱已经接通；如果失败，则按 `missing_env`、认证、TLS/端口、网络这几类返回可修复反馈。
+
 只读模式下，SMTP 只作为提示项，不阻塞 `mailbox-connected`。预检通过后，下一步通常是：
 
 ```bash
-twinbox orchestrate run phase1
+twinbox-orchestrate run --phase 1
 ```
 
 **健康检查（无需鉴权）**：

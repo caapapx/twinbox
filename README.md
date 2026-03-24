@@ -228,12 +228,6 @@ twinbox/
 ├── README.zh.md
 ├── SKILL.md
 ├── pyproject.toml
-├── agent/
-│   ├── README.md
-│   └── custom_scripts/
-│       ├── types.ts
-│       ├── listeners/
-│       └── actions/
 ├── config/
 │   ├── action-templates/
 │   ├── context/
@@ -267,10 +261,10 @@ twinbox/
 4. If you want to validate mailbox access locally, run:
    - `twinbox mailbox preflight --json`
    - or the compatibility wrapper: `bash scripts/preflight_mailbox_smoke.sh --json`
-5. If you want to extend the runtime skeleton, start from:
-   - [agent/README.md](agent/README.md)
+5. If you want to extend the runtime contract, start from:
    - [runtime.md](docs/ref/runtime.md)
-   - [types.ts](agent/custom_scripts/types.ts)
+   - [scheduling.md](docs/ref/scheduling.md)
+   - [Action Templates README](config/action-templates/README.md)
 
 ### First Login Troubleshooting
 

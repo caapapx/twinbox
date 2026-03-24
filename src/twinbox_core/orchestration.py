@@ -233,7 +233,8 @@ def _default_code_root() -> Path:
     override = os.environ.get("TWINBOX_CODE_ROOT")
     if override:
         return resolve_existing_dir(override)
-    return resolve_existing_dir(Path(__file__).resolve().parents[3])
+    # orchestration.py lives at <code_root>/src/twinbox_core/orchestration.py
+    return resolve_existing_dir(Path(__file__).resolve().parents[2])
 
 
 def resolve_roots(code_root_override: str | None = None) -> tuple[Path, Path]:

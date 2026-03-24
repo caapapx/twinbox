@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -82,6 +84,7 @@ Produce a JSON object with this structure:
 6. If human_context is provided:
    - manual_facts override owner/waiting_on guesses
    - manual_habits inject periodic tasks into daily_urgent or weekly_brief
+   - material_extracts_notes: user-uploaded tables/docs/slides (CSV/XLSX/DOCX/PPTX extracts); use in weekly_brief and ranking hints where relevant to mailbox threads, without inventing email threads
    - Mark evidence_source accordingly
 7. Do NOT invent threads not in the input. Every thread_key must come from the data.
 8. Output ONLY the JSON object. No markdown, no explanation.
@@ -132,6 +135,15 @@ BRIEF_PROMPT = """You are an enterprise email assistant producing a weekly brief
   "weekly_brief": {
     "period":"<date range>",
     "total_threads_in_window":<number>,
+    "material_summary":{
+      "sources":["<source name>"],
+      "period_hint":"<material date range or N/A>",
+      "table_headers":["<header 1>","<header 2>"],
+      "row_count":<number>,
+      "column_stats":[{"column":"<header>","summary":"<Chinese summary>"}],
+      "open_risks":["<Chinese risk bullet>"],
+      "notes":"<Chinese note>"
+    },
     "action_now":[{"thread_key":"<key>","flow":"<flow>","why":"<Chinese>","action":"<Chinese>"}],
     "backlog":[{"thread_key":"<key>","flow":"<flow>","why":"<Chinese>","next_step":"<Chinese>"}],
     "important_changes":[{"thread_key":"<key>","change":"<Chinese>","impact":"<Chinese>"}],
@@ -146,7 +158,10 @@ Rules:
 2. Use lifecycle flows to group threads
 3. top_actions: the 3 most important things to do this week
 4. rhythm_observation: patterns in email activity timing/volume
-5. Output ONLY JSON.
+5. If human_context.material_extracts_notes is present, populate material_summary and keep column coverage complete when possible
+6. If some material rows cannot be mapped to mailbox thread_keys, keep them in material_summary instead of forcing them into action_now/backlog
+7. If human_context.material_extracts_notes is present (e.g. user-uploaded ledger/doc/slides), fold relevant items into weekly_brief sections where they align with threads—do not invent thread_keys not in mailbox data
+8. Output ONLY JSON.
 
 Mailbox data:
 """
@@ -161,6 +176,220 @@ class Phase4RunConfig:
     env_file: Path | None
     model_override: str | None
     max_tokens: int
+
+
+def _parse_markdown_tables(material_notes: str) -> list[dict[str, object]]:
+    lines = material_notes.splitlines()
+    tables: list[dict[str, object]] = []
+    current_source = "uploaded-material"
+    current_period = "N/A"
+    current_title = ""
+    current_section = ""
+    index = 0
+
+    while index < len(lines):
+        line = lines[index].strip()
+        if line.startswith("<!-- ") and line.endswith(" -->"):
+            current_source = line[5:-4].strip() or current_source
+        elif line.startswith("# 自上传"):
+            current_source = line.lstrip("#").strip()
+        elif line.startswith("# "):
+            current_title = line[2:].strip()
+        elif line.startswith("## "):
+            current_section = line[3:].strip()
+        elif line.startswith("本周：") or line.startswith("周期："):
+            current_period = line.split("：", 1)[-1].strip() or current_period
+
+        if (
+            line.startswith("|")
+            and index + 1 < len(lines)
+            and lines[index + 1].strip().startswith("|")
+            and "---" in lines[index + 1]
+        ):
+            header = [cell.strip() for cell in line.strip("|").split("|")]
+            rows: list[dict[str, str]] = []
+            index += 2
+            while index < len(lines):
+                row_line = lines[index].strip()
+                if not row_line.startswith("|"):
+                    break
+                cells = [cell.strip() for cell in row_line.strip("|").split("|")]
+                if len(cells) < len(header):
+                    cells.extend([""] * (len(header) - len(cells)))
+                rows.append({header[pos]: cells[pos] for pos in range(len(header))})
+                index += 1
+            tables.append(
+                {
+                    "source": current_source,
+                    "title": current_title or current_source,
+                    "section": current_section or None,
+                    "period_hint": current_period,
+                    "headers": header,
+                    "rows": rows,
+                }
+            )
+            continue
+        index += 1
+
+    return tables
+
+
+def _summarize_material_column(column: str, values: list[str]) -> str:
+    normalized = [value.strip() for value in values if value and value.strip()]
+    if not normalized:
+        return "无有效值"
+
+    if _is_date_like_column(column, normalized):
+        return f"{normalized[0]} 至 {normalized[-1]}" if len(normalized) > 1 else normalized[0]
+
+    counts = Counter(normalized)
+    average_length = sum(len(value) for value in normalized) / len(normalized)
+    if len(counts) <= 6 and average_length <= 18:
+        return "，".join(f"{key}={value}" for key, value in counts.items())
+
+    sample = "；".join(normalized[:3])
+    return f"非空={len(normalized)}/{len(values)}；示例：{sample}"
+
+
+def _is_date_like_value(value: str) -> bool:
+    stripped = value.strip()
+    if not stripped:
+        return False
+    return bool(
+        re.search(r"\d{4}[-/年]\d{1,2}([-/月]\d{1,2}(日)?)?", stripped)
+        or re.search(r"\d{1,2}[-/]\d{1,2}\s*[~至-]\s*\d{1,2}[-/]\d{1,2}", stripped)
+    )
+
+
+def _is_date_like_column(column: str, values: list[str]) -> bool:
+    if any(token in column for token in ("日期", "周期", "时间", "起止")):
+        return True
+    hits = sum(1 for value in values if _is_date_like_value(value))
+    return hits >= max(1, len(values) - 1)
+
+
+def _is_neutral_material_value(value: str) -> bool:
+    stripped = value.strip()
+    return stripped in {
+        "",
+        "-",
+        "/",
+        "无",
+        "无。",
+        "无问题",
+        "通过",
+        "已完成",
+        "完成",
+        "正常",
+        "是",
+        "否",
+        "一次成功",
+        "达到预期",
+        "待定",
+        "n/a",
+        "N/A",
+    }
+
+
+def derive_material_summary(context: dict[str, object]) -> dict[str, object] | None:
+    human_context = context.get("human_context", {})
+    if not isinstance(human_context, dict):
+        return None
+    material_notes = human_context.get("material_extracts_notes")
+    if not isinstance(material_notes, str) or not material_notes.strip():
+        return None
+
+    tables = _parse_markdown_tables(material_notes)
+    if not tables:
+        return None
+
+    primary = max(tables, key=lambda item: len(item.get("rows", [])) if isinstance(item.get("rows", []), list) else 0)
+    headers = [header for header in primary.get("headers", []) if isinstance(header, str)]
+    rows = [row for row in primary.get("rows", []) if isinstance(row, dict)]
+    if not headers or not rows:
+        return None
+
+    column_stats: list[dict[str, str]] = []
+    header_values: dict[str, list[str]] = {}
+    for header in headers:
+        values = [str(row.get(header, "") or "") for row in rows]
+        header_values[header] = values
+        column_stats.append({"column": header, "summary": _summarize_material_column(header, values)})
+
+    risk_rows: list[str] = []
+    risk_candidate_headers: set[str] = set()
+    for header in headers[1:]:
+        values = [value.strip() for value in header_values.get(header, []) if value and value.strip()]
+        if not values or _is_date_like_column(header, values):
+            continue
+        neutral_hits = sum(1 for value in values if _is_neutral_material_value(value))
+        average_length = sum(len(value) for value in values) / len(values)
+        if neutral_hits > 0 or average_length > 8:
+            risk_candidate_headers.add(header)
+
+    for row in rows:
+        issue_bits = []
+        row_label = "未命名条目"
+        for header in headers:
+            value = str(row.get(header, "") or "").strip()
+            if value:
+                row_label = value
+                break
+        for header in headers[1:]:
+            if header not in risk_candidate_headers:
+                continue
+            value = str(row.get(header, "") or "").strip()
+            if _is_neutral_material_value(value) or _is_date_like_value(value):
+                continue
+            if len(value) <= 1:
+                continue
+            issue_bits.append(f"{header}={value}")
+        if issue_bits:
+            risk_rows.append(f"{row_label}: {'；'.join(issue_bits[:3])}")
+
+    sources = []
+    for table in tables:
+        source = table.get("source")
+        if isinstance(source, str) and source and source not in sources:
+            sources.append(source)
+
+    return {
+        "sources": sources,
+        "table_title": str(primary.get("title", "") or ""),
+        "table_section": primary.get("section"),
+        "period_hint": primary.get("period_hint", "N/A"),
+        "table_headers": headers,
+        "row_count": len(rows),
+        "column_stats": column_stats,
+        "open_risks": risk_rows[:5],
+        "notes": "材料摘要直接按上传表格的标题、周期、表头顺序和行数据生成；日期列给范围，枚举列给计数，自由文本列给非空计数和示例。",
+    }
+
+
+def _ensure_material_summary(
+    response: dict[str, object],
+    *,
+    context: dict[str, object],
+) -> dict[str, object]:
+    derived = derive_material_summary(context)
+    if not derived:
+        return response
+
+    weekly_brief = response.get("weekly_brief", {})
+    if not isinstance(weekly_brief, dict):
+        weekly_brief = {}
+        response["weekly_brief"] = weekly_brief
+
+    existing = weekly_brief.get("material_summary")
+    if not isinstance(existing, dict) or not existing:
+        weekly_brief["material_summary"] = derived
+        return response
+
+    for key, value in derived.items():
+        if key not in existing or existing.get(key) in (None, "", [], {}):
+            existing[key] = value
+    weekly_brief["material_summary"] = existing
+    return response
 
 
 def _load_object(path: Path) -> dict[str, object]:
@@ -216,6 +445,7 @@ def run_single(config: Phase4RunConfig) -> dict[str, object]:
 
     backend = resolve_backend(env_file=config.env_file)
     model_name = config.model_override or backend.model
+    context = _load_object(config.context_path)
     print(f"LLM backend: {backend.backend} ({backend.model})")
     print("Calling LLM for daily value outputs...")
     response = _call_with_prompt(
@@ -225,6 +455,7 @@ def run_single(config: Phase4RunConfig) -> dict[str, object]:
         model_override=config.model_override,
         max_tokens=config.max_tokens,
     )
+    response = _ensure_material_summary(response, context=context)
     print("LLM response saved.")
     print("Generating Phase 4 outputs...")
     render_phase4_outputs(
@@ -248,6 +479,7 @@ def run_subtask(
     env_file: Path | None,
     model_override: str | None,
 ) -> dict[str, object]:
+    context = _load_object(context_path)
     backend = resolve_backend(env_file=env_file)
     print(f"LLM backend: {backend.backend} ({backend.model})")
 
@@ -283,6 +515,9 @@ def run_subtask(
         label = "weekly-brief"
     else:
         raise LLMError(f"Unknown Phase 4 subtask: {kind}")
+
+    if kind == "brief":
+        response = _ensure_material_summary(response, context=context)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(response, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

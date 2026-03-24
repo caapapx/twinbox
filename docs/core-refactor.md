@@ -41,7 +41,7 @@
 #### TODO-2：context_updated 事件触发局部重算
 
 - [ ] `twinbox context import-material / upsert-fact / profile-set` 在写入后发出 `context_updated` 事件（可以先写入 `runtime/context/events/` 下的标记文件）
-- [ ] `cmd_context_refresh` 从仅打印提示语改为真正触发 Phase 1 重算（调用 `twinbox orchestrate run phase1` 或等效路径）
+- [ ] `cmd_context_refresh` 从仅打印提示语改为真正触发 Phase 1 重算（调用 `twinbox-orchestrate run --phase 1` 或等效路径）
 - [ ] 明确局部重算的受影响对象范围：受影响的 `ThreadCard`、相关 `QueueView`、可能受影响的 `DigestView`
 
 完成标准：执行 context 命令后，相关 phase artifacts 自动更新，无需手动触发。
