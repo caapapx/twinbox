@@ -1,7 +1,7 @@
 ---
 name: email-himalaya-assistant
 description: Thread-centric email copilot for OpenClaw that learns workflow from mailbox evidence, human context, and controlled automation.
-metadata: {"openclaw":{"requires":{"env":["IMAP_HOST","IMAP_PORT","IMAP_LOGIN","IMAP_PASS","SMTP_HOST","SMTP_PORT","SMTP_LOGIN","SMTP_PASS"]},"primaryEnv":"IMAP_LOGIN"}}
+metadata: {"openclaw":{"requires":{"env":["IMAP_HOST","IMAP_PORT","IMAP_LOGIN","IMAP_PASS","SMTP_HOST","SMTP_PORT","SMTP_LOGIN","SMTP_PASS"]},"primaryEnv":"IMAP_LOGIN","schedules":[{"name":"daily-refresh","cron":"30 8 * * *","command":"twinbox orchestrate run phase4","description":"Daily pre-computation of urgent/pending/sla queues at 08:30"},{"name":"weekly-refresh","cron":"30 17 * * 5","command":"twinbox orchestrate run phase4","description":"Weekly brief refresh every Friday at 17:30"},{"name":"nightly-full-refresh","cron":"0 2 * * *","command":"twinbox orchestrate run phase1 phase2 phase3 phase4","description":"Nightly full pipeline refresh at 02:00"}]}}
 ---
 
 Use this skill for mailbox onboarding, thread-state triage, daily queue generation, and draft-safe email workflows.

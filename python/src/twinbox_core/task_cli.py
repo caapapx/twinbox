@@ -76,6 +76,52 @@ class DigestView:
         }
 
 
+@dataclass(frozen=True)
+class ActionCard:
+    """Action suggestion projected from Phase 4 artifacts."""
+    action_id: str
+    thread_id: str
+    action_type: str  # reply | forward | archive | flag
+    why_now: str
+    risk_level: str  # low | medium | high
+    required_review_fields: list[str]
+    suggested_draft_mode: str | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "action_id": self.action_id,
+            "thread_id": self.thread_id,
+            "action_type": self.action_type,
+            "why_now": self.why_now,
+            "risk_level": self.risk_level,
+            "required_review_fields": self.required_review_fields,
+            "suggested_draft_mode": self.suggested_draft_mode,
+        }
+
+
+@dataclass(frozen=True)
+class ReviewItem:
+    """Review item for human review surface."""
+    review_id: str
+    thread_id: str
+    review_type: str  # state_override | action_approval | confidence_check
+    current_state: str
+    proposed_change: str
+    reason: str
+    created_at: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "review_id": self.review_id,
+            "thread_id": self.thread_id,
+            "review_type": self.review_type,
+            "current_state": self.current_state,
+            "proposed_change": self.proposed_change,
+            "reason": self.reason,
+            "created_at": self.created_at,
+        }
+
+
 def _load_yaml_artifact(path: Path) -> dict[str, Any]:
     """Load YAML artifact from Phase 4 output."""
     if not path.exists():
@@ -699,6 +745,254 @@ def cmd_digest_weekly(args: argparse.Namespace) -> int:
     return 0
 
 
+def _infer_action_type(item: dict) -> str:
+    """Infer action type from thread data."""
+    action_hint = item.get("action_hint", "")
+    if "reply" in action_hint.lower() or "respond" in action_hint.lower():
+        return "reply"
+    if "forward" in action_hint.lower():
+        return "forward"
+    if "archive" in action_hint.lower() or "close" in action_hint.lower():
+        return "archive"
+    return "reply"  # default
+
+
+def _infer_risk_level(item: dict) -> str:
+    """Infer risk level from urgency score."""
+    score = item.get("urgency_score", 0)
+    if score >= 80:
+        return "high"
+    if score >= 50:
+        return "medium"
+    return "low"
+
+
+def _project_action_suggestions() -> list[ActionCard]:
+    """Project action suggestions from Phase 4 urgent and pending artifacts."""
+    phase4_dir = _get_phase4_dir()
+    actions: list[ActionCard] = []
+
+    # Urgent items -> action suggestions
+    urgent_artifact = _load_yaml_artifact(phase4_dir / "daily-urgent.yaml")
+    for idx, item in enumerate(urgent_artifact.get("daily_urgent", [])):
+        if not isinstance(item, dict):
+            continue
+        thread_key = item.get("thread_key", "")
+        actions.append(ActionCard(
+            action_id=f"action-urgent-{idx + 1}",
+            thread_id=thread_key,
+            action_type=_infer_action_type(item),
+            why_now=item.get("why", "Urgent thread requiring attention"),
+            risk_level=_infer_risk_level(item),
+            required_review_fields=["action_type", "why_now"],
+            suggested_draft_mode="quick_reply" if _infer_action_type(item) == "reply" else None,
+        ))
+
+    # Pending items -> action suggestions
+    pending_artifact = _load_yaml_artifact(phase4_dir / "pending-replies.yaml")
+    for idx, item in enumerate(pending_artifact.get("pending_replies", [])):
+        if not isinstance(item, dict):
+            continue
+        thread_key = item.get("thread_key", "")
+        actions.append(ActionCard(
+            action_id=f"action-pending-{idx + 1}",
+            thread_id=thread_key,
+            action_type="reply",
+            why_now=item.get("why", "Pending reply needed"),
+            risk_level="medium",
+            required_review_fields=["action_type"],
+            suggested_draft_mode="quick_reply",
+        ))
+
+    return actions
+
+
+def cmd_action_suggest(args: argparse.Namespace) -> int:
+    """Suggest actions based on current queue state."""
+    actions = _project_action_suggestions()
+
+    if not actions:
+        if args.json:
+            print(json.dumps([], ensure_ascii=False, indent=2))
+        else:
+            print("当前没有建议的行动。")
+        return 0
+
+    if args.json:
+        output = [a.to_dict() for a in actions]
+        print(json.dumps(output, ensure_ascii=False, indent=2))
+    else:
+        lines = [
+            f"建议行动 ({len(actions)} 项)",
+            "=" * 40,
+            "",
+        ]
+        for action in actions:
+            risk_marker = {"high": "!!!", "medium": "!!", "low": "!"}.get(action.risk_level, "")
+            lines.extend([
+                f"[{action.action_id}] {action.thread_id} {risk_marker}",
+                f"    类型: {action.action_type}",
+                f"    原因: {action.why_now}",
+                f"    风险: {action.risk_level}",
+                f"    草稿模式: {action.suggested_draft_mode or 'N/A'}",
+                "",
+            ])
+        print("\n".join(lines))
+
+    return 0
+
+
+def cmd_action_materialize(args: argparse.Namespace) -> int:
+    """Materialize a specific action for execution."""
+    actions = _project_action_suggestions()
+    target = next((a for a in actions if a.action_id == args.action_id), None)
+
+    if not target:
+        print(f"错误: 未找到行动 '{args.action_id}'", file=sys.stderr)
+        print(f"可用行动: {', '.join(a.action_id for a in actions)}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        output = {
+            **target.to_dict(),
+            "materialized": True,
+            "review_checklist": [
+                {"field": f, "reviewed": False} for f in target.required_review_fields
+            ],
+        }
+        print(json.dumps(output, ensure_ascii=False, indent=2))
+    else:
+        lines = [
+            f"行动详情: {target.action_id}",
+            "=" * 40,
+            f"线程: {target.thread_id}",
+            f"类型: {target.action_type}",
+            f"原因: {target.why_now}",
+            f"风险: {target.risk_level}",
+            f"草稿模式: {target.suggested_draft_mode or 'N/A'}",
+            "",
+            "审核清单:",
+        ]
+        for field in target.required_review_fields:
+            lines.append(f"  [ ] {field}")
+        lines.append("")
+        lines.append("提示: 确认审核清单后，使用 'twinbox action apply' 执行此行动")
+        print("\n".join(lines))
+
+    return 0
+
+
+def _project_review_items() -> list[ReviewItem]:
+    """Project review items from low-confidence threads."""
+    phase4_dir = _get_phase4_dir()
+    reviews: list[ReviewItem] = []
+
+    now_iso = datetime.now().isoformat()
+
+    # Find threads with low confidence or needing state override
+    for artifact_name, queue_key in [
+        ("daily-urgent.yaml", "daily_urgent"),
+        ("pending-replies.yaml", "pending_replies"),
+    ]:
+        artifact = _load_yaml_artifact(phase4_dir / artifact_name)
+        for idx, item in enumerate(artifact.get(queue_key, [])):
+            if not isinstance(item, dict):
+                continue
+            urgency_score = item.get("urgency_score", 0)
+            confidence = urgency_score / 100.0 if urgency_score else 0.8
+
+            # Low confidence items need review
+            if confidence < 0.7:
+                thread_key = item.get("thread_key", "")
+                reviews.append(ReviewItem(
+                    review_id=f"review-{queue_key}-{idx + 1}",
+                    thread_id=thread_key,
+                    review_type="confidence_check",
+                    current_state=item.get("stage", "unknown"),
+                    proposed_change="confirm_or_override",
+                    reason=f"Low confidence ({confidence:.2f}): {item.get('why', '')}",
+                    created_at=now_iso,
+                ))
+
+            # Items without why/reason_code need explainability review
+            why = item.get("why", "")
+            reason_code = item.get("reason_code", "")
+            if not why or not reason_code:
+                thread_key = item.get("thread_key", "")
+                reviews.append(ReviewItem(
+                    review_id=f"review-explain-{queue_key}-{idx + 1}",
+                    thread_id=thread_key,
+                    review_type="confidence_check",
+                    current_state=item.get("stage", "unknown"),
+                    proposed_change="add_explanation",
+                    reason="Missing why or reason_code fields",
+                    created_at=now_iso,
+                ))
+
+    return reviews
+
+
+def cmd_review_list(args: argparse.Namespace) -> int:
+    """List items needing human review."""
+    reviews = _project_review_items()
+
+    if not reviews:
+        if args.json:
+            print(json.dumps([], ensure_ascii=False, indent=2))
+        else:
+            print("当前没有需要审核的项目。")
+        return 0
+
+    if args.json:
+        output = [r.to_dict() for r in reviews]
+        print(json.dumps(output, ensure_ascii=False, indent=2))
+    else:
+        lines = [
+            f"待审核项目 ({len(reviews)} 项)",
+            "=" * 40,
+            "",
+        ]
+        for review in reviews:
+            lines.extend([
+                f"[{review.review_id}] {review.thread_id}",
+                f"    类型: {review.review_type}",
+                f"    当前状态: {review.current_state}",
+                f"    建议变更: {review.proposed_change}",
+                f"    原因: {review.reason}",
+                "",
+            ])
+        print("\n".join(lines))
+
+    return 0
+
+
+def cmd_review_show(args: argparse.Namespace) -> int:
+    """Show details of a specific review item."""
+    reviews = _project_review_items()
+    target = next((r for r in reviews if r.review_id == args.review_id), None)
+
+    if not target:
+        print(f"错误: 未找到审核项 '{args.review_id}'", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(target.to_dict(), ensure_ascii=False, indent=2))
+    else:
+        lines = [
+            f"审核项: {target.review_id}",
+            "=" * 40,
+            f"线程: {target.thread_id}",
+            f"类型: {target.review_type}",
+            f"当前状态: {target.current_state}",
+            f"建议变更: {target.proposed_change}",
+            f"原因: {target.reason}",
+            f"创建时间: {target.created_at}",
+        ]
+        print("\n".join(lines))
+
+    return 0
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="twinbox",
@@ -737,7 +1031,7 @@ def _build_parser() -> argparse.ArgumentParser:
     queue_show.add_argument("queue_type", help="Queue type (urgent/pending/sla_risk)")
     queue_show.add_argument("--json", action="store_true", help="Output as JSON")
 
-    queue_explain = queue_sub.add_parser("explain", help="Explain queue projection")
+    queue_sub.add_parser("explain", help="Explain queue projection")
 
     # thread commands
     thread_parser = subparsers.add_parser("thread", help="Thread inspection")
@@ -760,6 +1054,28 @@ def _build_parser() -> argparse.ArgumentParser:
 
     digest_weekly = digest_sub.add_parser("weekly", help="Show weekly digest")
     digest_weekly.add_argument("--json", action="store_true", help="Output as JSON")
+
+    # action commands
+    action_parser = subparsers.add_parser("action", help="Action suggestions")
+    action_sub = action_parser.add_subparsers(dest="action_command", required=True)
+
+    action_suggest = action_sub.add_parser("suggest", help="Suggest actions from queue state")
+    action_suggest.add_argument("--json", action="store_true", help="Output as JSON")
+
+    action_materialize = action_sub.add_parser("materialize", help="Materialize a specific action")
+    action_materialize.add_argument("action_id", help="Action ID to materialize")
+    action_materialize.add_argument("--json", action="store_true", help="Output as JSON")
+
+    # review commands
+    review_parser = subparsers.add_parser("review", help="Review surface")
+    review_sub = review_parser.add_subparsers(dest="review_command", required=True)
+
+    review_list = review_sub.add_parser("list", help="List items needing review")
+    review_list.add_argument("--json", action="store_true", help="Output as JSON")
+
+    review_show = review_sub.add_parser("show", help="Show a specific review item")
+    review_show.add_argument("review_id", help="Review ID")
+    review_show.add_argument("--json", action="store_true", help="Output as JSON")
 
     return parser
 
@@ -796,6 +1112,16 @@ def main(argv: list[str] | None = None) -> int:
                 return cmd_digest_daily(args)
             elif args.digest_command == "weekly":
                 return cmd_digest_weekly(args)
+        elif args.command == "action":
+            if args.action_command == "suggest":
+                return cmd_action_suggest(args)
+            elif args.action_command == "materialize":
+                return cmd_action_materialize(args)
+        elif args.command == "review":
+            if args.review_command == "list":
+                return cmd_review_list(args)
+            elif args.review_command == "show":
+                return cmd_review_show(args)
     except Exception as exc:
         print(f"错误: {exc}", file=sys.stderr)
         return 1
