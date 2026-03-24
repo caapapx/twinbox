@@ -7,12 +7,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Activate Python environment if available
-if [[ -d "$PROJECT_ROOT/python/.venv" ]]; then
-    source "$PROJECT_ROOT/python/.venv/bin/activate"
+if [[ -d "$PROJECT_ROOT/.venv" ]]; then
+    source "$PROJECT_ROOT/.venv/bin/activate"
 fi
 
 # Add Python source to PYTHONPATH
-export PYTHONPATH="$PROJECT_ROOT/python/src:${PYTHONPATH:-}"
+export PYTHONPATH="$PROJECT_ROOT/src:${PYTHONPATH:-}"
 
 # Run task CLI
 exec python3 -m twinbox_core.task_cli "$@"

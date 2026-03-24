@@ -291,10 +291,10 @@ bash scripts/twinbox_orchestrate.sh contract --format json
 bash scripts/twinbox_orchestrate.sh run --dry-run
 
 # 2. Python core 回归
-PYTHONPATH=python/src python3 -m unittest discover -s python/tests -v
+pytest tests/
 
 # 3. 轻量 smoke
-python3 -m compileall python/src
+python3 -m compileall src
 bash -n scripts/twinbox_orchestrate.sh scripts/run_pipeline.sh scripts/phase4_gastown.sh
 
 # 4. Phase 4 分步验证

@@ -1,6 +1,14 @@
 # Changelog
 
-按时间倒序记录项目的重要变更。
+按时间**倒序**记录项目的重要变更。仓库首提交：**2026-03-16**（当时仓库名为 `email-skill`，后经历 `email-bot` 更名为 **twinbox**）。
+
+---
+
+## 2026-03-24
+
+### Feat
+
+- **Task-facing CLI — action / review**：实现 `ActionCard`、`ReviewItem` 与 **`action suggest` / `action materialize`**、**`review list` / `review show`**（规范中的 `apply`、`approve`、`reject` 等仍为后续能力，以 spec 为准）。
 
 ---
 
@@ -8,95 +16,109 @@
 
 ### Feat
 
-- **Task-facing CLI 完整实现**：完成所有核心命令
-  - `queue list/show/explain`：从 Phase 4 artifacts 投影队列视图
+- **Task-facing CLI（核心命令面）**
+  - `queue list/show/explain`：从 Phase 4 等工件投影队列视图
   - `context import-material/upsert-fact/profile-set/refresh`：用户上下文管理
-  - `thread inspect/explain`：线程状态检视与解释
+  - `thread inspect/explain`：线程状态检视与推理说明（规范中的 `thread summarize` 尚未在 CLI 落地，以 `docs/specs/task-facing-cli.md` 为准）
   - `digest daily/weekly`：每日/每周摘要视图
-  - 统一入口脚本 `scripts/twinbox`，支持 `--json` 输出
+  - 统一入口 `scripts/twinbox`，默认支持 `--json` 结构化输出
+- **DigestView 与对象契约**：补充 `DigestView` 及 task-facing 对象模型在规范中的完整描述与实现状态更新。
+- **遗留脚本整理**：将被 Python core 替代的 phase 脚本迁入 `scripts/old/`；新增 **`docs/specs/openclaw-scheduling-integration.md`**（通过 SKILL.md 等配置定时任务的集成说明）。
 
 ### Refactor
 
-- 重组计划文档：将旧计划移至 `docs/plans/old/`，保持主目录清晰
+- 计划文档重组：`docs/plans/old/` 收纳历史方案，主目录保持可读。
+- `development-progress` 快照更名为 **`docs/CHANGELOG.md`**，作为项目级变更日志入口。
 
 ### Docs
 
-- 新增 `task-facing-cli.md` 规范文档，定义命令树和对象模型
-- 更新规范文档实现状态，标记所有已完成命令
-- 新增 `test_task_cli.py` 测试文件（8个测试全部通过）
-- 清理 CLAUDE.md 和 AGENTS.md，减少上下文开销
-- 移除 README 中的 OpenClaw 引用，强调线程中心方法
+- 新增并迭代 **`docs/specs/task-facing-cli.md`**（命令树、对象模型、实现状态）。
+- 清理 **CLAUDE.md**、**AGENTS.md**，压缩常驻上下文。
+- **README**：去掉 OpenClaw 表述，强调以线程为中心的路径（read-only → draft → controlled send）。
+- **Gog / ClawHub**：gogcli 与 ClawHub Gog skill 分析文档。
+- **Phase 4 评测**：可解释性、分层 weekly 评估、评测报告与 baseline 回归门禁（指标如 `urgent_f1`、`pending_f1`、`weekly_action_hit_at_5` 等）。
+- **规划类**：HA/持久化中间件优化设想、cadence runtime 策略规范、DigestView 在 object contract 中的实现状态说明。
+- 当日开发进度快照（后并入本 CHANGELOG 流程）。
+
+### Tests
+
+- **`python/tests/test_task_cli.py`**：随 CLI 与视图模型扩展，覆盖环境根目录、`DigestView`/工件加载、stale 判断、`ActionCard`/`ReviewItem` 及 action/review 命令路径等（具体用例数以测试文件为准）。
 
 ### 小结
 
-完成了 task-facing CLI 的核心实现，为 skill、listener、review runtime 提供了稳定的命令面。所有命令都支持从 Phase 3/4 artifacts 投影出用户友好的视图，避免直接依赖 phase 文件细节。
+Task-facing CLI 从规范到实现落地，并与 Phase 3/4 工件投影对齐；同日完成 Phase 4 评测与文档侧 Gog 分析、README 与代理指引收敛。
 
 ---
 
-## 2026-03-20 ~ 2026-03-22
+## 2026-03-20
 
 ### Feat
 
-- **Phase 4 评测框架**：
-  - 新增 explainability 和分层 weekly 评估
-  - 新增评测报告和 baseline 回归门禁
-  - 支持 `urgent_f1`、`pending_f1`、`weekly_action_hit_at_5` 等指标
-- **Python 核心收敛**：
-  - 新增共享编排契约 CLI
-  - Phase 2-3 loading 收敛到 Python builder
-  - Phase 渲染收敛到共享 renderer
-- **文档与工具**：
-  - gogcli 和 ClawHub Gog skill 分析
-  - twinbox 运行和测试路径文档
+- **Python 核心路径**：搭建 `python` 包与核心模块；Phase 1–4 **thinking** 逐步迁入 Python；Phase 2–3 **loading** 收敛到共享 builder；各 phase **渲染** 收敛到共享 renderer。
+- **共享编排契约 CLI**：在编排层暴露与 contract/roots/run 一致的命令面（见 `task_cli` / 编排相关实现）。
+- **Canonical state root** 扩展到 Phase 1–3；校准类笔记迁入 runtime 上下文。
 
 ### Refactor
 
-- full-pipeline formula 从 convoy 改为 workflow 结构
-- 可视化重构执行树
+- **full-pipeline**：formula 从 convoy 结构改为 **workflow** 结构。
+- 重构执行树可视化文档/工件更新。
 
 ### Docs
 
-- 清理 gastown 集成文档和 formula fallback 引用
+- **验证工件契约**：`docs/specs/validation-artifact-contract.md`。
+- **语言层优化**与**实现重构计划**更名/迭代（见 `docs/plans/`）。
+- **Gastown 集成**：清理 formula fallback 等过时表述。
+- **运行与测试路径**：twinbox 本地运行与测试说明（脚本与 Python 测试入口）。
+
+### 小结
+
+bash/公式层与 Python 核心分工清晰化，为后续 task-facing CLI 与评测提供稳定底座。
 
 ---
 
 ## 2026-03-16 ~ 2026-03-19
 
-### Fix
+### 起源与命名（约 03-16）
 
-- LLM 输出：加强 JSON 清理逻辑，降低解析失败
-- Phase 4 并行：将 `phase4_merge` 从并行脚本中拆出，避免重复调用 LLM
-- Gastown / Polecat：并行前同步 polecat worktrees；减少 formula 中的 polecat 探索范围
-- 仓库与合并：处理 `.gitignore` stash 合并冲突；gitignore `.beads/`、`.claude/`、`.runtime/` 等本地目录
+- 初始 **email-skill** 脚手架；引用更名为 **email-bot**；增加 Claude-value skill 评估与 README 架构示意图。
+- **OpenClaw**：master-only 验证工作流、仓库路径说明（后随 README 策略调整不再作为主叙事）。
+- **preflight**：引导式邮箱冒烟脚本。
+- **Phase 3（早期文档/模型）**：生命周期建模与示意图；value-realization 自评与模板整理。
+- **架构/计划**：渐进式「注意力漏斗」写入计划与 `docs/architecture.md`；公开 V1 runtime 骨架准备。
+- **README**：中文优先双语、项目标识改为 **twinbox**、中英文 README 拆分与语气调整。
 
-### Feat
+### LLM 管线与人机上下文（约 03-18 ~ 03-19）
 
-- Phase 1–4 LLM 管线：各阶段 loading / thinking 分层；Phase 4 日报式价值输出
-- 人机上下文：runtime 上下文初始化脚本与空模板；Phase 2 读取人工事实/习惯/校准笔记；Phase 3 支持 human context
-- LLM 基础设施：双后端 + OpenAI 兼容接口；Phase 1–4 thinking 脚本统一接入
-- Gastown 融合：formula + sling 全链路、操作与编排相关能力；Phase 4 在 gastown 下的 rerun 与 shared root 稳定化
-- Python 路径：搭建 python path core，并把 Phase 1–4 thinking、Phase 2–3 loading、phase 渲染逐步收敛到 Python 核心 + 共享渲染器；canonical state root 扩展到 Phase 1–3
-- 工程化：bd（beads）问题跟踪初始化；明确 beads 路由模式
-- 渐进式验证：preflight 邮箱冒烟脚本；架构上的「渐进式注意力漏斗」写入计划与架构文档
+- **Phase 1**：loading / thinking 分层，意图分类由 LLM 完成（含与 regex 对比的迁移报告）。
+- **Phase 2**：loading / thinking 分层，人设推断；loading 读取人工事实、习惯与校准笔记。
+- **Phase 3**：loading / thinking + 生命周期 LLM 建模，支持 human context。
+- **Phase 4**：loading / thinking，日报式价值输出；迁移报告与集成计划更新。
+- **LLM 基础设施**：双后端、OpenAI 兼容接口；`max_tokens` 等从环境读取；后端曾切换至 astron-code-latest（见提交历史）。
+- **JSON 输出**：加强清理与解析鲁棒性，降低坏 JSON 导致的失败率。
 
-### Refactor
+### Gastown 与编排（约 03-19）
 
-- 命名与骨架：项目从 email-skill 迁到 email-bot / twinbox；公开 v1 runtime 骨架准备
-- LLM 后端切换与 `max_tokens` 从环境读取
-- 校准类笔记迁入 runtime 上下文
+- **formula + sling** 全链路融合与操作指南；README 中阶段与 Gastown 管线说明。
+- **稳定性**：`phase4_merge` 从并行脚本中拆出，避免重复调用 LLM；polecat worktree 同步、缩小 formula 中 polecat 探索范围；Phase 4 在 Gastown 下 rerun 与 shared root 稳定化；DAG 验证与 shell bootstrap 文档。
+- **beads（bd）**：初始化可选 issue 跟踪；显式路由模式；从跟踪中移除应忽略的 `.beads` 元数据。
 
-### Docs
+### Security & 仓库卫生
 
-- 验证工件契约、语言层优化计划、实现重构计划更名
-- Gastown 集成与 formula 回退说明整理；gastown shell bootstrap；workflow DAG 验证记录
-- Phase 4 bash 并行 vs gastown polecat 性能对比；Phase 4 shared-root 清单
-- README 中英拆分、阶段与 gastown 管线说明；运行与测试路径文档
-- Phase 1–4 各阶段 LLM 迁移报告、架构审视、多 agent 集成计划等持续更新
+- **PII**：从 Git 跟踪内容中移除敏感实例数据，改为环境变量等方式注入。
+- **.gitignore**：`.beads/`、`.claude/`、`.runtime/` 等本地/agent 目录；处理 stash 合并带来的 `.gitignore` 冲突。
 
-### Security
+### Docs（跨日）
 
-- 从 Git 跟踪内容中移除 PII，改为从环境变量读取
+- 文档目录重组与**多 agent 集成**计划；架构审视（human context 缺口、Gastown 融合路径）；各 Phase LLM 迁移报告（Phase 1–4）；Phase 4 bash 并行 vs Gastown polecat 性能对比；Phase 4 shared-root 清单。
 
 ### 小结
 
-从邮箱 Copilot 骨架与文档推进到四阶段 LLM 分层管线 + Gastown 编排 + Python 核心收敛，同步完成 PII 与 gitignore 治理、beads 跟踪以及验证契约与运行路径文档，整体在向「可重复运行、可对接 Gastown、可扩展 Python 路径」的形态靠拢。
+从「邮箱 Copilot 脚手架 + 文档」推进到 **四阶段 LLM 分层管线 + Gastown 编排 + Python 核心收敛** 的前一阶段；同步完成 PII/gitignore/beads 治理与验证契约前置文档。
+
+---
+
+## 参考
+
+- 更细的提交列表：`git log --reverse --oneline`
+- 架构与阶段定义：`docs/architecture.md`、`docs/plans/core-refactor-plan.md`
+- Task 命令规范：`docs/specs/task-facing-cli.md`

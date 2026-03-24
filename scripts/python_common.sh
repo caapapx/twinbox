@@ -12,7 +12,7 @@ _twinbox_python() {
     code_root="${repo_root}"
   fi
 
-  python_src="${code_root}/python/src"
+  python_src="${code_root}/src"
 
   if ! command -v python3 >/dev/null 2>&1; then
     echo "python3 is required for twinbox Python helpers" >&2

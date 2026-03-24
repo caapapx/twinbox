@@ -9,6 +9,8 @@
 .runtime/
 __pycache__/
 *.pyc
+*.egg-info/
+.venv/
 logs/
 *.log
 runtime/
@@ -21,6 +23,7 @@ runtime/
 *.pptx
 *.ppt
 *.pdf
+tmp/
 
 # Instance-specific validation artifacts must stay local
 /docs/validation/*
@@ -30,6 +33,8 @@ runtime/
 !/docs/validation/diagrams/README.md
 claude-agent-sdk-demos
 gastown
+# Local symlink to ~/openclaw-docker-compose (machine-specific; may contain secrets)
+openclaw-docker-compose
 # Dolt database files (added by bd init)
 .dolt/
 *.db

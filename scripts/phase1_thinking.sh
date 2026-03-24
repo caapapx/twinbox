@@ -89,7 +89,7 @@ if [[ "${DRY_RUN}" == "true" ]]; then
   cmd+=(--dry-run)
 fi
 
-PYTHONPATH="${CODE_ROOT}/python/src${PYTHONPATH:+:${PYTHONPATH}}" "${cmd[@]}"
+PYTHONPATH="${CODE_ROOT}/src${PYTHONPATH:+:${PYTHONPATH}}" "${cmd[@]}"
 
 echo ""
 echo "Phase 1 Thinking complete."

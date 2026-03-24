@@ -19,7 +19,7 @@
 
 | 名称 | 类型 | 来源路径/描述 | 作用范围 | 来源标签 |
 |---|---|---|---|---|
-| 示例：2月份民品项目交付部技术支撑体系执行台账3.13.xlsx | xlsx | `/abs/path/file.xlsx` | 画像 / 周报 / 项目节奏 | `material_evidence` |
+| 示例：2月份交付部技术支撑体系执行台账3.13.xlsx | xlsx | `/abs/path/file.xlsx` | 画像 / 周报 / 项目节奏 | `material_evidence` |
 
 ## 已声明的工作习惯与周期任务
 

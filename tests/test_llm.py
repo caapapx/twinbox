@@ -1,0 +1,96 @@
+"""Tests for twinbox_core.llm — LLM backend resolution and JSON repair.
+
+Critical correctness bar: clean_json_text must produce output that
+json.loads() accepts without error. Asserting substring presence alone
+is insufficient.
+"""
+
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from twinbox_core.llm import clean_json_text, resolve_backend
+
+
+class TestResolveBackend:
+    """Backend config is built correctly from environment variables."""
+
+    def test_openai_compatible_settings(self):
+        backend = resolve_backend(
+            env={
+                "LLM_API_KEY": "test-key",
+                "LLM_MODEL": "test-model",
+                "LLM_API_URL": "https://example.com/v1/chat/completions",
+                "LLM_TIMEOUT": "42",
+                "LLM_RETRIES": "3",
+            }
+        )
+        assert backend.backend == "openai"
+        assert backend.model == "test-model"
+        assert backend.url == "https://example.com/v1/chat/completions"
+        assert backend.timeout == 42   # string → int conversion
+        assert backend.retries == 3    # string → int conversion
+
+    def test_timeout_and_retries_are_integers(self):
+        """LLM_TIMEOUT and LLM_RETRIES must be converted from str to int."""
+        backend = resolve_backend(
+            env={
+                "LLM_API_KEY": "k",
+                "LLM_MODEL": "m",
+                "LLM_TIMEOUT": "10",
+                "LLM_RETRIES": "2",
+            }
+        )
+        assert isinstance(backend.timeout, int)
+        assert isinstance(backend.retries, int)
+
+
+class TestCleanJsonText:
+    """clean_json_text must produce output that json.loads() accepts."""
+
+    def _assert_valid_json(self, raw: str) -> dict | list:
+        """Clean raw text and assert the result is valid JSON; return parsed value."""
+        cleaned = clean_json_text(raw)
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError as exc:
+            pytest.fail(
+                f"clean_json_text output is not valid JSON.\n"
+                f"Input:   {raw!r}\n"
+                f"Cleaned: {cleaned!r}\n"
+                f"Error:   {exc}"
+            )
+
+    def test_removes_markdown_fence_and_trailing_commas(self):
+        raw = """\
+```json
+{
+  "items": [
+    {"id": "1", "intent": "human",},
+  ],
+}
+```"""
+        parsed = self._assert_valid_json(raw)
+        assert parsed["items"][0]["intent"] == "human"
+
+    def test_already_valid_json_passes_through_unchanged(self):
+        raw = '{"key": "value", "count": 3}'
+        parsed = self._assert_valid_json(raw)
+        assert parsed["key"] == "value"
+
+    def test_removes_fence_without_trailing_commas(self):
+        raw = '```json\n{"result": true}\n```'
+        parsed = self._assert_valid_json(raw)
+        assert parsed["result"] is True
+
+    def test_handles_nested_trailing_commas(self):
+        raw = '{"outer": {"inner": [1, 2,],},}'
+        parsed = self._assert_valid_json(raw)
+        assert parsed["outer"]["inner"] == [1, 2]
+
+    def test_handles_array_root(self):
+        raw = '```json\n[{"a": 1,}, {"b": 2,}]\n```'
+        parsed = self._assert_valid_json(raw)
+        assert len(parsed) == 2

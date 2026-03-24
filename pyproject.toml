@@ -9,6 +9,7 @@ description = "Shared Python core for twinbox phase builders and runtime contrac
 requires-python = ">=3.11"
 
 [project.scripts]
+twinbox = "twinbox_core.task_cli:main"
 twinbox-orchestrate = "twinbox_core.orchestration:main"
 twinbox-eval-phase4 = "twinbox_core.evaluation:main"
 
@@ -17,3 +18,11 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "unit: fast, isolated tests with no file I/O or LLM calls",
+    "integration: tests that exercise multiple modules or touch the filesystem",
+    "contract: schema and fixture contract validation tests",
+]

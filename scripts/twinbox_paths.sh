@@ -6,7 +6,7 @@ _twinbox_paths_py() {
 
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
   repo_root="$(cd "${script_dir}/.." && pwd -P)"
-  python_src="${repo_root}/python/src"
+  python_src="${repo_root}/src"
 
   if ! command -v python3 >/dev/null 2>&1; then
     echo "python3 is required for twinbox path resolution" >&2

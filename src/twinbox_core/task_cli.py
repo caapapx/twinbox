@@ -123,10 +123,13 @@ class ReviewItem:
 
 
 def _load_yaml_artifact(path: Path) -> dict[str, Any]:
-    """Load YAML artifact from Phase 4 output."""
+    """Load YAML artifact from Phase 4 output. Returns {} on any failure."""
     if not path.exists():
         return {}
-    content = yaml.safe_load(path.read_text(encoding="utf-8"))
+    try:
+        content = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
     if not isinstance(content, dict):
         return {}
     return content

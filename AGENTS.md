@@ -4,6 +4,12 @@
 
 | 目录 | 用途 | 命名规则 |
 |------|------|----------|
+| src/twinbox_core/ | Python 核心库（Phase 1-4、CLI、LLM）| 按模块命名 |
+| tests/ | Python 单元测试 | `test_<module>.py` |
+| scripts/ | Shell 流水线脚本（phase 加载/思考/合并） | `phase<N>_<step>.sh` |
+| config/ | 运行时配置（用户画像、策略、行动模板） | `<name>.yaml` / `<name>.toml` |
+| agent/ | TypeScript 扩展契约骨架（spec-first，尚未完整实现） | `*.ts` |
+| refinery/ | Gastown refinery 集成占位目录（rig/ 为工作目录挂载点） | — |
 | docs/plans/ | 方案、路线图、集成计划 | `<topic>.md` |
 | docs/specs/ | 技术规范、合约定义 | `<component>-<aspect>.md` |
 | docs/reports/ | 评估报告、质量审计 | `<subject>-evaluation.md` |

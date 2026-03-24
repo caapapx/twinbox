@@ -127,8 +127,8 @@ bash scripts/run_pipeline.sh --phase 2
 | 查看编排 contract | `bash scripts/twinbox_orchestrate.sh contract --format json` | 适合 operator、skill 或脚本读取 phase 依赖与入口 |
 | 手动验证 Phase 4 fan-out / merge | `bash scripts/phase4_gastown.sh loading`，再依次运行 `think-urgent` / `think-sla` / `think-brief` / `merge` | 适合排查 Phase 4 的并行子任务 |
 | 通过 Gastown 分发执行 | `gt sling twinbox-phase1 twinbox --create` | 验证 polecat / refinery / witness 链路 |
-| 跑 Python 单测 | `PYTHONPATH=python/src python3 -m unittest discover -s python/tests -v` | 覆盖 contract、paths、LLM、renderer 和 phase core |
-| 跑轻量 smoke | `python3 -m compileall python/src` 和 `bash -n scripts/twinbox_orchestrate.sh scripts/run_pipeline.sh scripts/phase4_gastown.sh` | 适合提交前做快速语法检查 |
+| 跑 Python 单测 | `pytest tests/` | 覆盖 contract、paths、LLM、renderer 和 phase core |
+| 跑轻量 smoke | `python3 -m compileall src` 和 `bash -n scripts/twinbox_orchestrate.sh scripts/run_pipeline.sh scripts/phase4_gastown.sh` | 适合提交前做快速语法检查 |
 
 更细的 Gastown / fallback 命令清单见 [gastown-operations.md](docs/guides/gastown-operations.md)。
 
