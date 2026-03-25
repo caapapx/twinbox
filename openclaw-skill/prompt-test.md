@@ -2,6 +2,8 @@
 
 用于手工验证当前 OpenClaw + Twinbox 集成面的 prompt 集。
 
+**会话与测试口径**：探针与话术验收应在 **OpenClaw Gateway + `twinbox` agent** 下进行；长套题用 **分段 session + bootstrap**（见下文「自动化」与 `scripts/run_openclaw_prompt_tests.py`）。空白气泡、半轮停、后半段全空优先按 **会话长度 / Gateway 与 Web 控制面链路** 排查（见「Control UI 完全空白」），与具体用哪种编辑器无关。
+
 目标：
 
 - 先验证真实用户话术是否能得到可信结果
@@ -20,12 +22,51 @@
 
 当前已知边界：
 
+- UI 上可能出现**只有一句**「让我查找 weekly brief / twinbox 产物目录」然后**没有数据**：根因通常是模型**没有在同一轮里直接运行 `twinbox task …`**，而是先去 workspace 里“找路径”。**立刻补救**：发一条明确要求执行的探针（见下方「空转补救」）。
 - `agent:twinbox:main` 曾成功命中过自然话术 -> `twinbox task latest-mail --json`
 - 但 2026-03-25 后续复测里，同一主会话上的自然话术也出现过 `turn completed` 但 `assistant.content=[]` 的空响应
 - 当前 OpenClaw 2026.3.23 本机路由下，`--session-id` 与 `--to` 也可能继续回落到 `agent:twinbox:main`，不能把它们当成稳定的新会话隔离手段
 - 改走 `cron + isolated session` 后，显式探针可以稳定执行 `twinbox task ...` 并正常返回正文
 - 但自然话术在 isolated session 中仍可能只读 `SKILL.md` / memory，最终空响应；因此它不是单纯的主会话污染问题
 - 所以真实用户 prompt 目前仍应继续测，但验收记录里要单独标明“自然话术结果”与“平台空响应问题”两类证据
+
+## Control UI 完全空白（连 P0a 探针都没有字）
+
+若浏览器里 **Assistant 区域完全空**、统计里 **输出 token 极少（例如 ↓22）**，但 **同一句话** 在 shell 里用 `openclaw agent --agent twinbox --message '…' --json` 能拿到 `result.payloads` 正文，则问题在 **Web 控制面 / Gateway 会话链路**，而不是「twinbox 命令坏了」或「探针写错了」。
+
+**本机 Gateway 日志里曾出现** `"No reply from agent."` **与空白 UI 同期**；可与 `/tmp/openclaw/openclaw-*.log` 对照时间戳排查。
+
+建议按顺序试：
+
+1. **硬刷新** Control UI（或关掉标签页重开），必要时 **重新登录**；日志里 Windows Chrome 连 WSL 曾出现 **`closed before connect` / code `1006`**，断线后 UI 可能表现为空回复。
+2. 看 UI 是否仍显示 **极大 context（如 114k+）**：界面「清空对话」**不一定**等价于服务端把会话上下文裁掉；若仍像超长会话，在 UI 里 **新建对话 / 新 session**（若产品支持），或暂时用 **CLI** 做验收。
+3. 在 **跑 Gateway 的那台机器** 上执行（与 `openclaw gateway status` 同环境）：
+
+   ```bash
+   openclaw agent --agent twinbox --message '请先实际执行 twinbox task latest-mail --json，然后只基于真实命令输出返回 generated_at、summary、pending_count。' --json --timeout 120
+   ```
+
+   若此处 **始终有** `payloads[].text`，而 **只有浏览器失败**，把结论记成「UI/WebSocket 路径问题」，并 `openclaw gateway restart` + 重连 UI 再试。
+
+## 空转补救（有“我去找…”但没结果时用）
+
+把下面整段贴给 **twinbox** agent（可中英文任选一条）；目的是**强制同一轮内直接运行 Twinbox 命令**，禁止只读 SKILL / 只搜目录。
+
+```text
+不要搜索 workspace 或“找产物目录”。请在本轮内立即直接运行：
+twinbox task latest-mail --json
+然后把 JSON 里的 generated_at、summary、urgent_top_k（thread_key）、pending_count 用中文简要列出。若命令失败，贴 stderr。
+```
+
+周报分类（对应 P6）若空转，用：
+
+```text
+不要先找 weekly brief 文件路径。请在本轮内立即直接运行：
+twinbox task weekly --json
+然后基于 stdout 的 JSON 区分：有真实线程依据 / synthetic / 纯推断，每类 2–5 条并引用字段名。若命令失败，贴 stderr。
+```
+
+长期缓解：安装仓库内 `openclaw-skill/plugin-twinbox-task` 插件（`openclaw plugins install --link <path>`），让 `twinbox_latest_mail` / `twinbox_weekly` 等成为原生工具，减少对 `exec` 链的依赖。
 
 ## 推荐顺序
 
@@ -42,6 +83,22 @@
 
 - `P1`~`P6` 是更接近真实用户的主验证面
 - `P0a`~`P0d` 与 `P7` 属于诊断型 prompt，不应被当成真实用户标准话术
+
+## 自动化 / Gateway + `twinbox` agent（`openclaw agent`）
+
+手工多轮可在 **OpenClaw 控制面** 或任何连同一 Gateway 的客户端里做；**批量、可重复**验收请用仓库脚本（直连 Gateway，与 **`openclaw agent --agent twinbox`** 同一路径）：
+
+```bash
+# 仓库根目录
+python3 scripts/run_openclaw_prompt_tests.py
+# 可选：OPENCLAW_BIN=openclaw AGENT_TIMEOUT=180 AGENT_THINKING=off
+```
+
+脚本行为要点：
+
+- 顺序与上表一致：`P1`→`P6` 后换**新会话**再跑 `P8`→`P0a`~`P0d`→`P7`，减轻单会话过长导致后半段 **空 `payloads`**（长会话 + Gateway/控制面交付链上均可能出现）。
+- 每段开头有一条 **bootstrap** 契约消息；自然话术段与探针段各一条。
+- 单条失败会按类型自动重试（加强制“直接运行命令”提示）；仍失败则脚本以非零退出。
 
 ## P0a 显式执行 Latest Mail（探针）
 
