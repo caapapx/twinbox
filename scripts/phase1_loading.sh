@@ -182,7 +182,7 @@ for (const e of samples) {
   try {
     const cmd = [
       bin, '-c', config,
-      'message', 'read', '--preview', '--no-headers',
+      'message', 'read', '--preview',
       '--account', account, '--folder', folder,
       id, '--output', 'json',
     ];

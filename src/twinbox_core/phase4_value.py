@@ -112,6 +112,7 @@ Rules:
 3. Use lifecycle_flow/stage from thread data
 4. If human_context has manual_facts, override owner/waiting_on guesses
 5. Every thread_key must come from input data. Output ONLY JSON.
+6. recipient_role field: "direct" means the mailbox owner is in the To field; "cc_only" means owner was only CC'd. cc_only threads are lower priority than direct threads — assign them a lower urgency_score accordingly.
 
 Mailbox data:
 """
@@ -579,6 +580,59 @@ def _call_with_prompt(
     )
 
 
+def _apply_recipient_role_weights(
+    response: dict[str, object],
+    context_path: Path,
+) -> dict[str, object]:
+    """Apply 0.6 multiplier to urgency_score for cc_only threads.
+
+    Loads recipient_role from context top_threads. Threads where the mailbox
+    owner was only CC'd (cc_only) are down-weighted. Threads with
+    waiting_on_me=true that are cc_only get a warning appended to why.
+    """
+    try:
+        context = _load_object(context_path)
+    except Exception:
+        return response
+
+    cc_only: set[str] = set()
+    for thread in context.get("top_threads", []):
+        if isinstance(thread, dict) and thread.get("recipient_role") == "cc_only":
+            key = str(thread.get("thread_key", "") or "")
+            if key:
+                cc_only.add(key)
+
+    if not cc_only:
+        return response
+
+    CC_WEIGHT = 0.6
+    CC_WARNING = "⚠️ 你仅在抄送列表中，请确认是否真的需要你处理"
+
+    daily_urgent = response.get("daily_urgent", [])
+    if isinstance(daily_urgent, list):
+        for item in daily_urgent:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("thread_key", "") or "") in cc_only:
+                score = item.get("urgency_score")
+                if isinstance(score, (int, float)):
+                    item["urgency_score"] = round(score * CC_WEIGHT)
+                item["recipient_role"] = "cc_only"
+
+    pending_replies = response.get("pending_replies", [])
+    if isinstance(pending_replies, list):
+        for item in pending_replies:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("thread_key", "") or "") in cc_only:
+                item["recipient_role"] = "cc_only"
+                why = str(item.get("why", "") or "")
+                if CC_WARNING not in why:
+                    item["why"] = f"{why}  {CC_WARNING}".strip()
+
+    return response
+
+
 def run_single(config: Phase4RunConfig) -> dict[str, object]:
     if config.dry_run:
         prompt = FULL_PROMPT + config.context_path.read_text(encoding="utf-8")
@@ -599,6 +653,7 @@ def run_single(config: Phase4RunConfig) -> dict[str, object]:
         max_tokens=config.max_tokens,
     )
     response = _ensure_material_summary(response, context=context)
+    response = _apply_recipient_role_weights(response, config.context_path)
     print("LLM response saved.")
     print("Generating Phase 4 outputs...")
     render_phase4_outputs(
@@ -634,6 +689,7 @@ def run_subtask(
             model_override=model_override,
             max_tokens=4096,
         )
+        response = _apply_recipient_role_weights(response, context_path)
         target = output_dir / "urgent-pending-raw.json"
         label = "urgent+pending"
     elif kind == "sla":

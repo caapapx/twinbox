@@ -423,7 +423,7 @@ def _scheduled_job_steps(job: ScheduledJob, code_root: Path) -> list[tuple[str, 
         return [
             (
                 "Phase 1 Loading (daytime)",
-                ["bash", str(code_root / "scripts/phase1_loading.sh"), "--sample-body-count", "0"],
+                ["bash", str(code_root / "scripts/phase1_loading.sh"), "--sample-body-count", "30"],
             )
         ]
 

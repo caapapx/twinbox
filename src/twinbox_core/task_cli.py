@@ -171,8 +171,11 @@ def _project_urgent_queue() -> QueueView:
     for item in items_data:
         if not isinstance(item, dict):
             continue
+        thread_id = item.get("thread_key", "")
+        if item.get("recipient_role") == "cc_only":
+            thread_id = f"[CC] {thread_id}"
         items.append(ThreadCard(
-            thread_id=item.get("thread_key", ""),
+            thread_id=thread_id,
             state=f"{item.get('flow', 'UNKNOWN')}/{item.get('stage', 'UNKNOWN')}",
             waiting_on=item.get("waiting_on", ""),
             last_activity_at=None,  # Not in Phase 4 artifact
@@ -204,8 +207,11 @@ def _project_pending_queue() -> QueueView:
     for item in items_data:
         if not isinstance(item, dict):
             continue
+        thread_id = item.get("thread_key", "")
+        if item.get("recipient_role") == "cc_only":
+            thread_id = f"[CC] {thread_id}"
         items.append(ThreadCard(
-            thread_id=item.get("thread_key", ""),
+            thread_id=thread_id,
             state=f"{item.get('flow', 'UNKNOWN')}/pending_reply",
             waiting_on="me" if item.get("waiting_on_me") else "unknown",
             last_activity_at=None,

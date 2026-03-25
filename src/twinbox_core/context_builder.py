@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from dataclasses import dataclass
@@ -119,10 +120,63 @@ def _sender_domain(envelope: dict[str, object]) -> str:
     return addr.rsplit("@", 1)[1]
 
 
-def _normalize_envelope(envelope: dict[str, object]) -> dict[str, object]:
+def _extract_header_addrs(header_value: str) -> list[str]:
+    """Extract lowercase email addresses from a MIME header value like 'Name <addr>, addr2'."""
+    addrs = re.findall(r"<([^>]+)>|([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})", header_value)
+    return [
+        (a or b).lower().strip()
+        for a, b in addrs
+        if (a or b).strip()
+    ]
+
+
+def _parse_mime_recipient_role(body_text: str, owner_addr: str) -> str:
+    """Parse To:/Cc: from MIME headers at top of body_text. Returns 'to', 'cc', or 'unknown'."""
+    if not owner_addr or not body_text:
+        return "unknown"
+    owner = owner_addr.lower().strip()
+    to_addrs: list[str] = []
+    cc_addrs: list[str] = []
+    current_header = ""
+    for line in body_text.splitlines():
+        if not line.strip():
+            break  # end of headers
+        if line[0] in (" ", "\t") and current_header:
+            # header continuation
+            if current_header == "to":
+                to_addrs.extend(_extract_header_addrs(line))
+            elif current_header == "cc":
+                cc_addrs.extend(_extract_header_addrs(line))
+        elif ":" in line:
+            key, _, val = line.partition(":")
+            current_header = key.strip().lower()
+            if current_header == "to":
+                to_addrs.extend(_extract_header_addrs(val))
+            elif current_header == "cc":
+                cc_addrs.extend(_extract_header_addrs(val))
+    if owner in to_addrs:
+        return "to"
+    if owner in cc_addrs:
+        return "cc"
+    return "unknown"
+
+
+def _normalize_envelope(
+    envelope: dict[str, object],
+    owner_addr: str = "",
+    recipient_role: str = "unknown",
+) -> dict[str, object]:
     sender = envelope.get("from", {})
     if not isinstance(sender, dict):
         sender = {}
+
+    # If raw envelope has to.addr, use it directly (legacy path)
+    if not recipient_role or recipient_role == "unknown":
+        to_field = envelope.get("to", {})
+        if isinstance(to_field, dict):
+            to_addr = str(to_field.get("addr", "") or "").lower()
+            if owner_addr and to_addr:
+                recipient_role = "to" if to_addr == owner_addr.lower() else "unknown"
 
     return {
         "id": str(envelope.get("id", "")),
@@ -134,6 +188,7 @@ def _normalize_envelope(envelope: dict[str, object]) -> dict[str, object]:
             "addr": sender.get("addr", envelope.get("from_addr", "")) or "",
             "name": sender.get("name", envelope.get("from_name", "")) or "",
         },
+        "recipient_role": recipient_role,
     }
 
 
@@ -241,6 +296,8 @@ def _load_phase1_data(state_root: Path) -> Phase1Data:
             "Missing Phase 1 outputs.\nRun Phase 1 first: bash scripts/phase1_loading.sh && bash scripts/phase1_thinking.sh"
         )
 
+    owner_addr = os.environ.get("MAIL_ADDRESS", "").strip().lower()
+
     if census_path.is_file() and bodies_path.is_file() and envelopes_path.is_file():
         census = _load_json(census_path)
         contacts = _load_json_if_exists(contact_path, {})
@@ -249,7 +306,23 @@ def _load_phase1_data(state_root: Path) -> Phase1Data:
         intents = _load_intents_from_dir(intent_dir)
         if not isinstance(census, dict) or not isinstance(contacts, dict) or not isinstance(bodies, list) or not isinstance(envelopes_raw, list):
             raise ContextBuilderError("Legacy Phase 1 artifacts have unexpected structure")
-        envelopes = [_normalize_envelope(envelope) for envelope in envelopes_raw if isinstance(envelope, dict)]
+        # Build body lookup for recipient_role parsing (keyed by message id)
+        body_by_id: dict[str, str] = {}
+        for b in bodies:
+            if isinstance(b, dict):
+                bid = str(b.get("id", ""))
+                body_by_id[bid] = str(b.get("body", "") or "")
+        envelopes = [
+            _normalize_envelope(
+                envelope,
+                owner_addr=owner_addr,
+                recipient_role=_parse_mime_recipient_role(
+                    body_by_id.get(str(envelope.get("id", "")), ""), owner_addr
+                ),
+            )
+            for envelope in envelopes_raw
+            if isinstance(envelope, dict)
+        ]
         return Phase1Data(census=census, contacts=contacts, bodies=[row for row in bodies if isinstance(row, dict)], envelopes=envelopes, intents=intents)
 
     phase1_context = _load_json(phase1_context_path)
@@ -257,15 +330,22 @@ def _load_phase1_data(state_root: Path) -> Phase1Data:
     if not isinstance(phase1_context, dict) or not isinstance(intent_classification, dict):
         raise ContextBuilderError("Phase 1 context artifacts have unexpected structure")
 
+    sampled_bodies = phase1_context.get("sampled_bodies", {})
+    if not isinstance(sampled_bodies, dict):
+        sampled_bodies = {}
     envelopes = [
-        _normalize_envelope(envelope)
+        _normalize_envelope(
+            envelope,
+            owner_addr=owner_addr,
+            recipient_role=_parse_mime_recipient_role(
+                str((sampled_bodies.get(str(envelope.get("id", ""))) or {}).get("body", "") or ""),
+                owner_addr,
+            ),
+        )
         for envelope in phase1_context.get("envelopes", [])
         if isinstance(envelope, dict)
     ]
     envelope_by_id = {str(envelope.get("id", "")): envelope for envelope in envelopes}
-    sampled_bodies = phase1_context.get("sampled_bodies", {})
-    if not isinstance(sampled_bodies, dict):
-        sampled_bodies = {}
 
     bodies = [
         {
@@ -495,6 +575,9 @@ def run_phase3_loading(state_root: Path) -> dict[str, object]:
         else:
             date_range = latest.get("date", "")
 
+        has_any_to = any(row.get("recipient_role") == "to" for row in rows)
+        thread_recipient_role = "direct" if has_any_to else "cc_only"
+
         top_threads.append(
             {
                 "thread_key": thread["key"],
@@ -508,6 +591,7 @@ def run_phase3_loading(state_root: Path) -> dict[str, object]:
                 "body_excerpt": str(body_entry.get("body", ""))[:500],
                 "participants": participants[:5],
                 "date_range": date_range,
+                "recipient_role": thread_recipient_role,
             }
         )
 
