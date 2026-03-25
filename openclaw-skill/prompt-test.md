@@ -4,24 +4,37 @@
 
 目标：
 
-- 先验证 deterministic 读产物能力
-- 再验证日内投影与线程查询
-- 最后验证更激进的“显式执行命令”路径
+- 先验证真实用户话术是否能得到可信结果
+- 再用探针 prompt 判断 agent 是否真的执行了 Twinbox 命令
+- 最后才回退到更激进的“显式执行命令”诊断路径
+
+## 两类 Prompt 的角色
+
+- **真实用户 prompt**：模拟真实提问方式，不暴露底层命令。它们决定“这个 skill 对真实用户好不好用”。
+- **探针 prompt**：显式要求执行 `twinbox task ...` / `preflight`。它们不是日常用户话术，而是回归测试和故障定位手段。
+
+原则：
+
+- 验收时优先看真实用户 prompt
+- 如果真实用户 prompt 表现异常，再用探针 prompt 判断是“没跑命令”还是“命令本身结果不对”
 
 ## 推荐顺序
 
-1. `P8` 读取最新 `activity-pulse.json`
-2. `P0a` 显式执行 `twinbox task latest-mail --json`
-3. `P0b` 显式执行 `twinbox task todo --json`
-4. `P0c` 显式执行 `twinbox task progress QUERY --json`
-5. `P0d` 显式执行 `twinbox task mailbox-status --json`
-6. `P1` 日内总览
-7. `P3` 按 thread key / 主题查进展
-8. `P4` 按业务关键词查进展
-9. `P6` 周报事实边界
-10. `P7` 显式执行 `preflight`
+1. `P1` 日内总览
+2. `P2` 待我回复 / 待我拍板
+3. `P3` 按 thread key / 主题查进展
+4. `P4` 按业务关键词查进展
+5. `P6` 周报事实边界
+6. `P8` 读取最新 `activity-pulse.json`
+7. `P0a` / `P0b` / `P0c` / `P0d` 探针式验证 task 路由
+8. `P7` 显式执行 `preflight`
 
-## P0a 显式执行 Latest Mail
+说明：
+
+- `P1`~`P6` 是更接近真实用户的主验证面
+- `P0a`~`P0d` 与 `P7` 属于诊断型 prompt，不应被当成真实用户标准话术
+
+## P0a 显式执行 Latest Mail（探针）
 
 ```text
 请先实际执行 `twinbox task latest-mail --json`，然后只基于真实命令输出返回：
@@ -37,7 +50,7 @@
 - 明确体现命令真实输出，而不是只复述 `SKILL.md`
 - 至少给出 `generated_at`、`summary`、`urgent_top_k`、`pending_count`
 
-## P0b 显式执行 Todo
+## P0b 显式执行 Todo（探针）
 
 ```text
 请先实际执行 `twinbox task todo --json`，然后只基于真实命令输出返回：
@@ -52,7 +65,7 @@
 - 明确体现命令真实输出，而不是只复述 `SKILL.md`
 - 至少给出 `pending_count` 和 1-3 个具体线程
 
-## P0c 显式执行 Progress
+## P0c 显式执行 Progress（探针）
 
 ```text
 请先实际执行 `twinbox task progress tjnlzx_v1.5.0版本升级资源申请 --json`，然后只基于真实命令输出返回：
@@ -69,7 +82,7 @@
 - 能命中目标线程或明确列出最相关候选
 - 输出字段来自真实 JSON，而不是凭主题脑补
 
-## P0d 显式执行 Mailbox Status
+## P0d 显式执行 Mailbox Status（探针）
 
 ```text
 请先实际执行 `twinbox task mailbox-status --json`，然后只基于真实命令输出返回：
