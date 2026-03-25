@@ -11,14 +11,17 @@
 ## 推荐顺序
 
 1. `P8` 读取最新 `activity-pulse.json`
-2. `P0` 显式执行 `twinbox task latest-mail --json`
-3. `P1` 日内总览
-4. `P3` 按 thread key / 主题查进展
-5. `P4` 按业务关键词查进展
-6. `P6` 周报事实边界
-7. `P7` 显式执行 `preflight`
+2. `P0a` 显式执行 `twinbox task latest-mail --json`
+3. `P0b` 显式执行 `twinbox task todo --json`
+4. `P0c` 显式执行 `twinbox task progress QUERY --json`
+5. `P0d` 显式执行 `twinbox task mailbox-status --json`
+6. `P1` 日内总览
+7. `P3` 按 thread key / 主题查进展
+8. `P4` 按业务关键词查进展
+9. `P6` 周报事实边界
+10. `P7` 显式执行 `preflight`
 
-## P0 显式执行 Latest Mail
+## P0a 显式执行 Latest Mail
 
 ```text
 请先实际执行 `twinbox task latest-mail --json`，然后只基于真实命令输出返回：
@@ -33,6 +36,54 @@
 
 - 明确体现命令真实输出，而不是只复述 `SKILL.md`
 - 至少给出 `generated_at`、`summary`、`urgent_top_k`、`pending_count`
+
+## P0b 显式执行 Todo
+
+```text
+请先实际执行 `twinbox task todo --json`，然后只基于真实命令输出返回：
+1. pending_count
+2. urgent_count（如果有）
+3. 前 3 个需要我处理的 thread_key
+如果你没有实际执行成功，不要猜。
+```
+
+通过标准：
+
+- 明确体现命令真实输出，而不是只复述 `SKILL.md`
+- 至少给出 `pending_count` 和 1-3 个具体线程
+
+## P0c 显式执行 Progress
+
+```text
+请先实际执行 `twinbox task progress tjnlzx_v1.5.0版本升级资源申请 --json`，然后只基于真实命令输出返回：
+1. thread_key
+2. latest_subject
+3. waiting_on
+4. stage
+5. summary（如果 JSON 没有 summary，就明确说明是从 why 提炼）
+如果你没有实际执行成功，不要猜。
+```
+
+通过标准：
+
+- 能命中目标线程或明确列出最相关候选
+- 输出字段来自真实 JSON，而不是凭主题脑补
+
+## P0d 显式执行 Mailbox Status
+
+```text
+请先实际执行 `twinbox task mailbox-status --json`，然后只基于真实命令输出返回：
+1. status
+2. login_stage
+3. error_code
+4. actionable_hint
+如果你没有实际执行成功，不要猜。
+```
+
+通过标准：
+
+- 给出真实 preflight 字段，而不是只说“看起来已经就绪/缺少 env”
+- 如果命令执行失败，必须原样说明失败原因
 
 ## P8 读取最新 Pulse
 
