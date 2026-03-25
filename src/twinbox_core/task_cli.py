@@ -429,11 +429,20 @@ def cmd_context_import_material(args: argparse.Namespace) -> int:
 
     from datetime import datetime
     manifest["generated_at"] = datetime.now().isoformat()
-    if source_path.name not in [m.get("filename") for m in manifest.get("materials", [])]:
-        manifest.setdefault("materials", []).append({
+
+    # Update or append material entry
+    materials = manifest.setdefault("materials", [])
+    existing = next((m for m in materials if m.get("filename") == source_path.name), None)
+    if existing:
+        existing["imported_at"] = datetime.now().isoformat()
+        existing["source"] = str(source_path)
+        existing["intent"] = args.intent
+    else:
+        materials.append({
             "filename": source_path.name,
             "imported_at": datetime.now().isoformat(),
             "source": str(source_path),
+            "intent": args.intent,
         })
 
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -448,6 +457,151 @@ def cmd_context_import_material(args: argparse.Namespace) -> int:
         return 1
     if extract_path is not None:
         print(f"已生成抽取 Markdown（供 Phase 4 引用）: {extract_path}")
+    return 0
+
+
+def cmd_material_list(args: argparse.Namespace) -> int:
+    """List all imported materials."""
+    canonical_root = _state_root()
+    manifest_path = canonical_root / "runtime" / "context" / "material-manifest.json"
+    if not manifest_path.exists():
+        print("无材料")
+        return 0
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    materials = manifest.get("materials", [])
+    if not materials:
+        print("无材料")
+        return 0
+    for m in materials:
+        intent = m.get("intent", "reference")
+        print(f"{m['filename']:<40} intent={intent:<15} imported={m.get('imported_at', 'unknown')}")
+    return 0
+
+
+def cmd_material_set_intent(args: argparse.Namespace) -> int:
+    """Set material intent."""
+    canonical_root = _state_root()
+    manifest_path = canonical_root / "runtime" / "context" / "material-manifest.json"
+    if not manifest_path.exists():
+        print(f"错误: manifest 不存在", file=sys.stderr)
+        return 1
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    materials = manifest.get("materials", [])
+    target = next((m for m in materials if m.get("filename") == args.filename), None)
+    if not target:
+        print(f"错误: 材料不存在: {args.filename}", file=sys.stderr)
+        return 1
+    target["intent"] = args.intent
+    manifest["generated_at"] = datetime.now().isoformat()
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(f"已更新 {args.filename} intent -> {args.intent}")
+    return 0
+
+
+def cmd_material_remove(args: argparse.Namespace) -> int:
+    """Remove material."""
+    canonical_root = _state_root()
+    materials_dir = canonical_root / "runtime" / "context" / "material-extracts"
+    manifest_path = canonical_root / "runtime" / "context" / "material-manifest.json"
+
+    if not manifest_path.exists():
+        print(f"错误: manifest 不存在", file=sys.stderr)
+        return 1
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    materials = manifest.get("materials", [])
+    target = next((m for m in materials if m.get("filename") == args.filename), None)
+    if not target:
+        print(f"错误: 材料不存在: {args.filename}", file=sys.stderr)
+        return 1
+
+    # Remove files
+    import shutil
+    material_path = materials_dir / args.filename
+    if material_path.exists():
+        material_path.unlink()
+
+    # Remove extract
+    from twinbox_core.material_extract import extract_output_path
+    extract_path = extract_output_path(material_path, materials_dir)
+    if extract_path.exists():
+        extract_path.unlink()
+
+    # Update manifest
+    manifest["materials"] = [m for m in materials if m.get("filename") != args.filename]
+    manifest["generated_at"] = datetime.now().isoformat()
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(f"已删除材料: {args.filename}")
+    return 0
+
+
+def cmd_material_preview(args: argparse.Namespace) -> int:
+    """Preview material impact on Phase 4."""
+    canonical_root = _state_root()
+    manifest_path = canonical_root / "runtime" / "context" / "material-manifest.json"
+
+    if not manifest_path.exists():
+        print(f"错误: manifest 不存在", file=sys.stderr)
+        return 1
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    materials = manifest.get("materials", [])
+    target = next((m for m in materials if m.get("filename") == args.filename), None)
+    if not target:
+        print(f"错误: 材料不存在: {args.filename}", file=sys.stderr)
+        return 1
+
+    intent = target.get("intent", "reference")
+    print(f"材料: {args.filename}")
+    print(f"Intent: {intent}")
+    print(f"导入时间: {target.get('imported_at', 'unknown')}")
+    print()
+
+    # Read material extract to analyze structure
+    materials_dir = canonical_root / "runtime" / "context" / "material-extracts"
+    from twinbox_core.material_extract import extract_output_path
+    extract_path = extract_output_path(Path(args.filename), materials_dir)
+
+    if extract_path.exists():
+        content = extract_path.read_text(encoding="utf-8")
+        # Parse table structure
+        lines = content.split("\n")
+        table_headers = [l for l in lines if l.startswith("|") and "---" not in l]
+        if table_headers:
+            print(f"表格结构: {table_headers[0].count('|') - 1} 列")
+            print(f"表头: {table_headers[0].strip()}")
+        print()
+
+    # Analyze Phase 3 context for relevant threads
+    phase3_context = canonical_root / "runtime" / "validation" / "phase-3" / "context-pack.json"
+    if phase3_context.exists():
+        ctx = json.loads(phase3_context.read_text(encoding="utf-8"))
+        top_threads = ctx.get("top_threads", [])
+
+        # Count threads by lifecycle_flow
+        flow_counts = {}
+        for t in top_threads:
+            flow = t.get("lifecycle_flow", "UNMODELED")
+            flow_counts[flow] = flow_counts.get(flow, 0) + 1
+
+        print("本周线程分布:")
+        for flow, count in sorted(flow_counts.items(), key=lambda x: -x[1]):
+            print(f"  {flow}: {count}")
+        print()
+
+        if intent == "template_hint":
+            print("预期影响:")
+            print("- 将作为输出格式参考注入 Phase 4")
+            print("- LLM 会尝试按类似结构组织相关数据")
+            print("- 不会被 synthetic 规则隔离")
+        else:
+            print("预期影响:")
+            print("- 作为参考数据注入 Phase 4")
+            print("- 用于排序和判断提示")
+            print("- 如标记为 synthetic 会隔离到 material_summary")
+    else:
+        print("Phase 3 context 不存在，无法预览线程相关性")
+
     return 0
 
 
@@ -1512,6 +1666,18 @@ def _build_parser() -> argparse.ArgumentParser:
 
     import_mat = context_sub.add_parser("import-material", help="Import user material")
     import_mat.add_argument("source", help="Source file path")
+    import_mat.add_argument("--intent", default="reference", choices=["reference", "template_hint"], help="Material intent")
+
+    material_parser = context_sub.add_parser("material", help="Material management")
+    material_sub = material_parser.add_subparsers(dest="material_command", required=True)
+    material_sub.add_parser("list", help="List all materials")
+    mat_set_intent = material_sub.add_parser("set-intent", help="Set material intent")
+    mat_set_intent.add_argument("filename", help="Material filename")
+    mat_set_intent.add_argument("intent", choices=["reference", "template_hint"], help="Intent type")
+    mat_remove = material_sub.add_parser("remove", help="Remove material")
+    mat_remove.add_argument("filename", help="Material filename")
+    mat_preview = material_sub.add_parser("preview", help="Preview material impact")
+    mat_preview.add_argument("filename", help="Material filename")
 
     upsert_fact = context_sub.add_parser("upsert-fact", help="Add or update manual fact")
     upsert_fact.add_argument("--id", required=True, help="Fact ID")
@@ -1658,6 +1824,15 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "context":
             if args.context_command == "import-material":
                 return cmd_context_import_material(args)
+            elif args.context_command == "material":
+                if args.material_command == "list":
+                    return cmd_material_list(args)
+                elif args.material_command == "set-intent":
+                    return cmd_material_set_intent(args)
+                elif args.material_command == "remove":
+                    return cmd_material_remove(args)
+                elif args.material_command == "preview":
+                    return cmd_material_preview(args)
             elif args.context_command == "upsert-fact":
                 return cmd_context_upsert_fact(args)
             elif args.context_command == "profile-set":

@@ -124,6 +124,8 @@ Reply with a JSON object:
 """
     try:
         backend = resolve_backend(env_file=env_file)
+        if not backend.model:
+            return False
         # Prefer a faster/cheaper model if available, but fallback to default
         response_text = call_llm(prompt, max_tokens=128, env_file=env_file)
         # Handle cases where LLM returns a markdown code block or just true/false

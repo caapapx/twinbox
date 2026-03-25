@@ -86,8 +86,10 @@ Produce a JSON object with this structure:
    - manual_facts override owner/waiting_on guesses
    - manual_habits inject periodic tasks into daily_urgent or weekly_brief
    - calibration_notes are hard relevance constraints for what the mailbox owner actually cares about this week
-   - material_extracts_notes: user-uploaded tables/docs/slides (CSV/XLSX/DOCX/PPTX extracts); use in weekly_brief and ranking hints where relevant to mailbox threads, without inventing email threads
-   - if a material is marked non-real/synthetic/demo, keep it in material_summary only and do not treat it as factual evidence for actions or risks
+   - material_extracts_notes: user-uploaded materials with intent metadata
+     * intent=reference: reference data for ranking/judgment; if marked synthetic, isolate to material_summary
+     * intent=template_hint: user's expected output format reference; if relevant data exists, organize output in similar structure; ignore synthetic markers
+   - Do not invent threads; materials guide structure/priority, not content
    - Mark evidence_source accordingly
 7. Do NOT invent threads not in the input. Every thread_key must come from the data.
 8. Output ONLY the JSON object. No markdown, no explanation.
@@ -139,7 +141,7 @@ BRIEF_PROMPT = """You are an enterprise email assistant producing a weekly brief
   "weekly_brief": {
     "period":"<date range>",
     "total_threads_in_window":<number>,
-    "material_summary":{
+    "material_summary (OPTIONAL, only if intent=reference)":{
       "sources":["<source name>"],
       "period_hint":"<material date range or N/A>",
       "table_headers":["<header 1>","<header 2>"],
@@ -164,8 +166,10 @@ Rules:
 4. rhythm_observation: patterns in email activity timing/volume
 5. Treat human_context.manual_facts_raw and human_context.calibration_notes as hard prioritization constraints, not just background
 6. Prefer threads that reduce missed follow-up, surface items waiting on the owner, or unblock project delivery; demote broadcast/admin/HR/training content unless it clearly needs owner action this week
-7. If human_context.material_extracts_notes is present, populate material_summary and keep column coverage complete when possible
-8. If a material is marked non-real/synthetic/demo, label it clearly in material_summary and do NOT use it as factual evidence in action_now/backlog/important_changes/top_actions/rhythm_observation
+7. If human_context.material_extracts_notes is present, check the intent tag in each material's comment:
+   - intent=reference: populate material_summary field; if marked synthetic, do NOT use as factual evidence
+   - intent=template_hint: do NOT generate material_summary; instead use the material's structure as a format guide to organize relevant thread data in flow_summary or other sections; ignore synthetic markers
+8. If some material rows (intent=reference only) cannot be mapped to mailbox thread_keys, keep them in material_summary instead of forcing them into action_now/backlog
 9. If some material rows cannot be mapped to mailbox thread_keys, keep them in material_summary instead of forcing them into action_now/backlog
 10. When a material column contains raw date ranges, preserve the raw ranges or summarize coverage counts; do not invent derived durations unless the counting basis is explicit
 11. Output ONLY JSON.
@@ -504,6 +508,16 @@ def _ensure_material_summary(
     *,
     context: dict[str, object],
 ) -> dict[str, object]:
+    # Check if all materials are template_hint (skip material_summary for templates)
+    human_context = context.get("human_context", {})
+    if isinstance(human_context, dict):
+        material_notes = human_context.get("material_extracts_notes", "")
+        if isinstance(material_notes, str):
+            import re
+            intent_tags = re.findall(r'intent=(\w+)', material_notes)
+            if intent_tags and all(intent == "template_hint" for intent in intent_tags):
+                return response
+
     derived = derive_material_summary(context)
     if not derived:
         return response
@@ -544,7 +558,45 @@ def _load_object(path: Path) -> dict[str, object]:
 
 
 def _parse_response(raw: str, expected_key: str | None = None) -> dict[str, object]:
-    parsed = json.loads(clean_json_text(raw))
+    try:
+        parsed = json.loads(clean_json_text(raw))
+    except json.JSONDecodeError as e:
+        # Fallback for severely truncated JSON
+        print(f"Warning: JSON parse failed, attempting aggressive repair: {e}")
+        cleaned = clean_json_text(raw)
+        # Try to close dangling objects/arrays
+        
+        # very aggressive repair for truncated JSON
+        if cleaned.rfind('"') > cleaned.rfind('}') and cleaned.rfind('"') > cleaned.rfind(']'):
+             cleaned += '"'
+             
+        # if the last character is a string but doesn't have a closing quote
+        elif cleaned.endswith('"') and not cleaned.endswith('\\"'):
+             pass # it's closed
+        elif cleaned.rfind('"') % 2 != 0:
+             cleaned += '"'
+             
+        # Add missing commas or values if it ends abruptly
+        if cleaned.endswith(':'):
+            cleaned += '""'
+            
+        while cleaned.count("[") > cleaned.count("]"):
+            cleaned += "]"
+        while cleaned.count("{") > cleaned.count("}"):
+            cleaned += "}"
+            
+        try:
+            parsed = json.loads(cleaned)
+        except json.JSONDecodeError:
+            # One more attempt: try to fix missing quotes around keys or values
+            import re
+            cleaned = re.sub(r'(\w+):', r'"\1":', cleaned)
+            try:
+                parsed = json.loads(cleaned)
+            except json.JSONDecodeError:
+                print(f"Error: Could not repair JSON. Raw output: {raw[:500]}")
+                raise LLMError(f"Failed to parse LLM output as JSON: {e}")
+            
     if not isinstance(parsed, dict):
         raise LLMError("Expected a JSON object from Phase 4 response")
     if expected_key and expected_key not in parsed:

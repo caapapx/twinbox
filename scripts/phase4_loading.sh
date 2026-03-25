@@ -87,20 +87,33 @@ done
 mkdir -p "${MATERIAL_EXTRACTS}"
 
 # Build context pack: recent threads + live body fetch + lifecycle model + human context
-node - <<'NODE' "${ENVELOPES}" "${BODIES}" "${THREAD_SAMPLES}" "${LIFECYCLE}" "${PERSONA}" "${CENSUS}" "${PHASE4_DIR}" "${HIMALAYA_BIN}" "${CONFIG_FILE}" "${ACCOUNT}" "${MAIL_ADDRESS}" "${LOOKBACK_DAYS}" "${MAX_BODY_FETCH}" "${MAX_THREAD_CANDIDATES}" "${MANUAL_FACTS}" "${MANUAL_HABITS}" "${CALIBRATION}" "${MATERIAL_EXTRACTS}"
+MATERIAL_MANIFEST="${STATE_ROOT}/runtime/context/material-manifest.json"
+node - <<'NODE' "${ENVELOPES}" "${BODIES}" "${THREAD_SAMPLES}" "${LIFECYCLE}" "${PERSONA}" "${CENSUS}" "${PHASE4_DIR}" "${HIMALAYA_BIN}" "${CONFIG_FILE}" "${ACCOUNT}" "${MAIL_ADDRESS}" "${LOOKBACK_DAYS}" "${MAX_BODY_FETCH}" "${MAX_THREAD_CANDIDATES}" "${MANUAL_FACTS}" "${MANUAL_HABITS}" "${CALIBRATION}" "${MATERIAL_EXTRACTS}" "${MATERIAL_MANIFEST}"
 const fs = require('fs');
 const path = require('path');
 const cp = require('child_process');
-const [envelopesPath, bodiesPath, threadSamplesPath, lifecyclePath, personaPath, censusPath, phase4Dir, himalayaBin, configPath, account, mailAddress, lookbackDaysRaw, maxBodyFetchRaw, maxThreadCandidatesRaw, factsPath, habitsPath, calibrationPath, materialExtractsDir] = process.argv.slice(2);
+const [envelopesPath, bodiesPath, threadSamplesPath, lifecyclePath, personaPath, censusPath, phase4Dir, himalayaBin, configPath, account, mailAddress, lookbackDaysRaw, maxBodyFetchRaw, maxThreadCandidatesRaw, factsPath, habitsPath, calibrationPath, materialExtractsDir, materialManifestPath] = process.argv.slice(2);
 
-function readMaterialExtractBundle(dir) {
+function readMaterialExtractBundle(dir, manifestPath) {
   try {
     if (!fs.existsSync(dir)) return '';
+
+    // Read manifest for intent metadata
+    let intentMap = new Map();
+    if (fs.existsSync(manifestPath)) {
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+      for (const m of manifest.materials || []) {
+        const extractName = m.filename.replace(/\.(\w+)$/, '_$1') + '.extracted.md';
+        intentMap.set(extractName, m.intent || 'reference');
+      }
+    }
+
     const names = fs.readdirSync(dir).filter((f) => f.endsWith('.extracted.md')).sort();
     let acc = '';
     for (const name of names) {
+      const intent = intentMap.get(name) || 'reference';
       const full = path.join(dir, name);
-      acc += '\n\n<!-- ' + name + ' -->\n\n' + fs.readFileSync(full, 'utf8');
+      acc += '\n\n<!-- ' + name + ' | intent=' + intent + ' -->\n\n' + fs.readFileSync(full, 'utf8');
     }
     return acc.slice(0, 8000);
   } catch {
@@ -278,7 +291,7 @@ for (const c of candidates) {
 const factsRaw = readIfExists(factsPath);
 const habitsRaw = readIfExists(habitsPath);
 const calibrationRaw = readIfExists(calibrationPath);
-const materialBundle = readMaterialExtractBundle(materialExtractsDir);
+const materialBundle = readMaterialExtractBundle(materialExtractsDir, materialManifestPath);
 const hasFacts = factsRaw && factsRaw !== 'facts: []';
 const hasHabits = habitsRaw && habitsRaw !== 'habits: []';
 const hasMaterialExtracts = materialBundle.trim().length > 50;
