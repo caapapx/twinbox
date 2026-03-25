@@ -172,10 +172,11 @@ def _project_urgent_queue() -> QueueView:
         if not isinstance(item, dict):
             continue
         thread_id = item.get("thread_key", "")
-        if item.get("recipient_role") == "cc_only":
+        role = item.get("recipient_role")
+        if role in ("cc_only", "indirect"):
             thread_id = f"[CC] {thread_id}"
-        elif item.get("recipient_role") == "group_only":
-            thread_id = f"[GROUP] {thread_id}"
+        elif role == "group_only":
+            thread_id = f"[GRP] {thread_id}"
         items.append(ThreadCard(
             thread_id=thread_id,
             state=f"{item.get('flow', 'UNKNOWN')}/{item.get('stage', 'UNKNOWN')}",
@@ -210,10 +211,11 @@ def _project_pending_queue() -> QueueView:
         if not isinstance(item, dict):
             continue
         thread_id = item.get("thread_key", "")
-        if item.get("recipient_role") == "cc_only":
+        role = item.get("recipient_role")
+        if role in ("cc_only", "indirect"):
             thread_id = f"[CC] {thread_id}"
-        elif item.get("recipient_role") == "group_only":
-            thread_id = f"[GROUP] {thread_id}"
+        elif role == "group_only":
+            thread_id = f"[GRP] {thread_id}"
         items.append(ThreadCard(
             thread_id=thread_id,
             state=f"{item.get('flow', 'UNKNOWN')}/pending_reply",

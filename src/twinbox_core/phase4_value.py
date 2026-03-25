@@ -112,7 +112,7 @@ Rules:
 3. Use lifecycle_flow/stage from thread data
 4. If human_context has manual_facts, override owner/waiting_on guesses
 5. Every thread_key must come from input data. Output ONLY JSON.
-6. recipient_role field may be "direct", "cc_only", "group_only", or "indirect". "direct" means the mailbox owner is explicitly in To; "cc_only" means the owner is explicitly only in Cc; "group_only" means the owner is absent from To/Cc and the message likely arrived via a mailing list or group alias; "indirect" means the thread mixes explicit Cc and group-routed messages. Only cc_only threads should be down-weighted by default.
+6. recipient_role field: "direct" means the mailbox owner is in the To field; any other value ("cc_only", "group_only", "indirect") means the owner is NOT a primary recipient. Non-direct threads are lower priority — assign them a lower urgency_score accordingly.
 
 Mailbox data:
 """
@@ -584,51 +584,62 @@ def _apply_recipient_role_weights(
     response: dict[str, object],
     context_path: Path,
 ) -> dict[str, object]:
-    """Apply 0.6 multiplier to urgency_score for cc_only threads.
+    """Apply urgency multiplier for non-direct threads.
 
-    Loads recipient_role from context top_threads. Threads where the mailbox
-    owner was only CC'd (cc_only) are down-weighted. Threads with
-    waiting_on_me=true that are cc_only get a warning appended to why.
+    Loads recipient_role from context top_threads. Multipliers:
+    - cc_only: 0.6, indirect: 0.6, group_only: 0.4
+    Threads with waiting_on_me=true that are non-direct get a warning in why.
     """
     try:
         context = _load_object(context_path)
     except Exception:
         return response
 
-    cc_only: set[str] = set()
+    ROLE_WEIGHTS: dict[str, float] = {
+        "cc_only": 0.6,
+        "indirect": 0.6,
+        "group_only": 0.4,
+    }
+    NON_DIRECT_WARNING = "⚠️ 你不是主要收件人，请确认是否真的需要你处理"
+
+    role_map: dict[str, str] = {}
     for thread in context.get("top_threads", []):
-        if isinstance(thread, dict) and thread.get("recipient_role") == "cc_only":
+        if not isinstance(thread, dict):
+            continue
+        role = str(thread.get("recipient_role", "") or "")
+        if role in ROLE_WEIGHTS:
             key = str(thread.get("thread_key", "") or "")
             if key:
-                cc_only.add(key)
+                role_map[key] = role
 
-    if not cc_only:
+    if not role_map:
         return response
-
-    CC_WEIGHT = 0.6
-    CC_WARNING = "⚠️ 你仅在抄送列表中，请确认是否真的需要你处理"
 
     daily_urgent = response.get("daily_urgent", [])
     if isinstance(daily_urgent, list):
         for item in daily_urgent:
             if not isinstance(item, dict):
                 continue
-            if str(item.get("thread_key", "") or "") in cc_only:
+            tkey = str(item.get("thread_key", "") or "")
+            role = role_map.get(tkey)
+            if role is not None:
                 score = item.get("urgency_score")
                 if isinstance(score, (int, float)):
-                    item["urgency_score"] = round(score * CC_WEIGHT)
-                item["recipient_role"] = "cc_only"
+                    item["urgency_score"] = round(score * ROLE_WEIGHTS[role])
+                item["recipient_role"] = role
 
     pending_replies = response.get("pending_replies", [])
     if isinstance(pending_replies, list):
         for item in pending_replies:
             if not isinstance(item, dict):
                 continue
-            if str(item.get("thread_key", "") or "") in cc_only:
-                item["recipient_role"] = "cc_only"
+            tkey = str(item.get("thread_key", "") or "")
+            role = role_map.get(tkey)
+            if role is not None:
+                item["recipient_role"] = role
                 why = str(item.get("why", "") or "")
-                if CC_WARNING not in why:
-                    item["why"] = f"{why}  {CC_WARNING}".strip()
+                if NON_DIRECT_WARNING not in why:
+                    item["why"] = f"{why}  {NON_DIRECT_WARNING}".strip()
 
     return response
 

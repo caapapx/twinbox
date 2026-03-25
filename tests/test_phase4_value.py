@@ -193,10 +193,10 @@ class Phase4ValueTest(unittest.TestCase):
             self.assertEqual(direct_urgent["urgency_score"], 80)
             self.assertNotIn("recipient_role", direct_urgent)
             self.assertEqual(cc_pending["recipient_role"], "cc_only")
-            self.assertIn("⚠️ 你仅在抄送列表中", cc_pending["why"])
+            self.assertIn("⚠️ 你不是主要收件人", cc_pending["why"])
             self.assertNotIn("recipient_role", direct_pending)
 
-    def test_apply_recipient_role_weights_does_not_downweight_group_only_threads(self) -> None:
+    def test_apply_recipient_role_weights_downweights_group_only_threads(self) -> None:
         response = {
             "daily_urgent": [
                 {"thread_key": "group-thread", "urgency_score": 90, "why": "通过邮件组收到"},
@@ -220,10 +220,10 @@ class Phase4ValueTest(unittest.TestCase):
             group_urgent = weighted["daily_urgent"][0]
             group_pending = weighted["pending_replies"][0]
 
-            self.assertEqual(group_urgent["urgency_score"], 90)
-            self.assertNotIn("recipient_role", group_urgent)
-            self.assertNotIn("recipient_role", group_pending)
-            self.assertNotIn("⚠️ 你仅在抄送列表中", group_pending["why"])
+            self.assertEqual(group_urgent["urgency_score"], 36)  # 90 * 0.4
+            self.assertEqual(group_urgent["recipient_role"], "group_only")
+            self.assertEqual(group_pending["recipient_role"], "group_only")
+            self.assertIn("⚠️ 你不是主要收件人", group_pending["why"])
 
 
 if __name__ == "__main__":

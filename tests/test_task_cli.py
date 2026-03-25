@@ -759,8 +759,8 @@ class TestTaskRoutes:
         })
         assert main(["task", "todo", "--json"]) == 0
         payload = json.loads(capsys.readouterr().out)
-        assert payload["urgent"]["items"][0]["thread_id"] == "[GROUP] thread-urgent-group"
-        assert payload["pending"]["items"][0]["thread_id"] == "[GROUP] thread-pending-group"
+        assert payload["urgent"]["items"][0]["thread_id"] == "[GRP] thread-urgent-group"
+        assert payload["pending"]["items"][0]["thread_id"] == "[GRP] thread-pending-group"
 
     def test_task_progress_json_wraps_thread_progress(self, phase4_root, capsys):
         (phase4_root / "activity-pulse.json").write_text(

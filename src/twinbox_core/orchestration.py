@@ -424,7 +424,19 @@ def _scheduled_job_steps(job: ScheduledJob, code_root: Path) -> list[tuple[str, 
             (
                 "Phase 1 Loading (daytime)",
                 ["bash", str(code_root / "scripts/phase1_loading.sh"), "--sample-body-count", "30"],
-            )
+            ),
+            (
+                "Phase 3 Loading (daytime)",
+                ["bash", str(code_root / "scripts/phase3_loading.sh")],
+            ),
+            (
+                "Phase 4 Loading (daytime)",
+                ["bash", str(code_root / "scripts/phase4_loading.sh")],
+            ),
+            (
+                "Phase 4 Thinking (daytime, serial)",
+                ["bash", str(code_root / "scripts/phase4_thinking.sh")],
+            ),
         ]
 
     steps: list[tuple[str, list[str]]] = []
