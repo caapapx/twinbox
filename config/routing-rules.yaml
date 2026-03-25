@@ -1,32 +1,21 @@
-# routing-rules.yaml — 语义分拣规则引擎
-# 
-# 替代旧版的“画像干预 (Persona Intervention)”。
-# 结合硬边界 (Hard Splits) 与软语义 (Semantic Bundles)，在 Phase 3.5 (Attention Gate) 拦截并重定向邮件。
-#
-# 规则结构：
-# - conditions: 触发条件。支持 match_all (AND) / match_any (OR)。
-#   - field: 支持 recipient_role, sender_domain, intent_type 等硬字段，或 semantic_intent。
-#   - operator: in, not_in, equals, is_true, is_false 等。
-# - actions: 命中后的动作。
-#   - set_state: monitor_only, archived, urgent, pending 等。
-#   - set_waiting_on: 强制指定等待对象，或 null 清除。
-#   - skip_phase4: true (直接跳过后续昂贵的 LLM 深度分析，节省 Token)。
-
 rules:
-  - id: rule_group_notification_ignore
-    name: "群组通知降噪"
-    active: true
-    description: "当我是通过邮件组收到系统通知或告警时，不要算作我的待办"
-    conditions:
-      match_all:
-        - field: "recipient_role"
-          operator: "in"
-          value: ["group_only", "cc_only"]  # 硬边界：非直接收件人
-        - field: "semantic_intent"
-          operator: "is_true"
-          value: "这是一封系统自动生成的告警、监控或流水线通知" # 软语义：轻量级 LLM 判断
-    actions:
-      set_state: "monitor_only"
-      set_waiting_on: null
-      add_tags: ["system_alert"]
-      skip_phase4: true
+- id: rule_group_notification_ignore
+  name: 群组通知降噪
+  active: true
+  description: 当我是通过邮件组收到系统通知或告警时，不要算作我的待办
+  conditions:
+    match_all:
+    - field: recipient_role
+      operator: in
+      value:
+      - group_only
+      - cc_only
+    - field: semantic_intent
+      operator: is_true
+      value: 这是一封系统自动生成的告警、监控或流水线通知
+  actions:
+    set_state: monitor_only
+    set_waiting_on: null
+    add_tags:
+    - system_alert
+    skip_phase4: true

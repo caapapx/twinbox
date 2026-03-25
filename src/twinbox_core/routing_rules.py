@@ -35,6 +35,21 @@ class RoutingRule:
     actions: RuleAction
 
 
+def load_rules_raw(config_path: Path) -> dict[str, object]:
+    if not config_path.is_file():
+        return {"rules": []}
+    try:
+        data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {"rules": []}
+    except Exception:
+        return {"rules": []}
+
+
+def save_rules_raw(config_path: Path, data: dict[str, object]) -> None:
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(yaml.dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+
+
 def load_rules(config_path: Path) -> list[RoutingRule]:
     if not config_path.is_file():
         return []

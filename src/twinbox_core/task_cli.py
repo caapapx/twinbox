@@ -16,6 +16,7 @@ from .daytime_slice import DaytimeSliceError, load_activity_pulse, search_activi
 from .mailbox import format_preflight_text, run_preflight
 from .material_extract import MaterialExtractError, write_extract_for_import
 from .paths import resolve_state_root
+from .routing_rules import evaluate_rule, load_rules, load_rules_raw, save_rules_raw
 
 @dataclass(frozen=True)
 class ThreadCard:
@@ -1335,6 +1336,169 @@ def cmd_review_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def _get_rules_path() -> Path:
+    return _state_root() / "config" / "routing-rules.yaml"
+
+
+def cmd_rule_list(args: argparse.Namespace) -> int:
+    """List all semantic routing rules."""
+    rules_path = _get_rules_path()
+    raw_data = load_rules_raw(rules_path)
+    rules = raw_data.get("rules", [])
+
+    if args.json:
+        print(json.dumps(rules, ensure_ascii=False, indent=2))
+        return 0
+
+    if not rules:
+        print("当前没有配置任何路由规则。")
+        return 0
+
+    lines = [
+        f"路由规则 ({len(rules)} 项)",
+        "=" * 40,
+        "",
+    ]
+    for r in rules:
+        status = "启用" if r.get("active", True) else "禁用"
+        lines.extend([
+            f"[{r.get('id', 'unknown')}] {r.get('name', '未命名')} ({status})",
+            f"    描述: {r.get('description', '无')}",
+            f"    条件: {json.dumps(r.get('conditions', {}), ensure_ascii=False)}",
+            f"    动作: {json.dumps(r.get('actions', {}), ensure_ascii=False)}",
+            "",
+        ])
+    print("\n".join(lines))
+    return 0
+
+
+def cmd_rule_add(args: argparse.Namespace) -> int:
+    """Add a new semantic routing rule."""
+    rules_path = _get_rules_path()
+    raw_data = load_rules_raw(rules_path)
+    rules = raw_data.setdefault("rules", [])
+
+    try:
+        new_rule = json.loads(args.rule_json)
+    except json.JSONDecodeError as e:
+        print(f"错误: 无效的 JSON 格式 - {e}", file=sys.stderr)
+        return 1
+
+    if "id" not in new_rule:
+        import uuid
+        new_rule["id"] = f"rule_{uuid.uuid4().hex[:8]}"
+
+    # Check if rule exists
+    existing_idx = next((i for i, r in enumerate(rules) if r.get("id") == new_rule["id"]), None)
+    if existing_idx is not None:
+        rules[existing_idx] = new_rule
+        print(f"已更新规则: {new_rule['id']}")
+    else:
+        rules.append(new_rule)
+        print(f"已添加规则: {new_rule['id']}")
+
+    save_rules_raw(rules_path, raw_data)
+    
+    if args.json:
+        print(json.dumps({"status": "success", "rule": new_rule}, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_rule_remove(args: argparse.Namespace) -> int:
+    """Remove a semantic routing rule."""
+    rules_path = _get_rules_path()
+    raw_data = load_rules_raw(rules_path)
+    rules = raw_data.get("rules", [])
+
+    existing_idx = next((i for i, r in enumerate(rules) if r.get("id") == args.rule_id), None)
+    if existing_idx is None:
+        print(f"错误: 未找到规则 '{args.rule_id}'", file=sys.stderr)
+        return 1
+
+    removed = rules.pop(existing_idx)
+    save_rules_raw(rules_path, raw_data)
+
+    if args.json:
+        print(json.dumps({"status": "success", "removed": removed}, ensure_ascii=False, indent=2))
+    else:
+        print(f"已删除规则: {args.rule_id}")
+    return 0
+
+
+def cmd_rule_test(args: argparse.Namespace) -> int:
+    """Test a routing rule against recent threads (dry run)."""
+    rules_path = _get_rules_path()
+    rules = load_rules(rules_path)
+    
+    target_rule = next((r for r in rules if r.id == args.rule_id), None)
+    if not target_rule:
+        print(f"错误: 未找到激活的规则 '{args.rule_id}'", file=sys.stderr)
+        return 1
+
+    # Load recent threads from Phase 3 context pack
+    phase3_context_path = _state_root() / "runtime" / "validation" / "phase-3" / "context-pack.json"
+    if not phase3_context_path.exists():
+        print("错误: 找不到 Phase 3 context-pack.json。请先运行 pipeline。", file=sys.stderr)
+        return 1
+
+    try:
+        context = json.loads(phase3_context_path.read_text(encoding="utf-8"))
+    except Exception as e:
+        print(f"错误: 无法解析 Phase 3 context-pack.json - {e}", file=sys.stderr)
+        return 1
+
+    threads = context.get("top_threads", [])
+    if not threads:
+        print("没有可用于测试的线程数据。")
+        return 0
+
+    print(f"正在测试规则: [{target_rule.id}] {target_rule.name}")
+    print(f"测试样本数: {len(threads)} 个近期线程\n")
+
+    matched_threads = []
+    env_file = _state_root() / ".env"
+    
+    for thread in threads:
+        if evaluate_rule(target_rule, thread, env_file=env_file if env_file.exists() else None):
+            matched_threads.append(thread)
+
+    if args.json:
+        output = {
+            "rule_id": target_rule.id,
+            "total_tested": len(threads),
+            "matched_count": len(matched_threads),
+            "matches": [
+                {
+                    "thread_key": t.get("thread_key"),
+                    "subject": t.get("latest_subject"),
+                    "recipient_role": t.get("recipient_role")
+                } for t in matched_threads
+            ]
+        }
+        print(json.dumps(output, ensure_ascii=False, indent=2))
+        return 0
+
+    lines = [
+        f"测试结果: 命中 {len(matched_threads)} / {len(threads)} 个线程",
+        "=" * 40,
+    ]
+    
+    if not matched_threads:
+        lines.append("没有线程命中该规则。")
+    else:
+        for idx, t in enumerate(matched_threads, 1):
+            lines.extend([
+                f"[{idx}] {t.get('thread_key', 'unknown')}",
+                f"    主题: {t.get('latest_subject', '')}",
+                f"    收件角色: {t.get('recipient_role', 'unknown')}",
+                f"    发件人: {t.get('latest_from', 'unknown')}",
+                "",
+            ])
+            
+    print("\n".join(lines))
+    return 0
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="twinbox",
@@ -1463,6 +1627,25 @@ def _build_parser() -> argparse.ArgumentParser:
     review_show.add_argument("review_id", help="Review ID")
     review_show.add_argument("--json", action="store_true", help="Output as JSON")
 
+    # rule commands
+    rule_parser = subparsers.add_parser("rule", help="Semantic routing rules management")
+    rule_sub = rule_parser.add_subparsers(dest="rule_command", required=True)
+
+    rule_list = rule_sub.add_parser("list", help="List all routing rules")
+    rule_list.add_argument("--json", action="store_true", help="Output as JSON")
+
+    rule_add = rule_sub.add_parser("add", help="Add or update a routing rule")
+    rule_add.add_argument("--rule-json", required=True, help="Rule definition in JSON format")
+    rule_add.add_argument("--json", action="store_true", help="Output as JSON")
+
+    rule_remove = rule_sub.add_parser("remove", help="Remove a routing rule")
+    rule_remove.add_argument("rule_id", help="Rule ID to remove")
+    rule_remove.add_argument("--json", action="store_true", help="Output as JSON")
+
+    rule_test = rule_sub.add_parser("test", help="Test a routing rule against recent threads")
+    rule_test.add_argument("--rule-id", required=True, help="Rule ID to test")
+    rule_test.add_argument("--json", action="store_true", help="Output as JSON")
+
     return parser
 
 
@@ -1526,6 +1709,15 @@ def main(argv: list[str] | None = None) -> int:
                 return cmd_review_list(args)
             elif args.review_command == "show":
                 return cmd_review_show(args)
+        elif args.command == "rule":
+            if args.rule_command == "list":
+                return cmd_rule_list(args)
+            elif args.rule_command == "add":
+                return cmd_rule_add(args)
+            elif args.rule_command == "remove":
+                return cmd_rule_remove(args)
+            elif args.rule_command == "test":
+                return cmd_rule_test(args)
     except Exception as exc:
         print(f"错误: {exc}", file=sys.stderr)
         return 1

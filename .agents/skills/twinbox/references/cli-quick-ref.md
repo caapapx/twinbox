@@ -22,6 +22,8 @@ twinbox thread inspect THREAD_ID --json     # 线程状态
 twinbox thread explain THREAD_ID --json     # 线程推断依据
 twinbox digest daily --json                 # 每日摘要
 twinbox digest weekly --json                # 每周简报
+twinbox rule list --json                    # 语义分拣规则列表
+twinbox rule test --rule-id RULE_ID --json  # 规则回测
 twinbox action suggest --json               # 行动建议列表
 twinbox action materialize ACTION_ID --json # 行动详情
 twinbox review list --json                  # 待审核列表
@@ -34,6 +36,8 @@ twinbox review show REVIEW_ID --json        # 审核项详情
 twinbox context import-material SOURCE              # 位置参数，非 --file
 twinbox context upsert-fact --id ID --type T --content C
 twinbox context profile-set PROFILE --key K --value V
+twinbox rule add --rule-json '{"name": "...", "conditions": {...}, "actions": {...}}'
+twinbox rule remove RULE_ID
 ```
 
 ### 编排路径
