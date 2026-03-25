@@ -168,6 +168,12 @@ bash ../scripts/install_openclaw_twinbox_init.sh
 - `progress` -> `thread progress`
 - `mailbox-status` -> `mailbox preflight`
 
+其中 `todo` 路由还会把 recipient routing 信号显式投影出来：
+
+- `[CC]` = 邮箱 owner 显式只在 `Cc`
+- `[GROUP]` = 邮箱 owner 不在 `To/Cc`，而是通过邮件组或别名收到
+- 2026-03-25 起，`group_only` 不再被静默折叠成 `cc_only`，所以这两类在 hosted skill 输出里应被区别看待
+
 因此：
 
 - 这几个入口属于 hosted 适配层，不是新的领域核心

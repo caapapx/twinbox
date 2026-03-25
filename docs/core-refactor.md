@@ -827,7 +827,8 @@ Digest 不只是 Phase 4 的一个 markdown 文件，而应被视为稳定交互
 - 用户文本、文件材料、长期用户画像都可以绑定到状态推断和视图投影
 - 绑定入口必须经过 normalized context facts 或 profile config，而不是直接修改 thread snapshots
 - 长期画像默认允许影响 `ranking`、`queue membership` 和 `presentation`
-- 只有 explicit user-confirmed facts 才允许直接重标 thread-state 结论，例如 `cc_only`、`waiting_on_me`、`monitor_only`
+- 只有 explicit user-confirmed facts 才允许直接重标 thread-state 结论，例如 `cc_only`、`group_only`、`waiting_on_me`、`monitor_only`
+- recipient routing 不能再把“显式抄送我”和“通过邮件组送达我”混成同一类：前者是 `cc_only`，后者是 `group_only`，默认只对 `cc_only` 做降权
 
 ### 5. CLI defaults for context
 
