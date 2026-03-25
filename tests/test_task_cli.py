@@ -730,6 +730,38 @@ class TestTaskRoutes:
         assert payload["urgent"]["items"][0]["thread_id"] == "[CC] thread-urgent-cc"
         assert payload["pending"]["items"][0]["thread_id"] == "[CC] thread-pending-cc"
 
+    def test_task_todo_json_marks_group_only_threads(self, write_phase4, capsys):
+        write_phase4("daily-urgent.yaml", {
+            "generated_at": "2026-03-23T08:30:00",
+            "daily_urgent": [{
+                "thread_key": "thread-urgent-group",
+                "why": "通过邮件组收到",
+                "reason_code": "group_watch",
+                "urgency_score": 80,
+                "action_hint": "review context",
+                "flow": "project",
+                "stage": "coordination",
+                "waiting_on": "vendor",
+                "evidence_source": "envelope-group-1",
+                "recipient_role": "group_only",
+            }],
+        })
+        write_phase4("pending-replies.yaml", {
+            "generated_at": "2026-03-23T08:30:00",
+            "pending_replies": [{
+                "thread_key": "thread-pending-group",
+                "why": "邮件组里有人点名需要确认",
+                "waiting_on_me": True,
+                "flow": "project",
+                "evidence_source": "envelope-group-2",
+                "recipient_role": "group_only",
+            }],
+        })
+        assert main(["task", "todo", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["urgent"]["items"][0]["thread_id"] == "[GROUP] thread-urgent-group"
+        assert payload["pending"]["items"][0]["thread_id"] == "[GROUP] thread-pending-group"
+
     def test_task_progress_json_wraps_thread_progress(self, phase4_root, capsys):
         (phase4_root / "activity-pulse.json").write_text(
             json.dumps(

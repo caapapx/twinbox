@@ -119,9 +119,17 @@ class ContextBuilderTest(unittest.TestCase):
             "\n"
             "请知悉。"
         )
+        body_group = (
+            "From: Alice <alice@example.com>\n"
+            "To: 项目组 <project@example.com>\n"
+            "Cc: 数码项目交付部技术支持部公共支撑团队邮件组 <digital_xmjfb_devops_group@example.com>\n"
+            "\n"
+            "请关注资源申请。"
+        )
 
         self.assertEqual(_parse_mime_recipient_role(body_to, owner), "to")
         self.assertEqual(_parse_mime_recipient_role(body_cc, owner), "cc")
+        self.assertEqual(_parse_mime_recipient_role(body_group, owner), "group")
 
     def test_phase3_loading_marks_thread_cc_only_when_owner_only_in_cc(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -257,6 +265,53 @@ class ContextBuilderTest(unittest.TestCase):
                     os.environ["MAIL_ADDRESS"] = old
 
             self.assertEqual(context["top_threads"][0]["recipient_role"], "direct")
+
+    def test_phase3_loading_marks_thread_group_only_when_owner_not_in_to_or_cc(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_phase1_inputs(root)
+            phase2_dir = root / "runtime/validation/phase-2"
+            phase2_dir.mkdir(parents=True, exist_ok=True)
+            (phase2_dir / "persona-hypotheses.yaml").write_text("persona: yes\n", encoding="utf-8")
+            (phase2_dir / "business-hypotheses.yaml").write_text("business: yes\n", encoding="utf-8")
+
+            phase1_context = json.loads((root / "runtime/context/phase1-context.json").read_text(encoding="utf-8"))
+            phase1_context["sampled_bodies"] = {
+                "1": {
+                    "subject": "Re: 资源申请 20260319",
+                    "body": (
+                        "From: Alice <alice@example.com>\n"
+                        "To: Weiliu <weiliu84@example.com>\n"
+                        "Cc: Team Group <digital_xmjfb_devops_group@example.com>\n\n"
+                        "请知悉资源进展。"
+                    ),
+                },
+                "2": {
+                    "subject": "资源申请 20260319",
+                    "body": (
+                        "From: Bob <bob@vendor.com>\n"
+                        "To: Weiliu <weiliu84@example.com>\n"
+                        "Cc: Team Group <digital_xmjfb_devops_group@example.com>\n\n"
+                        "资源申请处理中。"
+                    ),
+                },
+            }
+            (root / "runtime/context/phase1-context.json").write_text(
+                json.dumps(phase1_context, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            old = os.environ.get("MAIL_ADDRESS")
+            os.environ["MAIL_ADDRESS"] = "owner@example.com"
+            try:
+                context = run_phase3_loading(root)
+            finally:
+                if old is None:
+                    os.environ.pop("MAIL_ADDRESS", None)
+                else:
+                    os.environ["MAIL_ADDRESS"] = old
+
+            self.assertEqual(context["top_threads"][0]["recipient_role"], "group_only")
 
 
 if __name__ == "__main__":

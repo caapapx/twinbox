@@ -112,7 +112,7 @@ Rules:
 3. Use lifecycle_flow/stage from thread data
 4. If human_context has manual_facts, override owner/waiting_on guesses
 5. Every thread_key must come from input data. Output ONLY JSON.
-6. recipient_role field: "direct" means the mailbox owner is in the To field; "cc_only" means owner was only CC'd. cc_only threads are lower priority than direct threads — assign them a lower urgency_score accordingly.
+6. recipient_role field may be "direct", "cc_only", "group_only", or "indirect". "direct" means the mailbox owner is explicitly in To; "cc_only" means the owner is explicitly only in Cc; "group_only" means the owner is absent from To/Cc and the message likely arrived via a mailing list or group alias; "indirect" means the thread mixes explicit Cc and group-routed messages. Only cc_only threads should be down-weighted by default.
 
 Mailbox data:
 """

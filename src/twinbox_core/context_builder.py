@@ -131,12 +131,20 @@ def _extract_header_addrs(header_value: str) -> list[str]:
 
 
 def _parse_mime_recipient_role(body_text: str, owner_addr: str) -> str:
-    """Parse To:/Cc: from MIME headers at top of body_text. Returns 'to', 'cc', or 'unknown'."""
+    """Parse To:/Cc: from MIME headers at top of body_text.
+
+    Returns:
+    - "to": owner explicitly in To
+    - "cc": owner explicitly in Cc
+    - "group": recipient headers exist but owner is absent from both To and Cc
+    - "unknown": recipient headers missing or cannot be parsed
+    """
     if not owner_addr or not body_text:
         return "unknown"
     owner = owner_addr.lower().strip()
     to_addrs: list[str] = []
     cc_addrs: list[str] = []
+    saw_recipient_headers = False
     current_header = ""
     for line in body_text.splitlines():
         if not line.strip():
@@ -151,13 +159,35 @@ def _parse_mime_recipient_role(body_text: str, owner_addr: str) -> str:
             key, _, val = line.partition(":")
             current_header = key.strip().lower()
             if current_header == "to":
+                saw_recipient_headers = True
                 to_addrs.extend(_extract_header_addrs(val))
             elif current_header == "cc":
+                saw_recipient_headers = True
                 cc_addrs.extend(_extract_header_addrs(val))
     if owner in to_addrs:
         return "to"
     if owner in cc_addrs:
         return "cc"
+    if saw_recipient_headers:
+        return "group"
+    return "unknown"
+
+
+def _aggregate_thread_recipient_role(rows: list[dict[str, object]]) -> str:
+    """Collapse message-level recipient roles into a stable thread-level role."""
+    classified_roles = {
+        str(row.get("recipient_role", "") or "")
+        for row in rows
+        if str(row.get("recipient_role", "") or "") in {"to", "cc", "group"}
+    }
+    if "to" in classified_roles:
+        return "direct"
+    if classified_roles == {"cc"}:
+        return "cc_only"
+    if classified_roles == {"group"}:
+        return "group_only"
+    if classified_roles == {"cc", "group"}:
+        return "indirect"
     return "unknown"
 
 
@@ -575,8 +605,7 @@ def run_phase3_loading(state_root: Path) -> dict[str, object]:
         else:
             date_range = latest.get("date", "")
 
-        has_any_to = any(row.get("recipient_role") == "to" for row in rows)
-        thread_recipient_role = "direct" if has_any_to else "cc_only"
+        thread_recipient_role = _aggregate_thread_recipient_role(rows)
 
         top_threads.append(
             {

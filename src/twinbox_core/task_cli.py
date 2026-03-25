@@ -174,6 +174,8 @@ def _project_urgent_queue() -> QueueView:
         thread_id = item.get("thread_key", "")
         if item.get("recipient_role") == "cc_only":
             thread_id = f"[CC] {thread_id}"
+        elif item.get("recipient_role") == "group_only":
+            thread_id = f"[GROUP] {thread_id}"
         items.append(ThreadCard(
             thread_id=thread_id,
             state=f"{item.get('flow', 'UNKNOWN')}/{item.get('stage', 'UNKNOWN')}",
@@ -210,6 +212,8 @@ def _project_pending_queue() -> QueueView:
         thread_id = item.get("thread_key", "")
         if item.get("recipient_role") == "cc_only":
             thread_id = f"[CC] {thread_id}"
+        elif item.get("recipient_role") == "group_only":
+            thread_id = f"[GROUP] {thread_id}"
         items.append(ThreadCard(
             thread_id=thread_id,
             state=f"{item.get('flow', 'UNKNOWN')}/pending_reply",
