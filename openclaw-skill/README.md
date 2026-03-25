@@ -132,8 +132,26 @@ bash ../scripts/install_openclaw_twinbox_init.sh
   - Twinbox bridge timer 已安装到 `~/.config/systemd/user/`
   - 临时 `systemEvent` cron run 能被 poller 消费并落盘为 `schedule-runs.jsonl` + `activity-pulse.json`
 
+## 渐进式优化顺序
+
+当前不建议一上来就把 Twinbox 做成“重插件 + 全自动 runtime”。
+
+更稳的推进顺序是：
+
+1. 先把根 `SKILL.md` 做成薄而准的 Markdown skill
+   - 常见请求固定走 `twinbox task ...`
+   - 把 `skills.entries.twinbox.env`、`skillsSnapshot`、专用 `twinbox` agent 写清楚
+2. 再把 deployment / prompt smoke 做成固定回归面
+   - 明确哪些是已证实行为，哪些只是声明层
+3. 然后把宿主 bridge / poller / timer 打磨成可靠闭环
+   - 再讨论 retry、告警、stale fallback
+4. 最后才评估把少数高频任务升级成 plugin tool
+   - 目标是降低“只读 skill 不执行命令”的概率
+   - 不是把整个 Twinbox 一次性迁到 plugin SDK
+
 ## Source Of Truth
 
+- OpenClaw 官方文档：`docs.openclaw.ai` 当前页面
 - [../SKILL.md](../SKILL.md)
 - [../docs/ref/cli.md](../docs/ref/cli.md)
 - [../docs/ref/orchestration.md](../docs/ref/orchestration.md)

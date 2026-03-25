@@ -21,7 +21,7 @@ Use this skill for Twinbox mailbox onboarding, read-only preflight checks, lates
 - Showing daily / pulse / weekly digests from current Twinbox artifacts
 - Suggesting actions or review items from current queue state
 - Checking whether Twinbox runtime is mounted and runnable in the current OpenClaw host
-- Refreshing pipeline artifacts with `twinbox-orchestrate run --phase <n>`
+- Refreshing pipeline artifacts with `twinbox-orchestrate schedule --job ...` or `run --phase <n>`
 - Explaining urgent / pending / SLA / weekly outputs under `runtime/validation/phase-4/`
 - Diagnosing why a deployed Twinbox/OpenClaw skill is still missing, blocked, stale, or not refreshing
 
@@ -53,11 +53,21 @@ For task requests, do not stop after reading this `SKILL.md`. Execute the matchi
 - If the user asks to send/reply/draft, stay read-only unless they explicitly ask for draft/action generation
 - Do not answer task requests with a paraphrase of this skill file when a Twinbox command can be executed instead
 
+## Hosted Defaults
+
+- Prefer a dedicated `twinbox` agent/session for Twinbox work; keep `main` for general chat
+- After skill or env changes, use a fresh Twinbox session; `skillsSnapshot` can freeze old injection results
+- Hosted env should come from `skills.entries.twinbox.env`; `state root/.env` is a local fallback, not the primary hosted config source
+- Treat `metadata.openclaw.schedules` as a declaration layer unless you verify platform-side execution in the current deployment
+- The currently verified refresh path is `openclaw cron -> system-event -> host bridge/poller -> twinbox-orchestrate schedule --job ...`
+
 ## Guardrails
 
 - Stay read-only by default
 - Do not send, delete, archive, or mutate mailbox state unless the user explicitly requests it and the runtime supports it
 - Do not claim `metadata.openclaw.schedules` is executing unless you verify it in the current platform
+- Do not treat `openclaw skills info twinbox = Ready` as proof that the current session prompt already contains `twinbox`
+- Do not claim the platform has automatically run `preflightCommand` unless you have evidence from a real execution path
 
 ## Fast Checks
 
@@ -65,8 +75,10 @@ For task requests, do not stop after reading this `SKILL.md`. Execute the matchi
 - `twinbox task latest-mail --json`
 - `twinbox task todo --json`
 - `twinbox task progress QUERY --json`
+- `twinbox digest pulse --json`
 - `twinbox-orchestrate roots`
 - `twinbox-orchestrate contract --phase 4`
+- `twinbox-orchestrate schedule --job daytime-sync --format json`
 - `twinbox-orchestrate run --phase 1`
 - `twinbox-orchestrate run --phase 4`
 
@@ -74,7 +86,8 @@ For task requests, do not stop after reading this `SKILL.md`. Execute the matchi
 
 - `mailbox-connected` means read-only IMAP preflight succeeded
 - `status=warn` with `smtp_skipped_read_only` is acceptable for preflight
-- OpenClaw-native deployments should inject mailbox env into process env; `state root/.env` is a local fallback, not the preferred hosted config source
+- OpenClaw-native deployments should inject mailbox env into process env via `skills.entries.twinbox.env`; `state root/.env` is a local fallback, not the preferred hosted config source
+- If Twinbox stops appearing in answers after a deploy, check env gating first, then session-level `skillsSnapshot`
 - If Twinbox commands fail, first verify env, mounted repo root, `runtime/bin/himalaya`, and Python dependencies on the OpenClaw host
 
 **Claude Code skill (deeper repo workflow):** [`.claude/skills/twinbox/SKILL.md`](.claude/skills/twinbox/SKILL.md)
