@@ -126,7 +126,14 @@ Reply with a JSON object:
         backend = resolve_backend(env_file=env_file)
         # Prefer a faster/cheaper model if available, but fallback to default
         response_text = call_llm(prompt, max_tokens=128, env_file=env_file)
-        parsed = json.loads(clean_json_text(response_text))
+        # Handle cases where LLM returns a markdown code block or just true/false
+        cleaned = clean_json_text(response_text)
+        if cleaned.lower() == "true":
+            return True
+        if cleaned.lower() == "false":
+            return False
+            
+        parsed = json.loads(cleaned)
         return bool(parsed.get("matches", False))
     except Exception as e:
         print(f"Warning: semantic evaluation failed: {e}")
@@ -184,7 +191,7 @@ def apply_routing_rules(
         return
         
     context = json.loads(context_pack_path.read_text(encoding="utf-8"))
-    threads = context.get("top_threads", [])
+    threads = context.get("threads", context.get("top_threads", []))
     
     applied_count = 0
     for thread in threads:
@@ -208,6 +215,8 @@ def apply_routing_rules(
                 applied_count += 1
                 break # Only apply the first matching rule
                 
+    # Re-assign threads to context to ensure changes are saved
+    context["threads"] = threads
     output_path.write_text(json.dumps(context, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"Phase 3.5 complete. Applied rules to {applied_count} threads.")
 

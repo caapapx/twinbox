@@ -668,6 +668,7 @@ def run_single(config: Phase4RunConfig) -> dict[str, object]:
     if "threads" in context and isinstance(context["threads"], list):
         filtered_threads = [t for t in context["threads"] if not t.get("skip_phase4")]
         context["threads"] = filtered_threads
+        context["thread_candidates"] = len(filtered_threads)
         # Temporarily write filtered context for LLM
         filtered_context_path = config.output_dir / "context-pack-filtered.json"
         filtered_context_path.write_text(json.dumps(context, ensure_ascii=False), encoding="utf-8")
@@ -715,6 +716,7 @@ def run_subtask(
     if "threads" in context and isinstance(context["threads"], list):
         filtered_threads = [t for t in context["threads"] if not t.get("skip_phase4")]
         context["threads"] = filtered_threads
+        context["thread_candidates"] = len(filtered_threads)
         filtered_context_path = output_dir / "context-pack-filtered.json"
         filtered_context_path.write_text(json.dumps(context, ensure_ascii=False), encoding="utf-8")
         prompt_context_path = filtered_context_path

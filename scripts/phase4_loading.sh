@@ -244,6 +244,18 @@ for (const c of candidates) {
 
   // Find lifecycle stage from Phase 3
   const sample = (threadSamples.samples || []).find(s => s.thread_key === c.key);
+  
+  // Find recipient_role from Phase 3 context pack if available
+  let recipientRole = 'unknown';
+  try {
+    const phase3Context = JSON.parse(fs.readFileSync(phase4Dir.replace('phase-4', 'phase-3') + '/context-pack.json', 'utf8'));
+    const p3Thread = (phase3Context.top_threads || []).find(t => t.thread_key === c.key);
+    if (p3Thread && p3Thread.recipient_role) {
+      recipientRole = p3Thread.recipient_role;
+    }
+  } catch (e) {
+    // Ignore
+  }
 
   threadContexts.push({
     thread_key: c.key,
@@ -252,6 +264,7 @@ for (const c of candidates) {
     latest_from: e.from?.addr || '',
     latest_date: e.date || '',
     folder: e.folder || '',
+    recipient_role: recipientRole,
     lifecycle_flow: sample?.flow || 'UNMODELED',
     lifecycle_stage: sample?.inferred_stage || 'unknown',
     lifecycle_stage_name: sample?.stage_name || '',

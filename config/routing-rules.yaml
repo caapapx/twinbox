@@ -19,3 +19,21 @@ rules:
     add_tags:
     - system_alert
     skip_phase4: true
+- id: rule_group_approval_ignore
+  name: 群组审批降噪
+  active: true
+  description: 当我是通过邮件组收到部署资源申请或审批时，不要算作我的待办
+  conditions:
+    match_all:
+    - field: recipient_role
+      operator: in
+      value:
+      - group_only
+      - cc_only
+    - field: semantic_intent
+      operator: is_true
+      value: 这是一封关于部署资源申请、版本发布或审批的邮件
+  actions:
+    set_state: monitor_only
+    set_waiting_on: null
+    skip_phase4: true
