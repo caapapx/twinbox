@@ -159,6 +159,34 @@ def _state_root() -> Path:
     return resolve_state_root(Path.cwd())
 
 
+def _recipient_role_map() -> dict[str, str]:
+    phase3_context = _state_root() / "runtime" / "validation" / "phase-3" / "context-pack.json"
+    try:
+        payload = json.loads(phase3_context.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    top_threads = payload.get("top_threads", []) if isinstance(payload, dict) else []
+    role_map: dict[str, str] = {}
+    if not isinstance(top_threads, list):
+        return role_map
+    for item in top_threads:
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("thread_key", "") or "")
+        role = str(item.get("recipient_role", "") or "")
+        if key and role:
+            role_map[key] = role
+    return role_map
+
+
+def _display_thread_key(thread_key: str, recipient_role: str | None) -> str:
+    if recipient_role in ("cc_only", "indirect"):
+        return f"[CC] {thread_key}"
+    if recipient_role == "group_only":
+        return f"[GRP] {thread_key}"
+    return thread_key
+
+
 def _project_urgent_queue() -> QueueView:
     """Project daily-urgent.yaml to QueueView."""
     phase4_dir = _get_phase4_dir()
@@ -974,23 +1002,38 @@ def cmd_task_todo(args: argparse.Namespace) -> int:
 def cmd_task_progress(args: argparse.Namespace) -> int:
     """Deterministic task entrypoint for progress lookup."""
     matches = search_activity_pulse(args.query, limit=args.limit)
+    role_map = _recipient_role_map()
+    enriched_matches = []
+    for item in matches:
+        if not isinstance(item, dict):
+            enriched_matches.append(item)
+            continue
+        enriched = dict(item)
+        thread_key = str(enriched.get("thread_key", "") or "")
+        recipient_role = role_map.get(thread_key)
+        if recipient_role:
+            enriched["recipient_role"] = recipient_role
+            enriched["thread_key_display"] = _display_thread_key(thread_key, recipient_role)
+        else:
+            enriched["thread_key_display"] = thread_key
+        enriched_matches.append(enriched)
     payload = {
         "task": "progress",
         "query": args.query,
-        "matches": matches,
+        "matches": enriched_matches,
     }
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0
 
-    if not matches:
+    if not enriched_matches:
         print(f"未找到与 '{args.query}' 匹配的线程进展")
         return 0
 
     lines = [f"进展查询: {args.query}", "=" * 40, ""]
-    for idx, item in enumerate(matches, 1):
+    for idx, item in enumerate(enriched_matches, 1):
         lines.extend([
-            f"[{idx}] {item.get('thread_key', 'unknown')}",
+            f"[{idx}] {item.get('thread_key_display', item.get('thread_key', 'unknown'))}",
             f"    主题: {item.get('latest_subject', '')}",
             f"    最近活动: {item.get('last_activity_at', '')}",
             f"    原因: {item.get('why', '')}",

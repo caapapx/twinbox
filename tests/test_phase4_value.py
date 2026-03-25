@@ -225,6 +225,41 @@ class Phase4ValueTest(unittest.TestCase):
             self.assertEqual(group_pending["recipient_role"], "group_only")
             self.assertIn("⚠️ 你不是主要收件人", group_pending["why"])
 
+    def test_apply_recipient_role_weights_falls_back_to_phase3_context_pack(self) -> None:
+        response = {
+            "daily_urgent": [
+                {"thread_key": "group-thread", "urgency_score": 90, "why": "通过邮件组收到"},
+            ],
+            "pending_replies": [
+                {"thread_key": "group-thread", "why": "请确认是否需要跟进", "waiting_on_me": True},
+            ],
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            phase4_context_path = root / "runtime/validation/phase-4/context-pack.json"
+            phase3_context_path = root / "runtime/validation/phase-3/context-pack.json"
+            phase4_context_path.parent.mkdir(parents=True, exist_ok=True)
+            phase3_context_path.parent.mkdir(parents=True, exist_ok=True)
+
+            phase4_context_path.write_text(json.dumps({"thread_contexts": []}, ensure_ascii=False), encoding="utf-8")
+            phase3_context_path.write_text(
+                json.dumps(
+                    {
+                        "top_threads": [
+                            {"thread_key": "group-thread", "recipient_role": "group_only"},
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            weighted = _apply_recipient_role_weights(response, phase4_context_path)
+
+            self.assertEqual(weighted["daily_urgent"][0]["recipient_role"], "group_only")
+            self.assertEqual(weighted["pending_replies"][0]["recipient_role"], "group_only")
+
 
 if __name__ == "__main__":
     unittest.main()

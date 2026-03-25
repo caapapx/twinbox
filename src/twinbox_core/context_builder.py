@@ -10,6 +10,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from .mailbox import load_env_file
+
 
 class ContextBuilderError(RuntimeError):
     """Raised when a phase context pack cannot be built."""
@@ -39,6 +41,13 @@ def _load_json_if_exists(path: Path, default: object) -> object:
     if not path.is_file():
         return default
     return _load_json(path)
+
+
+def _resolve_owner_addr(state_root: Path) -> str:
+    owner_addr = str(os.environ.get("MAIL_ADDRESS", "") or "").strip().lower()
+    if owner_addr:
+        return owner_addr
+    return str(load_env_file(state_root / ".env").get("MAIL_ADDRESS", "") or "").strip().lower()
 
 
 def _parse_yaml_simple_items(text: str) -> list[str]:
@@ -326,7 +335,7 @@ def _load_phase1_data(state_root: Path) -> Phase1Data:
             "Missing Phase 1 outputs.\nRun Phase 1 first: bash scripts/phase1_loading.sh && bash scripts/phase1_thinking.sh"
         )
 
-    owner_addr = os.environ.get("MAIL_ADDRESS", "").strip().lower()
+    owner_addr = _resolve_owner_addr(state_root)
 
     if census_path.is_file() and bodies_path.is_file() and envelopes_path.is_file():
         census = _load_json(census_path)

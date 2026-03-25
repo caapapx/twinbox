@@ -595,6 +595,15 @@ def _apply_recipient_role_weights(
     except Exception:
         return response
 
+    top_threads = context.get("top_threads", []) if isinstance(context, dict) else []
+    if not isinstance(top_threads, list) or not top_threads:
+        phase3_context_path = context_path.parent.parent / "phase-3" / "context-pack.json"
+        try:
+            phase3_context = _load_object(phase3_context_path)
+        except Exception:
+            phase3_context = {}
+        top_threads = phase3_context.get("top_threads", []) if isinstance(phase3_context, dict) else []
+
     ROLE_WEIGHTS: dict[str, float] = {
         "cc_only": 0.6,
         "indirect": 0.6,
@@ -603,7 +612,7 @@ def _apply_recipient_role_weights(
     NON_DIRECT_WARNING = "⚠️ 你不是主要收件人，请确认是否真的需要你处理"
 
     role_map: dict[str, str] = {}
-    for thread in context.get("top_threads", []):
+    for thread in top_threads:
         if not isinstance(thread, dict):
             continue
         role = str(thread.get("recipient_role", "") or "")

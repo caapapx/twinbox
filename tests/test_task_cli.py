@@ -799,6 +799,61 @@ class TestTaskRoutes:
         assert payload["task"] == "progress"
         assert payload["matches"][0]["thread_key"] == "宁夏fdz现场国化资源申请"
 
+    def test_task_progress_json_exposes_group_recipient_role(self, phase4_root, capsys):
+        phase3_dir = phase4_root.parent / "phase-3"
+        phase3_dir.mkdir(parents=True, exist_ok=True)
+        (phase3_dir / "context-pack.json").write_text(
+            json.dumps(
+                {
+                    "top_threads": [
+                        {
+                            "thread_key": "宁夏fdz现场国化资源申请",
+                            "recipient_role": "group_only",
+                        }
+                    ]
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        (phase4_root / "activity-pulse.json").write_text(
+            json.dumps(
+                {
+                    "generated_at": "2026-03-24T10:00:00+08:00",
+                    "notifiable_items": [],
+                    "recent_activity": [],
+                    "needs_attention": [],
+                    "thread_index": [
+                        {
+                            "thread_key": "宁夏fdz现场国化资源申请",
+                            "latest_subject": "宁夏fdz现场国化资源申请",
+                            "last_activity_at": "2026-03-24T09:30:00+08:00",
+                            "latest_message_ref": "INBOX#1",
+                            "new_message_count": 1,
+                            "message_count": 1,
+                            "queue_tags": ["pending"],
+                            "waiting_on": "me",
+                            "flow": "delivery",
+                            "stage": "open",
+                            "why": "等待资源确认",
+                            "fingerprint": "INBOX#1|pending",
+                            "query_terms": ["宁夏", "资源申请"],
+                            "score": 50,
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        assert main(["task", "progress", "宁夏", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["matches"][0]["recipient_role"] == "group_only"
+        assert payload["matches"][0]["thread_key_display"] == "[GRP] 宁夏fdz现场国化资源申请"
+
     def test_task_mailbox_status_wraps_preflight(self, monkeypatch, capsys):
         seen_kwargs = {}
 
