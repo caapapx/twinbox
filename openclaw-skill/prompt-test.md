@@ -11,11 +11,28 @@
 ## 推荐顺序
 
 1. `P8` 读取最新 `activity-pulse.json`
-2. `P1` 日内总览
-3. `P3` 按 thread key / 主题查进展
-4. `P4` 按业务关键词查进展
-5. `P6` 周报事实边界
-6. `P7` 显式执行 `preflight`
+2. `P0` 显式执行 `twinbox task latest-mail --json`
+3. `P1` 日内总览
+4. `P3` 按 thread key / 主题查进展
+5. `P4` 按业务关键词查进展
+6. `P6` 周报事实边界
+7. `P7` 显式执行 `preflight`
+
+## P0 显式执行 Latest Mail
+
+```text
+请先实际执行 `twinbox task latest-mail --json`，然后只基于真实命令输出返回：
+1. generated_at
+2. summary
+3. urgent_top_k 的 thread_key 列表
+4. pending_count
+如果你没有实际执行成功，不要猜。
+```
+
+通过标准：
+
+- 明确体现命令真实输出，而不是只复述 `SKILL.md`
+- 至少给出 `generated_at`、`summary`、`urgent_top_k`、`pending_count`
 
 ## P8 读取最新 Pulse
 
