@@ -475,6 +475,9 @@ def render_phase4_outputs(
         sources = material_summary.get("sources", [])
         if isinstance(sources, list) and sources:
             brief_lines.append(f"Sources: {', '.join(str(item) for item in sources)}")
+        source_type = material_summary.get("source_type")
+        if source_type:
+            brief_lines.append(f"Source type: {source_type}")
         table_title = material_summary.get("table_title")
         if table_title:
             brief_lines.append(f"Title: {table_title}")

@@ -8,7 +8,7 @@ source "${SCRIPT_DIR}/twinbox_paths.sh"
 twinbox_init_roots "${BASH_SOURCE[0]}"
 
 CODE_ROOT="${TWINBOX_CODE_ROOT}"
-STATE_ROOT="${TWINBOX_CANONICAL_ROOT}"
+STATE_ROOT="${TWINBOX_STATE_ROOT:-${TWINBOX_CANONICAL_ROOT}}"
 ENV_FILE="${STATE_ROOT}/.env"
 CONTEXT_DIR="${STATE_ROOT}/runtime/context"
 RAW_DIR="${STATE_ROOT}/runtime/context/raw"

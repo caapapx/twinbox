@@ -62,6 +62,7 @@ class RendererTest(unittest.TestCase):
                 "total_threads_in_window": 5,
                 "material_summary": {
                     "sources": ["weekly-deployment-ledger-sample_md.extracted.md"],
+                    "source_type": "synthetic",
                     "table_title": "周部署台账",
                     "table_section": "台账明细",
                     "period_hint": "2026-03-17 至 2026-03-23",
@@ -90,6 +91,7 @@ class RendererTest(unittest.TestCase):
             self.assertIn("Weekly Brief", weekly_text)
             self.assertIn("Material Summary", weekly_text)
             self.assertIn("周部署台账", weekly_text)
+            self.assertIn("Source type: synthetic", weekly_text)
             self.assertIn("结果", weekly_text)
             self.assertIn("RAID 异常", weekly_text)
 

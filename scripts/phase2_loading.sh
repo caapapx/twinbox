@@ -8,7 +8,7 @@ source "${SCRIPT_DIR}/twinbox_paths.sh"
 twinbox_init_roots "${BASH_SOURCE[0]}"
 source "${SCRIPT_DIR}/python_common.sh"
 
-STATE_ROOT="${TWINBOX_CANONICAL_ROOT}"
+STATE_ROOT="${TWINBOX_STATE_ROOT:-${TWINBOX_CANONICAL_ROOT}}"
 PHASE2_DIR="${STATE_ROOT}/runtime/validation/phase-2"
 DOC_DIR="${STATE_ROOT}/docs/validation"
 DIAGRAM_DIR="${DOC_DIR}/diagrams"

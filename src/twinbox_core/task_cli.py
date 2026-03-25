@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from dataclasses import dataclass
 from datetime import datetime
@@ -13,8 +12,10 @@ from typing import Any
 
 import yaml
 
+from .daytime_slice import DaytimeSliceError, load_activity_pulse, search_activity_pulse
 from .mailbox import format_preflight_text, run_preflight
 from .material_extract import MaterialExtractError, write_extract_for_import
+from .paths import resolve_state_root
 
 @dataclass(frozen=True)
 class ThreadCard:
@@ -151,11 +152,11 @@ def _is_stale(generated_at_str: str, max_age_hours: int = 24) -> bool:
 
 def _get_phase4_dir() -> Path:
     """Get Phase 4 output directory."""
-    # Use TWINBOX_CANONICAL_ROOT if set, otherwise use current directory
-    canonical_root = Path.cwd()
-    if "TWINBOX_CANONICAL_ROOT" in os.environ:
-        canonical_root = Path(os.environ["TWINBOX_CANONICAL_ROOT"]).expanduser()
-    return canonical_root / "runtime" / "validation" / "phase-4"
+    return resolve_state_root(Path.cwd()) / "runtime" / "validation" / "phase-4"
+
+
+def _state_root() -> Path:
+    return resolve_state_root(Path.cwd())
 
 
 def _project_urgent_queue() -> QueueView:
@@ -364,9 +365,7 @@ twinbox 的队列视图从 Phase 4 artifacts 投影而来，不是独立的数�
 
 def cmd_context_import_material(args: argparse.Namespace) -> int:
     """Import user material to runtime/context/material-extracts/ and optional Markdown extract."""
-    canonical_root = Path.cwd()
-    if "TWINBOX_CANONICAL_ROOT" in os.environ:
-        canonical_root = Path(os.environ["TWINBOX_CANONICAL_ROOT"]).expanduser()
+    canonical_root = _state_root()
 
     materials_dir = canonical_root / "runtime" / "context" / "material-extracts"
     materials_dir.mkdir(parents=True, exist_ok=True)
@@ -413,9 +412,7 @@ def cmd_context_import_material(args: argparse.Namespace) -> int:
 
 def cmd_context_upsert_fact(args: argparse.Namespace) -> int:
     """Add or update manual fact to runtime/context/manual-facts.yaml."""
-    canonical_root = Path.cwd()
-    if "TWINBOX_CANONICAL_ROOT" in os.environ:
-        canonical_root = Path(os.environ["TWINBOX_CANONICAL_ROOT"]).expanduser()
+    canonical_root = _state_root()
 
     facts_path = canonical_root / "runtime" / "context" / "manual-facts.yaml"
     facts_data = {"facts": []}
@@ -448,9 +445,7 @@ def cmd_context_upsert_fact(args: argparse.Namespace) -> int:
 
 def cmd_context_profile_set(args: argparse.Namespace) -> int:
     """Set user profile configuration."""
-    canonical_root = Path.cwd()
-    if "TWINBOX_CANONICAL_ROOT" in os.environ:
-        canonical_root = Path(os.environ["TWINBOX_CANONICAL_ROOT"]).expanduser()
+    canonical_root = _state_root()
 
     profiles_dir = canonical_root / "config" / "profiles"
     profiles_dir.mkdir(parents=True, exist_ok=True)
@@ -509,9 +504,7 @@ def cmd_mailbox_preflight(args: argparse.Namespace) -> int:
 
 def _find_thread_in_artifacts(thread_id: str) -> dict | None:
     """Find thread information from Phase 3/4 artifacts."""
-    canonical_root = Path.cwd()
-    if "TWINBOX_CANONICAL_ROOT" in os.environ:
-        canonical_root = Path(os.environ["TWINBOX_CANONICAL_ROOT"])
+    canonical_root = _state_root()
 
     validation_root = canonical_root / "runtime" / "validation"
 
@@ -645,11 +638,37 @@ def cmd_thread_explain(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_thread_progress(args: argparse.Namespace) -> int:
+    """Search current thread progress by thread key, subject, or business keyword."""
+    matches = search_activity_pulse(args.query, limit=args.limit)
+
+    if args.json:
+        print(json.dumps(matches, ensure_ascii=False, indent=2))
+        return 0
+
+    if not matches:
+        print("未找到匹配线程")
+        return 0
+
+    lines = ["线程进展查询", "=" * 40, ""]
+    for idx, item in enumerate(matches, 1):
+        queue_tags = ",".join(item.get("queue_tags", [])) or "none"
+        lines.extend([
+            f"[{idx}] {item.get('thread_key', 'unknown')}",
+            f"    主题: {item.get('latest_subject', '')}",
+            f"    最近活动: {item.get('last_activity_at', '')}",
+            f"    队列标签: {queue_tags}",
+            f"    新增邮件: {item.get('new_message_count', 0)}",
+            f"    原因: {item.get('why', '')}",
+            "",
+        ])
+    print("\n".join(lines))
+    return 0
+
+
 def cmd_digest_daily(args: argparse.Namespace) -> int:
     """Show daily digest."""
-    canonical_root = Path.cwd()
-    if "TWINBOX_CANONICAL_ROOT" in os.environ:
-        canonical_root = Path(os.environ["TWINBOX_CANONICAL_ROOT"])
+    canonical_root = _state_root()
 
     validation_root = canonical_root / "runtime" / "validation" / "phase-4"
 
@@ -721,11 +740,53 @@ def cmd_digest_daily(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_digest_pulse(args: argparse.Namespace) -> int:
+    """Show the latest daytime activity pulse."""
+    try:
+        pulse = load_activity_pulse()
+    except DaytimeSliceError as exc:
+        print(f"错误: {exc}", file=sys.stderr)
+        return 1
+
+    stale = _is_stale(pulse.get("generated_at", ""))
+
+    if args.json:
+        print(json.dumps({
+            "digest_type": "pulse",
+            "sections": {
+                "notifiable": pulse.get("notifiable_items", []),
+                "recent_activity": pulse.get("recent_activity", []),
+                "needs_attention": pulse.get("needs_attention", []),
+            },
+            "generated_at": pulse.get("generated_at", ""),
+            "stale": stale,
+            "notify_payload": pulse.get("notify_payload", {}),
+        }, ensure_ascii=False, indent=2))
+        return 0
+
+    notify = pulse.get("notify_payload", {})
+    notifiable = pulse.get("notifiable_items", [])
+    lines = [
+        "日内脉冲",
+        "=" * 40,
+        "",
+        f"生成时间: {pulse.get('generated_at', '')}",
+        f"状态: {'过期' if stale else '最新'}",
+        f"推送摘要: {notify.get('summary', '')}",
+        f"待推送线程: {len(notifiable)}",
+        "",
+    ]
+    for item in notifiable:
+        if not isinstance(item, dict):
+            continue
+        lines.append(f"- {item.get('thread_key', 'unknown')}: {item.get('why', '')}")
+    print("\n".join(lines))
+    return 0
+
+
 def cmd_digest_weekly(args: argparse.Namespace) -> int:
     """Show weekly digest."""
-    canonical_root = Path.cwd()
-    if "TWINBOX_CANONICAL_ROOT" in os.environ:
-        canonical_root = Path(os.environ["TWINBOX_CANONICAL_ROOT"])
+    canonical_root = _state_root()
 
     validation_root = canonical_root / "runtime" / "validation" / "phase-4"
     weekly_path = validation_root / "weekly-brief-raw.json"
@@ -774,6 +835,201 @@ def cmd_digest_weekly(args: argparse.Namespace) -> int:
         print("\n".join(lines))
 
     return 0
+
+
+def _build_latest_mail_task_view() -> dict[str, Any]:
+    pulse = load_activity_pulse()
+    stale = _is_stale(pulse.get("generated_at", ""))
+    notify = pulse.get("notify_payload", {})
+    return {
+        "task": "latest-mail",
+        "generated_at": pulse.get("generated_at", ""),
+        "stale": stale,
+        "summary": notify.get("summary", ""),
+        "urgent_top_k": notify.get("urgent_top_k", []),
+        "recent_activity": pulse.get("recent_activity", []),
+        "needs_attention": pulse.get("needs_attention", []),
+        "pending_count": notify.get("pending_count", 0),
+        "notify_payload": notify,
+    }
+
+
+def _build_todo_task_view() -> dict[str, Any]:
+    urgent = _project_urgent_queue().to_dict()
+    pending = _project_pending_queue().to_dict()
+    actions = [item.to_dict() for item in _project_action_suggestions()]
+    reviews = [item.to_dict() for item in _project_review_items()]
+    stale = bool(urgent.get("stale")) and bool(pending.get("stale"))
+    return {
+        "task": "todo",
+        "generated_at": urgent.get("generated_at") or pending.get("generated_at", ""),
+        "stale": stale,
+        "urgent": urgent,
+        "pending": pending,
+        "suggested_actions": actions,
+        "review_items": reviews,
+    }
+
+
+def _build_weekly_task_view() -> dict[str, Any]:
+    canonical_root = _state_root()
+    validation_root = canonical_root / "runtime" / "validation" / "phase-4"
+    weekly_path = validation_root / "weekly-brief-raw.json"
+    if not weekly_path.exists():
+        raise FileNotFoundError("weekly-brief-raw.json")
+    weekly_data = json.loads(weekly_path.read_text(encoding="utf-8"))
+    brief = weekly_data.get("weekly_brief", {})
+    return {
+        "task": "weekly",
+        "digest_type": "weekly",
+        "sections": {
+            "action_now": brief.get("top_actions", []),
+            "backlog": [],
+            "important_changes": brief.get("rhythm_observation", ""),
+        },
+        "generated_at": weekly_data.get("generated_at", ""),
+        "stale": _is_stale(weekly_data.get("generated_at", "")) if weekly_data.get("generated_at") else False,
+    }
+
+
+def cmd_task_latest_mail(args: argparse.Namespace) -> int:
+    """Deterministic task entrypoint for latest-mail / today summary questions."""
+    try:
+        payload = _build_latest_mail_task_view()
+    except DaytimeSliceError as exc:
+        print(f"错误: {exc}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    lines = [
+        "最新邮件情况",
+        "=" * 40,
+        "",
+        f"生成时间: {payload.get('generated_at', '')}",
+        f"状态: {'过期' if payload.get('stale') else '最新'}",
+        f"摘要: {payload.get('summary', '')}",
+        f"待回复/待跟进计数: {payload.get('pending_count', 0)}",
+        "",
+        "最值得关注:",
+    ]
+    for item in payload.get("urgent_top_k", []):
+        if not isinstance(item, dict):
+            continue
+        lines.append(f"- {item.get('thread_key', 'unknown')}: {item.get('why', '')}")
+    if not payload.get("urgent_top_k"):
+        lines.append("- 当前无新的高优先级线程")
+    print("\n".join(lines))
+    return 0
+
+
+def cmd_task_todo(args: argparse.Namespace) -> int:
+    """Deterministic task entrypoint for todo/pending/urgent questions."""
+    payload = _build_todo_task_view()
+
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    urgent_items = payload["urgent"].get("items", [])
+    pending_items = payload["pending"].get("items", [])
+    lines = [
+        "当前待办",
+        "=" * 40,
+        "",
+        f"紧急事项: {len(urgent_items)}",
+        f"待回复: {len(pending_items)}",
+        f"建议行动: {len(payload.get('suggested_actions', []))}",
+        f"待审核: {len(payload.get('review_items', []))}",
+        "",
+        "紧急事项:",
+    ]
+    for item in urgent_items[:5]:
+        lines.append(f"- {item.get('thread_id', 'unknown')}: {item.get('why', '')}")
+    if not urgent_items:
+        lines.append("- 当前无紧急事项")
+    lines.extend(["", "待回复:"])
+    for item in pending_items[:5]:
+        lines.append(f"- {item.get('thread_id', 'unknown')}: {item.get('why', '')}")
+    if not pending_items:
+        lines.append("- 当前无待回复线程")
+    print("\n".join(lines))
+    return 0
+
+
+def cmd_task_progress(args: argparse.Namespace) -> int:
+    """Deterministic task entrypoint for progress lookup."""
+    matches = search_activity_pulse(args.query, limit=args.limit)
+    payload = {
+        "task": "progress",
+        "query": args.query,
+        "matches": matches,
+    }
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    if not matches:
+        print(f"未找到与 '{args.query}' 匹配的线程进展")
+        return 0
+
+    lines = [f"进展查询: {args.query}", "=" * 40, ""]
+    for idx, item in enumerate(matches, 1):
+        lines.extend([
+            f"[{idx}] {item.get('thread_key', 'unknown')}",
+            f"    主题: {item.get('latest_subject', '')}",
+            f"    最近活动: {item.get('last_activity_at', '')}",
+            f"    原因: {item.get('why', '')}",
+            "",
+        ])
+    print("\n".join(lines))
+    return 0
+
+
+def cmd_task_weekly(args: argparse.Namespace) -> int:
+    """Deterministic task entrypoint for weekly brief lookup."""
+    try:
+        payload = _build_weekly_task_view()
+    except FileNotFoundError:
+        print("错误: 未找到 weekly-brief-raw.json", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    lines = [
+        "每周摘要",
+        "=" * 40,
+        "",
+        "必须处理的行动:",
+    ]
+    for action in payload["sections"].get("action_now", []):
+        lines.append(f"- {action}")
+    if not payload["sections"].get("action_now", []):
+        lines.append("- 当前无 action_now")
+    print("\n".join(lines))
+    return 0
+
+
+def cmd_task_mailbox_status(args: argparse.Namespace) -> int:
+    """Deterministic task entrypoint for mailbox status diagnosis."""
+    exit_code, payload = run_preflight(
+        state_root=args.state_root,
+        account=args.account,
+        folder=args.folder,
+        page_size=args.page_size,
+    )
+
+    if args.json:
+        output = {"task": "mailbox-status", **payload}
+        print(json.dumps(output, ensure_ascii=False, indent=2))
+        return exit_code
+
+    print(format_preflight_text(payload))
+    return exit_code
 
 
 def _infer_action_type(item: dict) -> str:
@@ -1083,6 +1339,11 @@ def _build_parser() -> argparse.ArgumentParser:
     thread_inspect.add_argument("thread_id", help="Thread ID")
     thread_inspect.add_argument("--json", action="store_true", help="Output as JSON")
 
+    thread_progress = thread_sub.add_parser("progress", help="Search thread progress from activity pulse")
+    thread_progress.add_argument("query", help="Thread key, subject fragment, or business keyword")
+    thread_progress.add_argument("--limit", type=int, default=5, help="Max matches")
+    thread_progress.add_argument("--json", action="store_true", help="Output as JSON")
+
     thread_explain = thread_sub.add_parser("explain", help="Explain thread state reasoning")
     thread_explain.add_argument("thread_id", help="Thread ID")
     thread_explain.add_argument("--json", action="store_true", help="Output as JSON")
@@ -1094,8 +1355,36 @@ def _build_parser() -> argparse.ArgumentParser:
     digest_daily = digest_sub.add_parser("daily", help="Show daily digest")
     digest_daily.add_argument("--json", action="store_true", help="Output as JSON")
 
+    digest_pulse = digest_sub.add_parser("pulse", help="Show daytime activity pulse")
+    digest_pulse.add_argument("--json", action="store_true", help="Output as JSON")
+
     digest_weekly = digest_sub.add_parser("weekly", help="Show weekly digest")
     digest_weekly.add_argument("--json", action="store_true", help="Output as JSON")
+
+    # task commands
+    task_parser = subparsers.add_parser("task", help="Deterministic task routing on top of existing Twinbox views")
+    task_sub = task_parser.add_subparsers(dest="task_command", required=True)
+
+    task_latest = task_sub.add_parser("latest-mail", help="Show the latest mail situation from activity pulse")
+    task_latest.add_argument("--json", action="store_true", help="Output as JSON")
+
+    task_todo = task_sub.add_parser("todo", help="Show urgent/pending todo items")
+    task_todo.add_argument("--json", action="store_true", help="Output as JSON")
+
+    task_progress = task_sub.add_parser("progress", help="Look up progress by thread key, subject, or keyword")
+    task_progress.add_argument("query", help="Thread key, subject fragment, or business keyword")
+    task_progress.add_argument("--limit", type=int, default=5, help="Max matches")
+    task_progress.add_argument("--json", action="store_true", help="Output as JSON")
+
+    task_weekly = task_sub.add_parser("weekly", help="Show weekly digest through the task route")
+    task_weekly.add_argument("--json", action="store_true", help="Output as JSON")
+
+    task_mailbox = task_sub.add_parser("mailbox-status", help="Run mailbox preflight through the task route")
+    task_mailbox.add_argument("--state-root", help="Override twinbox state root")
+    task_mailbox.add_argument("--account", default="", help="Override MAIL_ACCOUNT_NAME")
+    task_mailbox.add_argument("--folder", default="INBOX", help="Folder for read-only envelope list")
+    task_mailbox.add_argument("--page-size", default=5, type=int, help="Envelope page size")
+    task_mailbox.add_argument("--json", action="store_true", help="Output as JSON")
 
     # action commands
     action_parser = subparsers.add_parser("action", help="Action suggestions")
@@ -1150,13 +1439,28 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "thread":
             if args.thread_command == "inspect":
                 return cmd_thread_inspect(args)
+            elif args.thread_command == "progress":
+                return cmd_thread_progress(args)
             elif args.thread_command == "explain":
                 return cmd_thread_explain(args)
         elif args.command == "digest":
             if args.digest_command == "daily":
                 return cmd_digest_daily(args)
+            elif args.digest_command == "pulse":
+                return cmd_digest_pulse(args)
             elif args.digest_command == "weekly":
                 return cmd_digest_weekly(args)
+        elif args.command == "task":
+            if args.task_command == "latest-mail":
+                return cmd_task_latest_mail(args)
+            elif args.task_command == "todo":
+                return cmd_task_todo(args)
+            elif args.task_command == "progress":
+                return cmd_task_progress(args)
+            elif args.task_command == "weekly":
+                return cmd_task_weekly(args)
+            elif args.task_command == "mailbox-status":
+                return cmd_task_mailbox_status(args)
         elif args.command == "action":
             if args.action_command == "suggest":
                 return cmd_action_suggest(args)

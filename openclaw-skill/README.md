@@ -18,6 +18,120 @@
   - 有 stable CLI / orchestration contract
   - 但 listener / action / heartbeat / 托管调度的真实接入还没走完
 
+## 最近实测状态
+
+- 本机已完成一次从 Docker Compose 形态迁到原生 npm OpenClaw 的验证
+- 当前原生 CLI 安装方式已确认可用：
+  - `npm install -g openclaw@latest`
+- 当前原生默认目录按平台约定使用：
+  - `~/.openclaw/openclaw.json`
+  - `~/.openclaw/skills/`
+  - `~/.openclaw/workspace/`
+- 已确认可复用迁移的内容包括：
+  - managed skill：`twinbox`
+  - OpenClaw 模型配置：`xfyun-mass/astron-code-latest`
+  - workspace 启动文件：`AGENTS.md`、`SOUL.md`、`HEARTBEAT.md` 等
+  - identity / devices / memory 等宿主状态
+- 已确认不应直接迁移旧的 `agents/main/sessions/`：
+  - 原因不是文件损坏，而是旧 `skillsSnapshot` 可能冻结住 skill 注入结果
+  - 这类文件应备份保留，但不应作为 native 默认启动状态直接恢复
+
+## 当前 Native Smoke
+
+- `openclaw config validate`：已通过
+- `openclaw skills info twinbox`：已显示 `Ready`
+- `openclaw tui`：已实际连上 Gateway
+- `openclaw agent --agent main ...`：已成功完成一次原生 agent turn
+- `twinbox mailbox preflight --json`：已在宿主机直接成功执行
+- `openclaw agent --agent twinbox ...`：在显式写入 `skills.entries.twinbox.env` 并重启 Gateway 后，新的 `agent:twinbox:main` session 已确认把 `twinbox` 注入到 `systemPromptReport.skills.entries`
+
+这说明当前原生 OpenClaw 至少已经拿到：
+
+- 正常 CLI 安装
+- 默认目录下的 managed skill 识别
+- native 配置可校验
+- TUI 连通性可验证
+- Gateway 到模型提供方的真实调用可验证
+- Twinbox 宿主 CLI / mailbox preflight 可验证
+- 但 Twinbox 的 code root / state root 仍需在 native 部署时显式初始化，否则 workspace 视角可能把 `.env` 解析错位
+- 2026-03-25 起，Twinbox 还补了 `twinbox task ...` 这层薄任务入口，专门承接 OpenClaw 常见 prompt：
+  - `twinbox task latest-mail --json`
+  - `twinbox task todo --json`
+  - `twinbox task progress QUERY --json`
+  - `twinbox task mailbox-status --json`
+
+但也新增了一条明确边界：
+
+- agent 在自然语言提示下“自己执行 Twinbox preflight”目前仍不可靠，不能把它当成 `preflightCommand` 或 skill command 已闭环的证据
+
+## 推荐使用策略
+
+如果目标是“稳定使用 Twinbox”，当前不建议继续把 Twinbox 问题都扔给默认 `main` 会话。
+
+更稳的结构是：
+
+- `main` agent：保留给通用聊天
+- `twinbox` agent：专门处理 Twinbox
+- `system-event / cron`：只触发宿主 bridge，不进入人工聊天 session
+
+原因不是抽象架构偏好，而是当前实测已经证明：
+
+- `session` 会冻结自己的 `skillsSnapshot`
+- `openclaw skills info twinbox = Ready` 不等于当前会话 prompt 已包含 `twinbox`
+- 如果 Gateway run 没拿到 Twinbox 所需 env，该 skill 会在 run 级直接被过滤掉
+
+所以稳定性的关键有三条：
+
+1. Twinbox 邮箱 env 写入 `~/.openclaw/openclaw.json` 的 `skills.entries.twinbox.env`
+2. Twinbox 问题固定走专用 `twinbox` agent
+3. skill / env 变更后，用新 session 验证，不继续复用旧快照
+4. 对常见任务优先走 `twinbox task ...`，不要继续依赖“自由自然语言 + 模型自己选命令”
+
+## 初始化重点
+
+native OpenClaw 部署不要只迁 `~/.openclaw`，还要初始化 Twinbox roots：
+
+```bash
+bash ../scripts/install_openclaw_twinbox_init.sh
+```
+
+它会默认写入：
+
+- `~/.config/twinbox/code-root`
+- `~/.config/twinbox/state-root`
+- `~/.config/twinbox/canonical-root`（legacy alias）
+
+否则 Twinbox 命令如果从 `~/.openclaw/workspace` 发起，可能会把 workspace 当成 state root，继而错误地去找 `~/.openclaw/workspace/.env`，表现成“邮箱 env 未配置”。
+
+推荐语义：
+
+- OpenClaw skill env / process env 是一等配置源
+- `state root/.env` 是本地开发与自托管 fallback
+- 当前仓库仍默认 `code root == state root`，但这只是当前实例布局，不是通用标准
+
+但这仍不等价于：
+
+- `metadata.openclaw.schedules` 已被平台自动消费
+- 日内调度 / 每小时推送 / stale fallback 已闭环
+- `daytime-sync` 的 attention 新鲜度问题已经解决
+
+## 当前宿主桥接面
+
+- Twinbox 侧现在已有两条宿主桥接入口：
+  - `scripts/twinbox_openclaw_bridge.sh`
+  - `scripts/twinbox_openclaw_bridge_poll.sh`
+- 前者适合宿主已经拿到明确 `system-event` 文本时直接转发
+- 后者适合宿主机 service 每分钟轮询一次 Gateway 的 `cron.list` / `cron.runs`，消费新的 Twinbox `systemEvent` run
+- 本目录也补了最小用户态 systemd 样例：
+  - [twinbox-openclaw-bridge.service](./twinbox-openclaw-bridge.service)
+  - [twinbox-openclaw-bridge.timer](./twinbox-openclaw-bridge.timer)
+  - [twinbox-openclaw-bridge.env.example](./twinbox-openclaw-bridge.env.example)
+  - [../scripts/install_openclaw_bridge_user_units.sh](../scripts/install_openclaw_bridge_user_units.sh)
+- 2026-03-25 已在本机完成一次真实 smoke：
+  - 官方 `openclaw-gateway.service` 由 `openclaw gateway install --force` 安装
+  - Twinbox bridge timer 已安装到 `~/.config/systemd/user/`
+  - 临时 `systemEvent` cron run 能被 poller 消费并落盘为 `schedule-runs.jsonl` + `activity-pulse.json`
+
 ## Source Of Truth
 
 - [../SKILL.md](../SKILL.md)
@@ -37,3 +151,8 @@
 ## 当前文件
 
 - [DEPLOY.md](./DEPLOY.md)：OpenClaw skill 部署与验证说明
+- [twinbox-openclaw-bridge.service](./twinbox-openclaw-bridge.service)：用户态宿主 poller service 样例
+- [twinbox-openclaw-bridge.timer](./twinbox-openclaw-bridge.timer)：每分钟轮询一次 Gateway cron run 的 timer 样例
+- [twinbox-openclaw-bridge.env.example](./twinbox-openclaw-bridge.env.example)：`%h/.config/twinbox/twinbox-openclaw-bridge.env` 样例
+- [../scripts/install_openclaw_bridge_user_units.sh](../scripts/install_openclaw_bridge_user_units.sh)：安装到 `~/.config/systemd/user/` 的辅助脚本
+- [../scripts/install_openclaw_twinbox_init.sh](../scripts/install_openclaw_twinbox_init.sh)：初始化 `code-root` / `state-root` / legacy `canonical-root` 的脚本

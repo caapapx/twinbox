@@ -8,6 +8,7 @@ import re
 import sys
 from collections import Counter
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from twinbox_core.llm import LLMError, call_llm, clean_json_text, resolve_backend
@@ -84,7 +85,9 @@ Produce a JSON object with this structure:
 6. If human_context is provided:
    - manual_facts override owner/waiting_on guesses
    - manual_habits inject periodic tasks into daily_urgent or weekly_brief
+   - calibration_notes and owner_focus are hard relevance constraints for what the mailbox owner actually cares about this week
    - material_extracts_notes: user-uploaded tables/docs/slides (CSV/XLSX/DOCX/PPTX extracts); use in weekly_brief and ranking hints where relevant to mailbox threads, without inventing email threads
+   - if a material is marked non-real/synthetic/demo, keep it in material_summary only and do not treat it as factual evidence for actions or risks
    - Mark evidence_source accordingly
 7. Do NOT invent threads not in the input. Every thread_key must come from the data.
 8. Output ONLY the JSON object. No markdown, no explanation.
@@ -158,10 +161,13 @@ Rules:
 2. Use lifecycle flows to group threads
 3. top_actions: the 3 most important things to do this week
 4. rhythm_observation: patterns in email activity timing/volume
-5. If human_context.material_extracts_notes is present, populate material_summary and keep column coverage complete when possible
-6. If some material rows cannot be mapped to mailbox thread_keys, keep them in material_summary instead of forcing them into action_now/backlog
-7. If human_context.material_extracts_notes is present (e.g. user-uploaded ledger/doc/slides), fold relevant items into weekly_brief sections where they align with threads—do not invent thread_keys not in mailbox data
-8. Output ONLY JSON.
+5. Treat persona_summary, owner_focus, human_context.manual_facts_raw, and human_context.calibration_notes as hard prioritization constraints, not just background
+6. Prefer threads that reduce missed follow-up, surface items waiting on the owner, or unblock project delivery; demote broadcast/admin/HR/training content unless it clearly needs owner action this week
+7. If human_context.material_extracts_notes is present, populate material_summary and keep column coverage complete when possible
+8. If a material is marked non-real/synthetic/demo, label it clearly in material_summary and do NOT use it as factual evidence in action_now/backlog/important_changes/top_actions/rhythm_observation
+9. If some material rows cannot be mapped to mailbox thread_keys, keep them in material_summary instead of forcing them into action_now/backlog
+10. When a material column contains raw date ranges, preserve the raw ranges or summarize coverage counts; do not invent derived durations unless the counting basis is explicit
+11. Output ONLY JSON.
 
 Mailbox data:
 """
@@ -234,10 +240,41 @@ def _parse_markdown_tables(material_notes: str) -> list[dict[str, object]]:
     return tables
 
 
+def _contains_synthetic_marker(text: str) -> bool:
+    lowered = text.lower()
+    return any(
+        marker in lowered
+        for marker in (
+            "非真实数据",
+            "合成样例",
+            "synthetic",
+            "demo only",
+            "sample only",
+        )
+    )
+
+
+def _is_range_like_value(value: str) -> bool:
+    stripped = value.strip()
+    if not stripped:
+        return False
+    return bool(
+        re.search(r"\d{1,2}[-/]\d{1,2}\s*[~至]\s*\d{1,2}[-/]\d{1,2}", stripped)
+        or re.search(
+            r"\d{4}[-/年]\d{1,2}([-/月]\d{1,2}(日)?)?\s*[~至]\s*\d{4}[-/年]\d{1,2}([-/月]\d{1,2}(日)?)?",
+            stripped,
+        )
+    )
+
+
 def _summarize_material_column(column: str, values: list[str]) -> str:
     normalized = [value.strip() for value in values if value and value.strip()]
     if not normalized:
         return "无有效值"
+
+    if any(_is_range_like_value(value) for value in normalized):
+        sample = "；".join(normalized[:3])
+        return f"共{len(normalized)}个原始区间；示例：{sample}"
 
     if _is_date_like_column(column, normalized):
         return f"{normalized[0]} 至 {normalized[-1]}" if len(normalized) > 1 else normalized[0]
@@ -291,6 +328,23 @@ def _is_neutral_material_value(value: str) -> bool:
     }
 
 
+def _date_sort_key(value: str) -> tuple[int, ...]:
+    stripped = value.strip()
+    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y年%m月%d日", "%Y-%m", "%Y/%m", "%Y年%m月"):
+        try:
+            parsed = datetime.strptime(stripped, fmt)
+            return (parsed.year, parsed.month, parsed.day)
+        except ValueError:
+            continue
+
+    numbers = [int(token) for token in re.findall(r"\d+", stripped)]
+    if len(numbers) >= 3:
+        return (numbers[0], numbers[1], numbers[2])
+    if len(numbers) == 2:
+        return (numbers[0], numbers[1], 1)
+    return (9999, 12, 31)
+
+
 def derive_material_summary(context: dict[str, object]) -> dict[str, object] | None:
     human_context = context.get("human_context", {})
     if not isinstance(human_context, dict):
@@ -308,15 +362,29 @@ def derive_material_summary(context: dict[str, object]) -> dict[str, object] | N
     rows = [row for row in primary.get("rows", []) if isinstance(row, dict)]
     if not headers or not rows:
         return None
+    is_synthetic = _contains_synthetic_marker(material_notes) or _contains_synthetic_marker(
+        str(primary.get("title", "") or "")
+    )
 
     column_stats: list[dict[str, str]] = []
     header_values: dict[str, list[str]] = {}
     for header in headers:
         values = [str(row.get(header, "") or "") for row in rows]
         header_values[header] = values
+        if _is_date_like_column(header, [value for value in values if value.strip()]) and not any(
+            _is_range_like_value(value) for value in values if value.strip()
+        ):
+            sorted_values = sorted((value.strip() for value in values if value.strip()), key=_date_sort_key)
+            column_stats.append(
+                {"column": header, "summary": _summarize_material_column(header, sorted_values)}
+            )
+            continue
         column_stats.append({"column": header, "summary": _summarize_material_column(header, values)})
 
     risk_rows: list[str] = []
+    row_labels: list[str] = []
+    row_prefixes: list[str] = []
+    synthetic_markers: list[str] = []
     risk_candidate_headers: set[str] = set()
     for header in headers[1:]:
         values = [value.strip() for value in header_values.get(header, []) if value and value.strip()]
@@ -335,6 +403,11 @@ def derive_material_summary(context: dict[str, object]) -> dict[str, object] | N
             if value:
                 row_label = value
                 break
+        if row_label not in row_labels:
+            row_labels.append(row_label)
+            coarse_label = re.split(r"[-_（(]", row_label, maxsplit=1)[0].strip()
+            if len(coarse_label) >= 2 and coarse_label not in row_prefixes:
+                row_prefixes.append(coarse_label)
         for header in headers[1:]:
             if header not in risk_candidate_headers:
                 continue
@@ -343,6 +416,10 @@ def derive_material_summary(context: dict[str, object]) -> dict[str, object] | N
                 continue
             if len(value) <= 1:
                 continue
+            for fragment in re.split(r"[；;，,。]", value):
+                cleaned = fragment.strip()
+                if len(cleaned) >= 4 and cleaned not in synthetic_markers:
+                    synthetic_markers.append(cleaned)
             issue_bits.append(f"{header}={value}")
         if issue_bits:
             risk_rows.append(f"{row_label}: {'；'.join(issue_bits[:3])}")
@@ -355,15 +432,70 @@ def derive_material_summary(context: dict[str, object]) -> dict[str, object] | N
 
     return {
         "sources": sources,
+        "source_type": "synthetic" if is_synthetic else "uploaded",
+        "is_synthetic": is_synthetic,
         "table_title": str(primary.get("title", "") or ""),
         "table_section": primary.get("section"),
         "period_hint": primary.get("period_hint", "N/A"),
         "table_headers": headers,
+        "row_labels": row_labels,
+        "row_prefixes": row_prefixes,
+        "synthetic_markers": synthetic_markers,
         "row_count": len(rows),
         "column_stats": column_stats,
         "open_risks": risk_rows[:5],
-        "notes": "材料摘要直接按上传表格的标题、周期、表头顺序和行数据生成；日期列给范围，枚举列给计数，自由文本列给非空计数和示例。",
+        "notes": (
+            "该材料标记为非真实/合成样例，仅用于结构化摘要展示；不得直接作为本周事实、行动项或风险结论依据。"
+            if is_synthetic
+            else "材料摘要直接按上传表格的标题、周期、表头顺序和行数据生成；日期列保留原始范围，枚举列给计数，自由文本列给非空计数和示例。"
+        ),
     }
+
+
+def _normalize_match_text(text: str) -> str:
+    return re.sub(r"\s+", "", text).lower()
+
+
+def _mentions_any_label(text: str, labels: list[str]) -> bool:
+    normalized = _normalize_match_text(text)
+    return any(label and _normalize_match_text(label) in normalized for label in labels)
+
+
+def _strip_synthetic_material_mentions(
+    weekly_brief: dict[str, object],
+    *,
+    row_labels: list[str],
+    synthetic_markers: list[str],
+) -> None:
+    all_markers = [marker for marker in [*row_labels, *synthetic_markers] if marker]
+    top_actions = weekly_brief.get("top_actions", [])
+    if isinstance(top_actions, list):
+        weekly_brief["top_actions"] = [
+            item
+            for item in top_actions
+            if isinstance(item, str) and not _mentions_any_label(item, all_markers)
+        ]
+
+    for section_name, fields in (
+        ("action_now", ("thread_key", "why", "action")),
+        ("backlog", ("thread_key", "why", "next_step")),
+        ("important_changes", ("thread_key", "change", "impact")),
+    ):
+        items = weekly_brief.get(section_name, [])
+        if not isinstance(items, list):
+            continue
+        filtered_items: list[dict[str, object]] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            thread_key = str(item.get("thread_key", "") or "")
+            text_blob = " ".join(str(item.get(field, "") or "") for field in fields)
+            if not _mentions_any_label(text_blob, all_markers):
+                filtered_items.append(item)
+                continue
+            if thread_key and _mentions_any_label(thread_key, all_markers):
+                filtered_items.append(item)
+        weekly_brief[section_name] = filtered_items
 
 
 def _ensure_material_summary(
@@ -381,14 +513,25 @@ def _ensure_material_summary(
         response["weekly_brief"] = weekly_brief
 
     existing = weekly_brief.get("material_summary")
-    if not isinstance(existing, dict) or not existing:
-        weekly_brief["material_summary"] = derived
-        return response
+    merged_summary = existing.copy() if isinstance(existing, dict) else {}
+    merged_summary.update(derived)
+    weekly_brief["material_summary"] = merged_summary
 
-    for key, value in derived.items():
-        if key not in existing or existing.get(key) in (None, "", [], {}):
-            existing[key] = value
-    weekly_brief["material_summary"] = existing
+    if bool(derived.get("is_synthetic")):
+        _strip_synthetic_material_mentions(
+            weekly_brief,
+            row_labels=[
+                label
+                for label in [
+                    *derived.get("row_labels", []),
+                    *derived.get("row_prefixes", []),
+                ]
+                if isinstance(label, str)
+            ],
+            synthetic_markers=[
+                marker for marker in derived.get("synthetic_markers", []) if isinstance(marker, str)
+            ],
+        )
     return response
 
 

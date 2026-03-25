@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .paths import PathResolutionError, resolve_canonical_root
+from .paths import PathResolutionError, resolve_code_root, resolve_existing_dir, resolve_state_root
 
 OPENCLAW_REQUIRED_ENV = [
     "IMAP_HOST",
@@ -38,6 +38,7 @@ EXIT_INTERNAL = 5
 
 @dataclass(frozen=True)
 class MailboxPaths:
+    code_root: Path
     state_root: Path
     env_file: Path
     config_file: Path
@@ -53,19 +54,23 @@ def resolve_mailbox_paths(
     state_root: str | os.PathLike[str] | None = None,
     env: dict[str, str] | None = None,
 ) -> MailboxPaths:
-    env = env or os.environ
+    if env is None:
+        env = os.environ
+
+    code_root = resolve_code_root(resolve_existing_dir(Path(__file__).resolve().parents[2]), env=env)
 
     if state_root:
         resolved_root = Path(state_root).expanduser().resolve()
     else:
         try:
-            resolved_root = resolve_canonical_root(Path.cwd(), env=env)
+            resolved_root = resolve_state_root(code_root, env=env)
         except PathResolutionError:
-            resolved_root = Path.cwd().resolve()
+            resolved_root = code_root
 
     runtime_dir = resolved_root / "runtime" / "himalaya"
     validation_dir = resolved_root / "runtime" / "validation" / "preflight"
     return MailboxPaths(
+        code_root=code_root,
         state_root=resolved_root,
         env_file=resolved_root / ".env",
         config_file=runtime_dir / "config.toml",
@@ -103,12 +108,18 @@ def load_env_file(path: Path) -> dict[str, str]:
 def build_effective_env(
     paths: MailboxPaths,
     env: dict[str, str] | None = None,
-) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
-    env = env or os.environ
+) -> tuple[dict[str, str], dict[str, str], dict[str, str], dict[str, str]]:
+    if env is None:
+        env = os.environ
     file_env = load_env_file(paths.env_file)
 
     effective = dict(file_env)
     effective.update({key: value for key, value in env.items() if value is not None})
+    env_sources = {
+        "mode": "process-env-first",
+        "state_root_env_file": str(paths.env_file) if paths.env_file.exists() else None,
+        "state_root_env_present": "yes" if paths.env_file.exists() else "no",
+    }
 
     defaults_applied: dict[str, str] = {}
     defaults = {
@@ -126,7 +137,7 @@ def build_effective_env(
         effective["MAIL_DISPLAY_NAME"] = derived
         defaults_applied["MAIL_DISPLAY_NAME"] = derived
 
-    return effective, defaults_applied, file_env
+    return effective, defaults_applied, file_env, env_sources
 
 
 def missing_runtime_env(effective_env: dict[str, str]) -> list[str]:
@@ -280,6 +291,7 @@ def _preflight_json_payload(
         "status": status,
         "error_code": error_code,
         "exit_code": exit_code,
+        "code_root": str(paths.code_root),
         "state_root": str(paths.state_root),
         "env_file": str(paths.env_file) if paths.env_file.exists() else None,
         "config_file": str(paths.config_file),
@@ -300,12 +312,21 @@ def format_preflight_text(result: dict[str, Any]) -> str:
         f"status: {result['status']}",
         f"login_stage: {result['login_stage']}",
     ]
+    if result.get("code_root"):
+        lines.append(f"code_root: {result['code_root']}")
+    if result.get("state_root"):
+        lines.append(f"state_root: {result['state_root']}")
+    if result.get("env_file"):
+        lines.append(f"env_file: {result['env_file']}")
 
     if result.get("missing_env"):
         lines.append(f"missing_env: {' '.join(result['missing_env'])}")
     if result.get("defaults_applied"):
         applied = ", ".join(f"{key}={value}" for key, value in result["defaults_applied"].items())
         lines.append(f"defaults_applied: {applied}")
+    if result.get("env_sources"):
+        env_file_mode = result["env_sources"].get("state_root_env_present", "unknown")
+        lines.append(f"env_sources: process-env-first, state_root_env={env_file_mode}")
 
     for name in ("env", "config_render", "imap", "smtp"):
         check = result["checks"].get(name, {})
@@ -374,9 +395,10 @@ def run_preflight(
     folder: str = "INBOX",
     page_size: int = 5,
 ) -> tuple[int, dict[str, Any]]:
-    env = env or os.environ
+    if env is None:
+        env = os.environ
     paths = resolve_mailbox_paths(state_root=state_root, env=env)
-    effective_env, defaults_applied, _ = build_effective_env(paths, env=env)
+    effective_env, defaults_applied, _, env_sources = build_effective_env(paths, env=env)
     missing = missing_runtime_env(effective_env)
 
     env_check: dict[str, Any] = {
@@ -411,6 +433,7 @@ def run_preflight(
             exit_code=EXIT_CONFIG,
             paths=paths,
         )
+        result["env_sources"] = env_sources
         return EXIT_CONFIG, result
 
     try:
@@ -435,6 +458,7 @@ def run_preflight(
             exit_code=EXIT_CONFIG,
             paths=paths,
         )
+        result["env_sources"] = env_sources
         return EXIT_CONFIG, result
 
     paths.validation_dir.mkdir(parents=True, exist_ok=True)
@@ -461,6 +485,7 @@ def run_preflight(
             exit_code=EXIT_INTERNAL,
             paths=paths,
         )
+        result["env_sources"] = env_sources
         return EXIT_INTERNAL, result
 
     command = [
@@ -510,6 +535,7 @@ def run_preflight(
             exit_code=exit_code,
             paths=paths,
         )
+        result["env_sources"] = env_sources
         write_preflight_report(paths=paths, result=result, command=command)
         paths.preflight_json.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         return exit_code, result
@@ -539,6 +565,7 @@ def run_preflight(
         exit_code=EXIT_OK,
         paths=paths,
     )
+    result["env_sources"] = env_sources
     write_preflight_report(paths=paths, result=result, command=command)
     paths.preflight_json.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return EXIT_OK, result
@@ -546,7 +573,7 @@ def run_preflight(
 
 def cmd_check_env(args: argparse.Namespace) -> int:
     paths = resolve_mailbox_paths(state_root=args.state_root)
-    effective_env, defaults_applied, _ = build_effective_env(paths)
+    effective_env, defaults_applied, _, _ = build_effective_env(paths)
     missing = missing_runtime_env(effective_env)
 
     if missing:
@@ -568,7 +595,7 @@ def cmd_check_env(args: argparse.Namespace) -> int:
 
 def cmd_render_config(args: argparse.Namespace) -> int:
     paths = resolve_mailbox_paths(state_root=args.state_root)
-    effective_env, defaults_applied, _ = build_effective_env(paths)
+    effective_env, defaults_applied, _, _ = build_effective_env(paths)
 
     missing = missing_runtime_env(effective_env)
     if missing:

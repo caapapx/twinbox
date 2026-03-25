@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from twinbox_core.phase4_value import derive_material_summary, merge_phase4_outputs
+from twinbox_core.phase4_value import _ensure_material_summary, derive_material_summary, merge_phase4_outputs
 
 
 class Phase4ValueTest(unittest.TestCase):
@@ -34,6 +34,7 @@ class Phase4ValueTest(unittest.TestCase):
         self.assertIsNotNone(summary)
         assert summary is not None
         self.assertEqual(summary["table_title"], "周部署台账（合成样例，用于干预评测）")
+        self.assertTrue(summary["is_synthetic"])
         self.assertEqual(summary["row_count"], 2)
         self.assertEqual(
             summary["table_headers"],
@@ -43,7 +44,44 @@ class Phase4ValueTest(unittest.TestCase):
         self.assertIn("一次成功=2", column_stats["结果"])
         self.assertIn("是=1", column_stats["是否达预期"])
         self.assertIn("部分=1", column_stats["是否达预期"])
+        self.assertIn("原始区间", column_stats["部署起止"])
         self.assertIn("RAID 异常", summary["open_risks"][0])
+        self.assertIn("不得直接作为本周事实", summary["notes"])
+
+    def test_ensure_material_summary_overrides_llm_material_stats_and_filters_synthetic_actions(self) -> None:
+        context = {
+            "human_context": {
+                "material_extracts_notes": """
+<!-- weekly-deployment-ledger-sample_md.extracted.md -->
+
+# 自上传文本: weekly-deployment-ledger-sample.md
+
+# 周部署台账（合成样例，用于干预评测）
+
+> 非真实数据
+
+| 资源/版本 | 产品 | 部署起止 | 结果 |
+|-----------|------|----------|------|
+| 项目B-检索-z.w | 产品乙 | 03-19 ~ 03-22 | 一次成功 |
+"""
+            }
+        }
+        response = {
+            "weekly_brief": {
+                "material_summary": {
+                    "column_stats": [{"column": "部署起止", "summary": "部署周期1-4天不等"}],
+                },
+                "top_actions": ["继续跟踪项目B检索版本GPU未跑满风险"],
+            }
+        }
+
+        merged = _ensure_material_summary(response, context=context)
+        material_summary = merged["weekly_brief"]["material_summary"]
+        column_stats = {item["column"]: item["summary"] for item in material_summary["column_stats"]}
+
+        self.assertEqual(merged["weekly_brief"]["top_actions"], [])
+        self.assertIn("原始区间", column_stats["部署起止"])
+        self.assertTrue(material_summary["is_synthetic"])
 
     def test_merge_writes_phase4_outputs(self) -> None:
         urgent_pending = {

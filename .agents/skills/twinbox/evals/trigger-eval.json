@@ -1,0 +1,22 @@
+[
+  {"query": "preflight --json says validated but I thought I was connected—what's the difference and what single command proves IMAP?", "should_trigger": true},
+  {"query": "my urgent queue json has stale true, do i need to rerun something or is the data still ok for standup", "should_trigger": true},
+  {"query": "exit code 3 from mailbox preflight, corporate wifi, what usually causes that in this project", "should_trigger": true},
+  {"query": "can you explain waiting_on and evidence_refs from thread explain output i pasted (twinbox repo)", "should_trigger": true},
+  {"query": "whats the diff between phase4 only vs full phase1234 for overnight refresh", "should_trigger": true},
+  {"query": "i need the weekly rollup from this repo's pipeline not my inbox client", "should_trigger": true},
+  {"query": "which env vars are blocking mailbox-connected vs just validated", "should_trigger": true},
+  {"query": "action suggest returned ids like action-urgent-1 how do i materialize one", "should_trigger": true},
+  {"query": "review list json—how do i open one item's details", "should_trigger": true},
+  {"query": "smtp warn read only in preflight json—safe to ignore for phase runs?", "should_trigger": true},
+  {"query": "i want to import a habits md file into the context store using the cli here", "should_trigger": true},
+  {"query": "is twinbox-orchestrate the right entry for cron or should i call twinbox orchestrate", "should_trigger": true},
+  {"query": "refactor tests/test_task_cli.py mocks only—pytest is failing on argparse help text", "should_trigger": false},
+  {"query": "translate README.zh.md intro paragraph to more natural Chinese, no mailbox stuff", "should_trigger": false},
+  {"query": "add a pre-commit hook that runs ruff on src/twinbox_core only", "should_trigger": false},
+  {"query": "explain how to use git worktrees for parallel features in any repo", "should_trigger": false},
+  {"query": "design a REST API for unrelated CRM integration—ignore twinbox", "should_trigger": false},
+  {"query": "debug why pip install -e . fails with setuptools version in this venv", "should_trigger": false},
+  {"query": "write a generic blog post about IMAP history for beginners, not this codebase", "should_trigger": false},
+  {"query": "optimize docker compose for a postgres sidecar—mail not involved", "should_trigger": false}
+]

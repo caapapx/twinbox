@@ -10,7 +10,7 @@ source "${SCRIPT_DIR}/twinbox_paths.sh"
 twinbox_init_roots "${BASH_SOURCE[0]}"
 
 CODE_ROOT="${TWINBOX_CODE_ROOT}"
-STATE_ROOT="${TWINBOX_CANONICAL_ROOT}"
+STATE_ROOT="${TWINBOX_STATE_ROOT:-${TWINBOX_CANONICAL_ROOT}}"
 ENV_FILE="${STATE_ROOT}/.env"
 CONTEXT_PACK="${STATE_ROOT}/runtime/context/phase1-context.json"
 OUTPUT_DIR="${STATE_ROOT}/runtime/validation/phase-1"

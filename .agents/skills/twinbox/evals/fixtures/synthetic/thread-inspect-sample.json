@@ -1,0 +1,14 @@
+{
+  "thread_id": "thread-eval-synth-001",
+  "state": "waiting_on_peer",
+  "waiting_on": "peer",
+  "last_activity_at": "2026-03-24T07:30:00Z",
+  "confidence": 0.81,
+  "evidence_refs": ["mail_evidence"],
+  "context_refs": ["flow-synth"],
+  "why": "Synthetic inspect payload for full-chain eval only.",
+  "explainability": {
+    "state_reasoning": "Synthetic.",
+    "confidence_factors": ["Urgency score: 81", "Owner: synth", "Action hint: none"]
+  }
+}

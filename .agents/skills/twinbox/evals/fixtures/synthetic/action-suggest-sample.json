@@ -1,0 +1,11 @@
+[
+  {
+    "action_id": "action-eval-synth-1",
+    "thread_id": "thread-eval-synth-001",
+    "action_type": "reply",
+    "why_now": "Synthetic action row for full-chain eval only.",
+    "risk_level": "low",
+    "required_review_fields": ["action_type", "why_now"],
+    "suggested_draft_mode": "quick_reply"
+  }
+]

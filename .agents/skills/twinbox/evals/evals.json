@@ -1,0 +1,60 @@
+{
+  "skill_name": "twinbox",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I ran `twinbox mailbox preflight --json` and got exit code 4 with stderr about auth. My `.env` has IMAP_HOST and IMAP_PORT set. What should I check next, and what does `login_stage` mean if I fix it?",
+      "expected_output": "Explains IMAP auth failure path, which credentials/env keys matter, and maps stages unconfigured → validated → mailbox-connected using project conventions; suggests read-only boundary (no destructive fixes).",
+      "files": [],
+      "expectations": [
+        "Mentions `IMAP_LOGIN` / `IMAP_PASS` or credential rotation as likely cause for exit 4",
+        "Explains `login_stage` states without inventing new stage names",
+        "Does not recommend send/move/delete/archive as a fix"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "`twinbox queue list --json` shows `stale: true` on urgent. I'm in the twinbox repo—what regenerates the projections and which command should I run for a quick refresh vs a full rebuild?",
+      "expected_output": "Distinguishes `twinbox-orchestrate run --phase 4` vs full `twinbox-orchestrate run`; ties stale to needing orchestration refresh; keeps commands accurate (orchestrate entry, not `twinbox orchestrate`).",
+      "files": [],
+      "expectations": [
+        "Recommends `twinbox-orchestrate run --phase 4` for quick refresh",
+        "Mentions full pipeline as `twinbox-orchestrate run` (no --phase) or equivalent ordering",
+        "Warns that queues are derived artifacts, not live IMAP"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Paste-style: here's a JSON line from `twinbox thread explain thread-abc --json` with `waiting_on: \"peer\"` and `confidence: 0.72`. Summarize what that means for standup and what I'd verify next in this codebase.",
+      "expected_output": "Interprets thread card fields conservatively; suggests follow-up CLI reads (inspect/explain) or queue context; no fabricated mailbox actions.",
+      "files": [],
+      "expectations": [
+        "Explains `waiting_on` and `confidence` in plain language",
+        "Suggests a concrete next read-only CLI step (e.g. inspect same thread or related queue) without claiming to have seen full JSON",
+        "Does not propose sending email"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "I need a weekly email rollup for my team from this project's outputs—nothing fancy, just what's in the twinbox artifacts. How do I get it and what flags matter?",
+      "expected_output": "Points to `twinbox digest weekly --json`, notes JSON shaping, stale/orchestration caveat if needed.",
+      "files": [],
+      "expectations": [
+        "Names `twinbox digest weekly --json`",
+        "Mentions `--json` for structured output",
+        "Notes dependency on generated artifacts / possible staleness"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "I want to add a recurring work habit note into twinbox's context store from a local markdown file. What's the safe CLI path and what do I need to double-check before running it?",
+      "expected_output": "Uses `twinbox context import-material` with caveat about side effects; confirms user intent; references docs/cli patterns.",
+      "files": [],
+      "expectations": [
+        "Names `twinbox context import-material` with SOURCE as positional arg (not --file)",
+        "Explicitly flags this as a write/side-effect path requiring confirmation",
+        "Does not claim import is read-only"
+      ]
+    }
+  ]
+}

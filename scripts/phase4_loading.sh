@@ -8,7 +8,7 @@ source "${SCRIPT_DIR}/twinbox_paths.sh"
 twinbox_init_roots "${BASH_SOURCE[0]}"
 
 CODE_ROOT="${TWINBOX_CODE_ROOT}"
-STATE_ROOT="${TWINBOX_CANONICAL_ROOT}"
+STATE_ROOT="${TWINBOX_STATE_ROOT:-${TWINBOX_CANONICAL_ROOT}}"
 ENV_FILE="${STATE_ROOT}/.env"
 CONFIG_FILE="${STATE_ROOT}/runtime/himalaya/config.toml"
 PHASE1_DIR="${STATE_ROOT}/runtime/validation/phase-1"
@@ -110,6 +110,32 @@ function readMaterialExtractBundle(dir) {
 
 function readIfExists(p) {
   try { return fs.readFileSync(p, 'utf8').trim(); } catch { return ''; }
+}
+
+function extractPersonaHypotheses(text, limit = 3) {
+  const matches = [...String(text || '').matchAll(/hypothesis:\s*"([^"]+)"/g)].map((match) => match[1].trim());
+  return matches.slice(0, limit);
+}
+
+function extractBulletBlock(text, anchor, limit = 4) {
+  const lines = String(text || '').split(/\r?\n/);
+  const start = lines.findIndex((line) => line.includes(anchor));
+  if (start < 0) return [];
+  const bullets = [];
+  for (let i = start + 1; i < lines.length && bullets.length < limit; i += 1) {
+    const trimmed = lines[i].trim();
+    if (!trimmed) {
+      if (bullets.length > 0) break;
+      continue;
+    }
+    if (trimmed.startsWith('## ') || trimmed.startsWith('### ')) break;
+    if (trimmed.startsWith('- ')) {
+      bullets.push(trimmed.slice(2).trim());
+      continue;
+    }
+    if (bullets.length > 0) break;
+  }
+  return bullets;
 }
 
 const envelopes = JSON.parse(fs.readFileSync(envelopesPath, 'utf8'));
@@ -243,6 +269,14 @@ const materialBundle = readMaterialExtractBundle(materialExtractsDir);
 const hasFacts = factsRaw && factsRaw !== 'facts: []';
 const hasHabits = habitsRaw && habitsRaw !== 'habits: []';
 const hasMaterialExtracts = materialBundle.trim().length > 50;
+const ownerFocus = {
+  primary_role_hypotheses: extractPersonaHypotheses(personaRaw, 3),
+  weekly_brief_priorities: extractBulletBlock(calibrationRaw, '应优先看到', 4),
+  demote_categories: [
+    '与当前岗位主线无关的广播类通知',
+    '培训、HR、泛宣传邮件（除非本周明确要求本人处理）',
+  ],
+};
 
 const context = {
   generated_at: now.toLocaleString('sv-SE', {timeZone:'Asia/Shanghai'}).replace(' ','T') + '+08:00',
@@ -253,7 +287,8 @@ const context = {
   bodies_fetched_live: fetched,
   bodies_from_cache: threadContexts.filter(t => t.body_excerpt).length - fetched,
   lifecycle_model_summary: lifecycleRaw.slice(0, 2000) || null,
-  persona_summary: personaRaw.slice(0, 800) || null,
+  persona_summary: personaRaw.slice(0, 2000) || null,
+  owner_focus: ownerFocus,
   threads: threadContexts,
   human_context: {
     has_facts: hasFacts,
@@ -262,7 +297,7 @@ const context = {
     has_material_extracts: hasMaterialExtracts,
     manual_facts_raw: hasFacts ? factsRaw : null,
     manual_habits_raw: hasHabits ? habitsRaw : null,
-    calibration_notes: calibrationRaw.length > 50 ? calibrationRaw.slice(0, 1500) : null,
+    calibration_notes: calibrationRaw.length > 50 ? calibrationRaw.slice(0, 2500) : null,
     material_extracts_notes: hasMaterialExtracts ? materialBundle : null,
   },
 };

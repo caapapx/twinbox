@@ -24,8 +24,24 @@ twinbox_canonical_root_file() {
   _twinbox_paths_py canonical-root-file
 }
 
+twinbox_state_root_file() {
+  _twinbox_paths_py state-root-file
+}
+
+twinbox_code_root_file() {
+  _twinbox_paths_py code-root-file
+}
+
 twinbox_resolve_existing_dir() {
   _twinbox_paths_py resolve-existing-dir "${1:-}"
+}
+
+twinbox_resolve_code_root() {
+  _twinbox_paths_py resolve-code-root "$1"
+}
+
+twinbox_resolve_state_root() {
+  _twinbox_paths_py resolve-state-root "$1"
 }
 
 twinbox_resolve_canonical_root() {
@@ -43,5 +59,6 @@ twinbox_init_roots() {
   }
 
   export TWINBOX_CODE_ROOT="${roots[0]}"
-  export TWINBOX_CANONICAL_ROOT="${roots[1]}"
+  export TWINBOX_STATE_ROOT="${roots[1]}"
+  export TWINBOX_CANONICAL_ROOT="${TWINBOX_CANONICAL_ROOT:-${TWINBOX_STATE_ROOT}}"
 }

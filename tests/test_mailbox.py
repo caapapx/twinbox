@@ -35,13 +35,14 @@ class TestBuildEffectiveEnv:
         _write_minimal_env(tmp_path)
         paths = mailbox.resolve_mailbox_paths(state_root=tmp_path)
 
-        effective, defaults_applied, _ = mailbox.build_effective_env(paths, env={})
+        effective, defaults_applied, _, env_sources = mailbox.build_effective_env(paths, env={})
 
         assert effective["MAIL_ACCOUNT_NAME"] == "myTwinbox"
         assert effective["MAIL_DISPLAY_NAME"] == "myTwinbox"
         assert effective["IMAP_ENCRYPTION"] == "tls"
         assert effective["SMTP_ENCRYPTION"] == "tls"
         assert defaults_applied["MAIL_ACCOUNT_NAME"] == "myTwinbox"
+        assert env_sources["state_root_env_present"] == "yes"
 
 
 class TestRunPreflight:

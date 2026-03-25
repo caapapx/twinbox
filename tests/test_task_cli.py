@@ -43,13 +43,21 @@ from twinbox_core.task_cli import (
 
 
 class TestPhase4DirResolution:
-    """TWINBOX_CANONICAL_ROOT env var governs the phase-4 path."""
+    """TWINBOX_STATE_ROOT governs the phase-4 path, with legacy fallback."""
 
-    def test_env_var_takes_precedence(self, monkeypatch, tmp_path):
+    def test_state_root_env_takes_precedence(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("TWINBOX_STATE_ROOT", str(tmp_path))
+        monkeypatch.setenv("TWINBOX_CANONICAL_ROOT", str(tmp_path / "legacy"))
+        assert _get_phase4_dir() == tmp_path / "runtime" / "validation" / "phase-4"
+
+    def test_legacy_env_still_works(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("TWINBOX_STATE_ROOT", raising=False)
         monkeypatch.setenv("TWINBOX_CANONICAL_ROOT", str(tmp_path))
         assert _get_phase4_dir() == tmp_path / "runtime" / "validation" / "phase-4"
 
     def test_fallback_to_cwd(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+        monkeypatch.delenv("TWINBOX_STATE_ROOT", raising=False)
         monkeypatch.delenv("TWINBOX_CANONICAL_ROOT", raising=False)
         monkeypatch.chdir(tmp_path)
         assert _get_phase4_dir() == tmp_path / "runtime" / "validation" / "phase-4"
@@ -480,6 +488,36 @@ class TestQueueDigestThreadCli:
         assert payload["digest_type"] == "daily"
         assert isinstance(payload["sections"], dict)
 
+    def test_digest_pulse_missing_file_exits_1(self, phase4_root):
+        assert main(["digest", "pulse", "--json"]) == 1
+
+    def test_digest_pulse_json_schema(self, phase4_root, capsys):
+        (phase4_root / "activity-pulse.json").write_text(
+            json.dumps(
+                {
+                    "generated_at": "2026-03-24T10:00:00+08:00",
+                    "notify_payload": {
+                        "generated_at": "2026-03-24T10:00:00+08:00",
+                        "stale": False,
+                        "urgent_top_k": [],
+                        "pending_count": 0,
+                        "summary": "none",
+                    },
+                    "notifiable_items": [],
+                    "recent_activity": [],
+                    "needs_attention": [],
+                    "thread_index": [],
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        assert main(["digest", "pulse", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["digest_type"] == "pulse"
+        assert "notify_payload" in payload
+
     def test_digest_weekly_missing_file_exits_1(self, phase4_root):
         assert main(["digest", "weekly", "--json"]) == 1
 
@@ -506,6 +544,42 @@ class TestQueueDigestThreadCli:
         missing = required - body.keys()
         assert not missing, f"ThreadCard contract fields missing: {missing}"
         assert body["thread_id"] == "thread-xyz"
+
+    def test_thread_progress_searches_activity_pulse(self, phase4_root, capsys):
+        (phase4_root / "activity-pulse.json").write_text(
+            json.dumps(
+                {
+                    "generated_at": "2026-03-24T10:00:00+08:00",
+                    "notifiable_items": [],
+                    "recent_activity": [],
+                    "needs_attention": [],
+                    "thread_index": [
+                        {
+                            "thread_key": "宁夏fdz现场国化资源申请",
+                            "latest_subject": "宁夏fdz现场国化资源申请",
+                            "last_activity_at": "2026-03-24T09:30:00+08:00",
+                            "latest_message_ref": "INBOX#1",
+                            "new_message_count": 1,
+                            "message_count": 1,
+                            "queue_tags": ["pending"],
+                            "waiting_on": "me",
+                            "flow": "delivery",
+                            "stage": "open",
+                            "why": "等待资源确认",
+                            "fingerprint": "INBOX#1|pending",
+                            "query_terms": ["宁夏", "资源申请"],
+                            "score": 50,
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        assert main(["thread", "progress", "宁夏", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload[0]["thread_key"] == "宁夏fdz现场国化资源申请"
 
 
 class TestMailboxCli:
@@ -558,3 +632,128 @@ class TestMailboxCli:
         out = capsys.readouterr().out
         assert "Mailbox Preflight" in out
         assert "missing_env: MAIL_ADDRESS" in out
+
+
+class TestTaskRoutes:
+    """Thin task routes should wrap existing Twinbox views without adding new inference."""
+
+    def test_task_latest_mail_json_wraps_activity_pulse(self, phase4_root, capsys):
+        (phase4_root / "activity-pulse.json").write_text(
+            json.dumps(
+                {
+                    "generated_at": "2026-03-24T10:00:00+08:00",
+                    "notify_payload": {
+                        "generated_at": "2026-03-24T10:00:00+08:00",
+                        "stale": False,
+                        "urgent_top_k": [
+                            {"thread_key": "项目A资源申请", "why": "等待资源确认"},
+                        ],
+                        "pending_count": 2,
+                        "summary": "2 条线程需要关注",
+                    },
+                    "notifiable_items": [],
+                    "recent_activity": [{"thread_key": "项目A资源申请"}],
+                    "needs_attention": [{"thread_key": "项目B上线"}],
+                    "thread_index": [],
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        assert main(["task", "latest-mail", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["task"] == "latest-mail"
+        assert payload["summary"] == "2 条线程需要关注"
+        assert payload["urgent_top_k"][0]["thread_key"] == "项目A资源申请"
+
+    def test_task_todo_json_wraps_existing_queue_views(self, write_phase4, capsys):
+        write_phase4("daily-urgent.yaml", {
+            "generated_at": "2026-03-23T08:30:00",
+            "daily_urgent": [{
+                "thread_key": "thread-urgent",
+                "why": "Customer escalation requires response",
+                "reason_code": "escalation",
+                "urgency_score": 85,
+                "action_hint": "please reply",
+                "flow": "support",
+                "stage": "escalated",
+                "waiting_on": "me",
+                "evidence_source": "envelope-5",
+            }],
+        })
+        write_phase4("pending-replies.yaml", {
+            "generated_at": "2026-03-23T08:30:00",
+            "pending_replies": [{
+                "thread_key": "thread-pending",
+                "why": "Awaiting response from customer",
+                "waiting_on_me": True,
+                "flow": "project",
+                "evidence_source": "envelope-8",
+            }],
+        })
+        assert main(["task", "todo", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["task"] == "todo"
+        assert payload["urgent"]["items"][0]["thread_id"] == "thread-urgent"
+        assert payload["pending"]["items"][0]["thread_id"] == "thread-pending"
+
+    def test_task_progress_json_wraps_thread_progress(self, phase4_root, capsys):
+        (phase4_root / "activity-pulse.json").write_text(
+            json.dumps(
+                {
+                    "generated_at": "2026-03-24T10:00:00+08:00",
+                    "notifiable_items": [],
+                    "recent_activity": [],
+                    "needs_attention": [],
+                    "thread_index": [
+                        {
+                            "thread_key": "宁夏fdz现场国化资源申请",
+                            "latest_subject": "宁夏fdz现场国化资源申请",
+                            "last_activity_at": "2026-03-24T09:30:00+08:00",
+                            "latest_message_ref": "INBOX#1",
+                            "new_message_count": 1,
+                            "message_count": 1,
+                            "queue_tags": ["pending"],
+                            "waiting_on": "me",
+                            "flow": "delivery",
+                            "stage": "open",
+                            "why": "等待资源确认",
+                            "fingerprint": "INBOX#1|pending",
+                            "query_terms": ["宁夏", "资源申请"],
+                            "score": 50,
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        assert main(["task", "progress", "宁夏", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["task"] == "progress"
+        assert payload["matches"][0]["thread_key"] == "宁夏fdz现场国化资源申请"
+
+    def test_task_mailbox_status_wraps_preflight(self, monkeypatch, capsys):
+        def fake_run_preflight(**kwargs):
+            return 0, {
+                "login_stage": "mailbox-connected",
+                "status": "warn",
+                "checks": {
+                    "env": {"status": "success"},
+                    "config_render": {"status": "success"},
+                    "imap": {"status": "success"},
+                    "smtp": {"status": "warn", "error_code": "smtp_skipped_read_only"},
+                },
+                "missing_env": [],
+                "defaults_applied": {"MAIL_ACCOUNT_NAME": "myTwinbox"},
+                "actionable_hint": "Mailbox read-only preflight passed.",
+                "next_action": "Run phase1.",
+            }
+
+        monkeypatch.setattr("twinbox_core.task_cli.run_preflight", fake_run_preflight)
+        assert main(["task", "mailbox-status", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["task"] == "mailbox-status"
+        assert payload["login_stage"] == "mailbox-connected"

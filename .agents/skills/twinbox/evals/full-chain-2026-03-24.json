@@ -1,0 +1,205 @@
+{
+  "id": "full-chain-2026-03-24",
+  "title": "twinbox 邮件全链路测试集（2026-03-24，中文用户提问版）",
+  "locale": "zh-CN",
+  "notes": [
+    "夹具均为合成数据，路径见 fixtures/synthetic/，不含真实邮件正文。",
+    "执行 run-full-chain-live.sh 时，preflight 会走 IMAP 只读探测（需本机 .env 等配置）。",
+    "若抓取真实 CLI 输出做对照，勿提交含隐私的 JSON；可放本地目录并 gitignore。"
+  ],
+  "paths": {
+    "eval_root": ".claude/skills/twinbox/evals",
+    "synthetic_fixtures": ".claude/skills/twinbox/evals/fixtures/synthetic",
+    "live_runner": ".claude/skills/twinbox/evals/run-full-chain-live.sh",
+    "intervention_spot_check": ".claude/skills/twinbox/evals/intervention-spot-check-2026-03-24.json",
+    "intervention_runner": ".claude/skills/twinbox/evals/run-intervention-spot-check.sh"
+  },
+  "pipeline_definition": {
+    "read_only_core_zh": [
+      "邮箱预检（IMAP 只读探测）",
+      "编排刷新 phase4（可选、较重，重建投影）",
+      "队列总览 → 各类型队列详情",
+      "若有线程：检视线程 → 解释推断依据",
+      "每日摘要 → 每周简报",
+      "若有建议：行动列表 → 行动详情",
+      "若有审核项：审核列表 → 单条审核详情",
+      "队列投影说明（静态文案）"
+    ],
+    "write_path_optional_zh": "写入路径（import-material / upsert-fact / profile-set）默认不在 live 脚本里；评测含写操作前须用户确认。",
+    "not_implemented_zh": "勿测：thread summarize、action apply、review approve/reject。"
+  },
+  "live_steps": [
+    {
+      "step": 1,
+      "name": "mailbox_preflight",
+      "user_prompt_zh": "我这边邮箱到底连上没有？帮我看一下 twinbox 里预检结果什么意思，缺什么环境变量？",
+      "command": "twinbox mailbox preflight --json",
+      "expect_stdout_json": true,
+      "exit_codes_documented": [0, 2, 3, 4, 5],
+      "success_for_full_chain_zh": "退出码 0 且 login_stage 为 mailbox-connected（见 skill references/login.md）"
+    },
+    {
+      "step": 2,
+      "name": "orchestrate_phase4_optional",
+      "user_prompt_zh": "队列好像过期了，我想先快速刷新一遍投影数据，别跑全量那么久，该怎么弄？",
+      "command": "twinbox-orchestrate run --phase 4",
+      "optional": true,
+      "env_skip": "TWINBOX_EVAL_SKIP_ORCHESTRATE=1",
+      "note_zh": "约 2 分钟级；重建 phase4 产物，供队列/摘要/行动/审核读取。"
+    },
+    {
+      "step": 3,
+      "name": "queue_list",
+      "user_prompt_zh": "今天三个队列（紧急、待办、SLA 风险）各自大概什么情况？给我总览。",
+      "command": "twinbox queue list --json",
+      "expect_stdout_json": true,
+      "validate_zh": "stdout 为 JSON 数组；queue_type 集合含 urgent、pending、sla_risk"
+    },
+    {
+      "step": 4,
+      "name": "queue_show_urgent",
+      "user_prompt_zh": "紧急队列里具体有哪些线程？把详情拉出来我扫一眼。",
+      "command": "twinbox queue show urgent --json",
+      "expect_stdout_json": true
+    },
+    {
+      "step": 5,
+      "name": "queue_show_pending",
+      "user_prompt_zh": "待办队列完整列表给我，我要看还在等谁。",
+      "command": "twinbox queue show pending --json",
+      "expect_stdout_json": true
+    },
+    {
+      "step": 6,
+      "name": "queue_show_sla_risk",
+      "user_prompt_zh": "有没有 SLA 风险队列？有的话展开我看。",
+      "command": "twinbox queue show sla_risk --json",
+      "expect_stdout_json": true
+    },
+    {
+      "step": 7,
+      "name": "thread_inspect_followup",
+      "user_prompt_zh": "紧急队列里排第一个线程，当前状态到底是什么？字段都代表啥？",
+      "command": "twinbox thread inspect <THREAD_ID> --json",
+      "thread_id_source_zh": "取自步骤 4 的 items[0].thread_id，若无则跳过",
+      "skip_if_empty_queue": true,
+      "expect_stdout_json": true
+    },
+    {
+      "step": 8,
+      "name": "thread_explain_followup",
+      "user_prompt_zh": "还是这个线程，系统为什么判断成现在这个状态？依据写清楚点。",
+      "command": "twinbox thread explain <THREAD_ID> --json",
+      "skip_if_empty_queue": true,
+      "expect_stdout_json": true
+    },
+    {
+      "step": 9,
+      "name": "digest_daily",
+      "user_prompt_zh": "我今天收件箱视角的日报摘要有没有？给我结构化结果。",
+      "command": "twinbox digest daily --json",
+      "expect_stdout_json": true
+    },
+    {
+      "step": 10,
+      "name": "digest_weekly",
+      "user_prompt_zh": "这周 rollup 一下，我要跟团队同步：重点行动和变化在哪？",
+      "command": "twinbox digest weekly --json",
+      "expect_stdout_json": true
+    },
+    {
+      "step": 11,
+      "name": "action_suggest",
+      "user_prompt_zh": "系统觉得我现在最该处理哪几件事？先列建议行动。",
+      "command": "twinbox action suggest --json",
+      "expect_stdout_json": true
+    },
+    {
+      "step": 12,
+      "name": "action_materialize_followup",
+      "user_prompt_zh": "第一条建议行动展开给我看，要审哪些字段、风险怎么标的？",
+      "command": "twinbox action materialize <ACTION_ID> --json",
+      "action_id_source_zh": "取自步骤 11 首个 action_id，若无则跳过",
+      "skip_if_empty": true,
+      "expect_stdout_json": true
+    },
+    {
+      "step": 13,
+      "name": "review_list",
+      "user_prompt_zh": "有没有需要我人工过一眼的审核项？先列出来。",
+      "command": "twinbox review list --json",
+      "expect_stdout_json": true
+    },
+    {
+      "step": 14,
+      "name": "review_show_followup",
+      "user_prompt_zh": "第一条审核项具体让我确认什么？打开详情。",
+      "command": "twinbox review show <REVIEW_ID> --json",
+      "review_id_source_zh": "取自步骤 13 首个 review_id，若无则跳过",
+      "skip_if_empty": true,
+      "expect_stdout_json": true
+    },
+    {
+      "step": 15,
+      "name": "queue_explain_static",
+      "user_prompt_zh": "这些队列投影到底怎么算出来的？用项目自带说明给我讲一遍。",
+      "command": "twinbox queue explain",
+      "expect_stdout_json": false,
+      "note_zh": "静态说明文本，全链路只读段到此结束。"
+    }
+  ],
+  "fixture_offline_checks": [
+    {
+      "id": "FO-1",
+      "fixture": "fixtures/synthetic/preflight-mailbox-connected.json",
+      "user_prompt_zh": "我贴一段预检 JSON（在 synthetic 夹具里），你看我现在算「连上邮箱」了吗？接下来该跑啥命令？",
+      "check_zh": "说明 login_stage 含义与下一步 CLI；勿假装刚做过真实 IMAP。"
+    },
+    {
+      "id": "FO-2",
+      "fixture": "fixtures/synthetic/queue-list-three-queues.json",
+      "user_prompt_zh": "这是队列总览 JSON，三个队列齐了吗？stale 为 false 时我还用不用刷新？",
+      "check_zh": "核对三种 queue_type 与 stale 语义。"
+    },
+    {
+      "id": "FO-3",
+      "fixture": "fixtures/synthetic/queue-urgent-with-thread.json",
+      "user_prompt_zh": "紧急队列里有一条 thread-eval-synth-001，我想往下看详情，该敲哪两条命令？",
+      "check_zh": "给出 thread inspect / explain 及占位 ID。"
+    },
+    {
+      "id": "FO-4",
+      "fixture": "fixtures/synthetic/thread-inspect-sample.json",
+      "user_prompt_zh": "这段线程检视结果里，置信度、explainability 怎么跟 standup 汇报？能直接帮我发邮件吗？",
+      "check_zh": "解读字段；禁止建议自动发信/删信/移动。"
+    },
+    {
+      "id": "FO-5",
+      "fixture": "fixtures/synthetic/digest-daily-sample.json",
+      "user_prompt_zh": "日报 JSON 长这样，如果队列显示 stale 我该先干啥？",
+      "check_zh": "关联 digest 与队列刷新、stale。"
+    },
+    {
+      "id": "FO-6",
+      "fixture": "fixtures/synthetic/action-suggest-sample.json",
+      "user_prompt_zh": "系统给了一条行动建议，怎么展开详情？点一下就能发出去了吗？",
+      "check_zh": "说明 materialize 与审核字段；明确 action apply 未实现勿承诺。"
+    },
+    {
+      "id": "FO-7",
+      "fixture": "fixtures/synthetic/review-list-sample.json",
+      "user_prompt_zh": "审核列表里第一条怎么打开？能直接点通过吗？",
+      "check_zh": "映射到 review show；说明 approve/reject 未实现。"
+    }
+  ],
+  "llm_eval_prompts": [
+    {
+      "id": "LC-1",
+      "prompt_zh": "只根据 `.claude/skills/twinbox/evals/fixtures/synthetic/` 下的合成 JSON，按「预检 → 队列 → 线程 → 摘要 → 行动 → 审核」顺序，用中文告诉我：若在本机真实跑一遍，每一步应执行的 twinbox 命令各是什么，并标出哪些步骤依赖 `runtime/` 下已有产物。"
+    },
+    {
+      "id": "LC-2",
+      "prompt_zh": "对比 `queue-urgent-with-thread.json` 与 `thread-inspect-sample.json`：哪些字段能对上队列里的 ThreadCard、哪些只对「线程检视」输出有意义？没有真实 artifacts 时还有哪些信息是猜不出来的？请用中文说明。"
+    }
+  ]
+}
