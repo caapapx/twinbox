@@ -698,6 +698,38 @@ class TestTaskRoutes:
         assert payload["urgent"]["items"][0]["thread_id"] == "thread-urgent"
         assert payload["pending"]["items"][0]["thread_id"] == "thread-pending"
 
+    def test_task_todo_json_marks_cc_only_threads(self, write_phase4, capsys):
+        write_phase4("daily-urgent.yaml", {
+            "generated_at": "2026-03-23T08:30:00",
+            "daily_urgent": [{
+                "thread_key": "thread-urgent-cc",
+                "why": "仅抄送但被错误拉高",
+                "reason_code": "cc_watch",
+                "urgency_score": 54,
+                "action_hint": "monitor only",
+                "flow": "support",
+                "stage": "watch",
+                "waiting_on": "owner",
+                "evidence_source": "envelope-cc-1",
+                "recipient_role": "cc_only",
+            }],
+        })
+        write_phase4("pending-replies.yaml", {
+            "generated_at": "2026-03-23T08:30:00",
+            "pending_replies": [{
+                "thread_key": "thread-pending-cc",
+                "why": "仅抄送，先确认是否真要我回复",
+                "waiting_on_me": True,
+                "flow": "project",
+                "evidence_source": "envelope-cc-2",
+                "recipient_role": "cc_only",
+            }],
+        })
+        assert main(["task", "todo", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["urgent"]["items"][0]["thread_id"] == "[CC] thread-urgent-cc"
+        assert payload["pending"]["items"][0]["thread_id"] == "[CC] thread-pending-cc"
+
     def test_task_progress_json_wraps_thread_progress(self, phase4_root, capsys):
         (phase4_root / "activity-pulse.json").write_text(
             json.dumps(

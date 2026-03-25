@@ -5,7 +5,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from twinbox_core.phase4_value import _ensure_material_summary, derive_material_summary, merge_phase4_outputs
+from twinbox_core.phase4_value import (
+    _apply_recipient_role_weights,
+    _ensure_material_summary,
+    derive_material_summary,
+    merge_phase4_outputs,
+)
 
 
 class Phase4ValueTest(unittest.TestCase):
@@ -153,6 +158,43 @@ class Phase4ValueTest(unittest.TestCase):
             self.assertIn("deployment_failure", (output_dir / "sla-risks.yaml").read_text(encoding="utf-8"))
             self.assertIn("Top Actions", (output_dir / "weekly-brief.md").read_text(encoding="utf-8"))
             self.assertIn("Phase 4 Report", (doc_dir / "phase-4-report.md").read_text(encoding="utf-8"))
+
+    def test_apply_recipient_role_weights_downweights_cc_only_threads(self) -> None:
+        response = {
+            "daily_urgent": [
+                {"thread_key": "cc-thread", "urgency_score": 90, "why": "需要关注"},
+                {"thread_key": "direct-thread", "urgency_score": 80, "why": "直接收件"},
+            ],
+            "pending_replies": [
+                {"thread_key": "cc-thread", "why": "请确认", "waiting_on_me": True},
+                {"thread_key": "direct-thread", "why": "请回复", "waiting_on_me": True},
+            ],
+        }
+        context = {
+            "top_threads": [
+                {"thread_key": "cc-thread", "recipient_role": "cc_only"},
+                {"thread_key": "direct-thread", "recipient_role": "direct"},
+            ]
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            context_path = Path(tmp) / "context-pack.json"
+            context_path.write_text(json.dumps(context, ensure_ascii=False), encoding="utf-8")
+
+            weighted = _apply_recipient_role_weights(response, context_path)
+
+            cc_urgent = next(item for item in weighted["daily_urgent"] if item["thread_key"] == "cc-thread")
+            direct_urgent = next(item for item in weighted["daily_urgent"] if item["thread_key"] == "direct-thread")
+            cc_pending = next(item for item in weighted["pending_replies"] if item["thread_key"] == "cc-thread")
+            direct_pending = next(item for item in weighted["pending_replies"] if item["thread_key"] == "direct-thread")
+
+            self.assertEqual(cc_urgent["urgency_score"], 54)
+            self.assertEqual(cc_urgent["recipient_role"], "cc_only")
+            self.assertEqual(direct_urgent["urgency_score"], 80)
+            self.assertNotIn("recipient_role", direct_urgent)
+            self.assertEqual(cc_pending["recipient_role"], "cc_only")
+            self.assertIn("⚠️ 你仅在抄送列表中", cc_pending["why"])
+            self.assertNotIn("recipient_role", direct_pending)
 
 
 if __name__ == "__main__":
