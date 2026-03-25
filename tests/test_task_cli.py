@@ -736,7 +736,18 @@ class TestTaskRoutes:
         assert payload["matches"][0]["thread_key"] == "宁夏fdz现场国化资源申请"
 
     def test_task_mailbox_status_wraps_preflight(self, monkeypatch, capsys):
-        def fake_run_preflight(**kwargs):
+        seen_kwargs = {}
+
+        def fake_run_preflight(*, state_root=None, env=None, account_override="", folder="INBOX", page_size=5):
+            seen_kwargs.update(
+                {
+                    "state_root": state_root,
+                    "env": env,
+                    "account_override": account_override,
+                    "folder": folder,
+                    "page_size": page_size,
+                }
+            )
             return 0, {
                 "login_stage": "mailbox-connected",
                 "status": "warn",
@@ -757,3 +768,4 @@ class TestTaskRoutes:
         payload = json.loads(capsys.readouterr().out)
         assert payload["task"] == "mailbox-status"
         assert payload["login_stage"] == "mailbox-connected"
+        assert seen_kwargs["account_override"] == ""

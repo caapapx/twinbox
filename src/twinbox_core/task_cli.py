@@ -1018,7 +1018,7 @@ def cmd_task_mailbox_status(args: argparse.Namespace) -> int:
     """Deterministic task entrypoint for mailbox status diagnosis."""
     exit_code, payload = run_preflight(
         state_root=args.state_root,
-        account=args.account,
+        account_override=args.account,
         folder=args.folder,
         page_size=args.page_size,
     )
