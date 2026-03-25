@@ -28,7 +28,7 @@
 - Phase 1 intent LLM 改造记录：`docs/archive/reports/phase1-intent-llm.md`
 - Phase 2 persona LLM 改造记录：`docs/archive/reports/phase2-persona-llm.md`
 - Phase 3 lifecycle LLM 改造记录：`docs/archive/reports/phase3-lifecycle-llm.md`
-- Phase 4 value LLM 改造记录：`docs/archive/reports/phase4-value-llm.md`
+- Phase 4 value LLM 改造记录：`docs/archive/reports/phase4-value-llm.md`（含 2026-03-25 recipient_role 全链路降权实现）
 
 ## 协作约束
 

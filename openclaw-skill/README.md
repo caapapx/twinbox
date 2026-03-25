@@ -163,16 +163,16 @@ bash ../scripts/install_openclaw_twinbox_init.sh
 
 按当前实现的底层映射：
 
-- `latest-mail` -> `digest pulse` / `activity-pulse.json`
-- `todo` -> `queue urgent` + `queue pending` + 现有 action/review 投影
+- `latest-mail` -> `digest pulse` / `activity-pulse.json` / `daily-urgent` (含角色降权)
+- `todo` -> `queue urgent` + `queue pending` + 现有 action/review 投影 (含视觉标注与降权)
 - `progress` -> `thread progress`
 - `mailbox-status` -> `mailbox preflight`
 
-其中 `todo` 路由还会把 recipient routing 信号显式投影出来：
+其中 `todo` 路由还会把 recipient routing 信号显式投影出来（支持全链路降权反馈）：
 
-- `[CC]` = 邮箱 owner 显式只在 `Cc`
-- `[GROUP]` = 邮箱 owner 不在 `To/Cc`，而是通过邮件组或别名收到
-- 2026-03-25 起，`group_only` 不再被静默折叠成 `cc_only`，所以这两类在 hosted skill 输出里应被区别看待
+- `[CC]` = 邮箱 owner 在 `Cc` 列表或混合间接状态 (降权 0.6)
+- `[GRP]` = 邮箱 owner 仅通过邮件组或别名收到 (降权 0.4)
+- 2026-03-25 起，`group_only` 已支持独立识别且不再静默折叠成 `cc_only`；`daytime-sync` 任务也已扩展覆盖至 Phase 4，实现日内即时可见的降权反馈。
 
 因此：
 
