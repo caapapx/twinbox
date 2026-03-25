@@ -18,6 +18,13 @@
 - 验收时优先看真实用户 prompt
 - 如果真实用户 prompt 表现异常，再用探针 prompt 判断是“没跑命令”还是“命令本身结果不对”
 
+当前已知边界：
+
+- `agent:twinbox:main` 曾成功命中过自然话术 -> `twinbox task latest-mail --json`
+- 但 2026-03-25 后续复测里，同一主会话上的自然话术也出现过 `turn completed` 但 `assistant.content=[]` 的空响应
+- 当前 OpenClaw 2026.3.23 本机路由下，`--session-id` 与 `--to` 也可能继续回落到 `agent:twinbox:main`，不能把它们当成稳定的新会话隔离手段
+- 所以真实用户 prompt 目前仍应继续测，但验收记录里要单独标明“自然话术结果”与“平台空响应问题”两类证据
+
 ## 推荐顺序
 
 1. `P1` 日内总览
