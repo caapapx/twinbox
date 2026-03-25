@@ -149,6 +149,31 @@ bash ../scripts/install_openclaw_twinbox_init.sh
    - 目标是降低“只读 skill 不执行命令”的概率
    - 不是把整个 Twinbox 一次性迁到 plugin SDK
 
+## 为什么 smoke 先固定这几个 task 入口
+
+当前把 prompt smoke 先固定在 `latest-mail`、`todo`、`progress`、`mailbox-status`，不是因为 Twinbox 的底层能力只有这四块，而是因为它们最适合作为 hosted skill 的第一批确定性入口。
+
+判断标准是：
+
+1. 通用：不绑定具体公司和岗位画像
+2. 薄包装：都直接映射到现有 CLI / artifact，不新增推理链路
+3. 只读：适合先做可靠性验证
+4. 可验：最容易暴露“模型只是读了 skill，没有执行命令”
+5. 覆盖核心问题：总览、待办、下钻、健康检查
+
+按当前实现的底层映射：
+
+- `latest-mail` -> `digest pulse` / `activity-pulse.json`
+- `todo` -> `queue urgent` + `queue pending` + 现有 action/review 投影
+- `progress` -> `thread progress`
+- `mailbox-status` -> `mailbox preflight`
+
+因此：
+
+- 这几个入口属于 hosted 适配层，不是新的领域核心
+- Twinbox 的底层 source of truth 仍然是 `mailbox` / `queue` / `thread` / `digest` / `action` / `review` / `orchestrate`
+- `weekly` 保留为补充入口，但不是 smoke 第一优先级
+
 ## Source Of Truth
 
 - OpenClaw 官方文档：`docs.openclaw.ai` 当前页面
