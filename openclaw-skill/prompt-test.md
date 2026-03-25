@@ -23,6 +23,8 @@
 - `agent:twinbox:main` 曾成功命中过自然话术 -> `twinbox task latest-mail --json`
 - 但 2026-03-25 后续复测里，同一主会话上的自然话术也出现过 `turn completed` 但 `assistant.content=[]` 的空响应
 - 当前 OpenClaw 2026.3.23 本机路由下，`--session-id` 与 `--to` 也可能继续回落到 `agent:twinbox:main`，不能把它们当成稳定的新会话隔离手段
+- 改走 `cron + isolated session` 后，显式探针可以稳定执行 `twinbox task ...` 并正常返回正文
+- 但自然话术在 isolated session 中仍可能只读 `SKILL.md` / memory，最终空响应；因此它不是单纯的主会话污染问题
 - 所以真实用户 prompt 目前仍应继续测，但验收记录里要单独标明“自然话术结果”与“平台空响应问题”两类证据
 
 ## 推荐顺序
