@@ -633,9 +633,6 @@ def run_phase3_loading(state_root: Path) -> dict[str, object]:
             }
         )
 
-    persona_raw = _read_text_if_exists(phase2_dir / "persona-hypotheses.yaml")
-    business_raw = _read_text_if_exists(phase2_dir / "business-hypotheses.yaml")
-
     context = {
         "mailbox_summary": {
             "total_envelopes": data.census.get("scope", {}).get("total_envelopes", 0)
@@ -650,8 +647,6 @@ def run_phase3_loading(state_root: Path) -> dict[str, object]:
         "intent_distribution": data.census.get("top", {}).get("intents", [])
         if isinstance(data.census.get("top", {}), dict)
         else [],
-        "persona_summary": persona_raw[:1500] or None,
-        "business_summary": business_raw[:1500] or None,
         "top_threads": top_threads,
         "human_context": {
             "has_facts": human_context["has_facts"],

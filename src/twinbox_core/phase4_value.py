@@ -85,7 +85,7 @@ Produce a JSON object with this structure:
 6. If human_context is provided:
    - manual_facts override owner/waiting_on guesses
    - manual_habits inject periodic tasks into daily_urgent or weekly_brief
-   - calibration_notes and owner_focus are hard relevance constraints for what the mailbox owner actually cares about this week
+   - calibration_notes are hard relevance constraints for what the mailbox owner actually cares about this week
    - material_extracts_notes: user-uploaded tables/docs/slides (CSV/XLSX/DOCX/PPTX extracts); use in weekly_brief and ranking hints where relevant to mailbox threads, without inventing email threads
    - if a material is marked non-real/synthetic/demo, keep it in material_summary only and do not treat it as factual evidence for actions or risks
    - Mark evidence_source accordingly
@@ -162,7 +162,7 @@ Rules:
 2. Use lifecycle flows to group threads
 3. top_actions: the 3 most important things to do this week
 4. rhythm_observation: patterns in email activity timing/volume
-5. Treat persona_summary, owner_focus, human_context.manual_facts_raw, and human_context.calibration_notes as hard prioritization constraints, not just background
+5. Treat human_context.manual_facts_raw and human_context.calibration_notes as hard prioritization constraints, not just background
 6. Prefer threads that reduce missed follow-up, surface items waiting on the owner, or unblock project delivery; demote broadcast/admin/HR/training content unless it clearly needs owner action this week
 7. If human_context.material_extracts_notes is present, populate material_summary and keep column coverage complete when possible
 8. If a material is marked non-real/synthetic/demo, label it clearly in material_summary and do NOT use it as factual evidence in action_now/backlog/important_changes/top_actions/rhythm_observation
@@ -663,11 +663,23 @@ def run_single(config: Phase4RunConfig) -> dict[str, object]:
     backend = resolve_backend(env_file=config.env_file)
     model_name = config.model_override or backend.model
     context = _load_object(config.context_path)
+    
+    # Pre-filter threads based on routing rules
+    if "threads" in context and isinstance(context["threads"], list):
+        filtered_threads = [t for t in context["threads"] if not t.get("skip_phase4")]
+        context["threads"] = filtered_threads
+        # Temporarily write filtered context for LLM
+        filtered_context_path = config.output_dir / "context-pack-filtered.json"
+        filtered_context_path.write_text(json.dumps(context, ensure_ascii=False), encoding="utf-8")
+        prompt_context_path = filtered_context_path
+    else:
+        prompt_context_path = config.context_path
+
     print(f"LLM backend: {backend.backend} ({backend.model})")
     print("Calling LLM for daily value outputs...")
     response = _call_with_prompt(
         prompt_prefix=FULL_PROMPT,
-        context_path=config.context_path,
+        context_path=prompt_context_path,
         env_file=config.env_file,
         model_override=config.model_override,
         max_tokens=config.max_tokens,
@@ -698,13 +710,24 @@ def run_subtask(
     model_override: str | None,
 ) -> dict[str, object]:
     context = _load_object(context_path)
+    
+    # Pre-filter threads based on routing rules
+    if "threads" in context and isinstance(context["threads"], list):
+        filtered_threads = [t for t in context["threads"] if not t.get("skip_phase4")]
+        context["threads"] = filtered_threads
+        filtered_context_path = output_dir / "context-pack-filtered.json"
+        filtered_context_path.write_text(json.dumps(context, ensure_ascii=False), encoding="utf-8")
+        prompt_context_path = filtered_context_path
+    else:
+        prompt_context_path = context_path
+
     backend = resolve_backend(env_file=env_file)
     print(f"LLM backend: {backend.backend} ({backend.model})")
 
     if kind == "urgent":
         response = _call_with_prompt(
             prompt_prefix=URGENT_PROMPT,
-            context_path=context_path,
+            context_path=prompt_context_path,
             env_file=env_file,
             model_override=model_override,
             max_tokens=4096,
@@ -715,7 +738,7 @@ def run_subtask(
     elif kind == "sla":
         response = _call_with_prompt(
             prompt_prefix=SLA_PROMPT,
-            context_path=context_path,
+            context_path=prompt_context_path,
             env_file=env_file,
             model_override=model_override,
             max_tokens=2048,
@@ -725,7 +748,7 @@ def run_subtask(
     elif kind == "brief":
         response = _call_with_prompt(
             prompt_prefix=BRIEF_PROMPT,
-            context_path=context_path,
+            context_path=prompt_context_path,
             env_file=env_file,
             model_override=model_override,
             max_tokens=2048,

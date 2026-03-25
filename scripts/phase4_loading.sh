@@ -310,6 +310,15 @@ console.log('  -> ' + phase4Dir + '/context-pack.json');
 NODE
 
 echo ""
+echo "Applying Phase 3.5 Routing Rules..."
+source "${SCRIPT_DIR}/python_common.sh"
+_twinbox_python -m twinbox_core.routing_rules \
+  --context-pack "${PHASE4_DIR}/context-pack.json" \
+  --rules "${STATE_ROOT}/config/routing-rules.yaml" \
+  --output "${PHASE4_DIR}/context-pack.json" \
+  --env-file "${ENV_FILE}"
+
+echo ""
 echo "Phase 4 loading complete."
 echo "Lookback days: ${LOOKBACK_DAYS}"
 echo "Output: ${PHASE4_DIR}/context-pack.json"

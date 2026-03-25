@@ -7,7 +7,8 @@
 1. [architecture.md](./ref/architecture.md)
 2. [core-refactor.md](./core-refactor.md)
 3. [runtime.md](./ref/runtime.md)
-4. [cli.md](./ref/cli.md)
+4. [routing-rules.md](./ref/routing-rules.md) (语义分拣规则)
+5. [cli.md](./ref/cli.md)
 
 ## Layout
 

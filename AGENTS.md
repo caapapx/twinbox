@@ -23,6 +23,7 @@
 - 验证工件契约：`docs/ref/validation.md`
 - 编排契约：`docs/ref/orchestration.md`
 - 运行时规范：`docs/ref/runtime.md`
+- 语义规则引擎：`docs/ref/routing-rules.md`
 - 文档重构计划：`docs/archive/docs-refactor.md`
 - 开源 V1 计划（历史归档）：`docs/archive/oss-v1.md`
 - Phase 1 intent LLM 改造记录：`docs/archive/reports/phase1-intent-llm.md`

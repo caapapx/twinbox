@@ -101,7 +101,6 @@ class ContextBuilderTest(unittest.TestCase):
             self.assertEqual(len(output["top_threads"]), 1)
             self.assertEqual(output["top_threads"][0]["thread_key"], "资源申请")
             self.assertEqual(output["mailbox_summary"]["total_threads"], 1)
-            self.assertEqual(context["persona_summary"], "persona: yes")
 
     def test_parse_mime_recipient_role_distinguishes_to_vs_cc(self) -> None:
         owner = "owner@example.com"
