@@ -134,8 +134,9 @@ export function registerTwinboxTaskTools(api) {
     parameters: Type.Object({
       rule_json: Type.String({ description: "Rule definition in JSON format" }),
     }),
-    async execute({ rule_json }) {
-      const r = await runTwinbox(["rule", "add", "--rule-json", rule_json, "--json"], opts);
+    async execute(...args) {
+      const params = args.length >= 2 ? args[1] : args[0];
+      const r = await runTwinbox(["rule", "add", "--rule-json", params.rule_json, "--json"], opts);
       return formatResult(r);
     },
   });
@@ -146,8 +147,9 @@ export function registerTwinboxTaskTools(api) {
     parameters: Type.Object({
       rule_id: Type.String({ description: "Rule ID to remove" }),
     }),
-    async execute({ rule_id }) {
-      const r = await runTwinbox(["rule", "remove", rule_id, "--json"], opts);
+    async execute(...args) {
+      const params = args.length >= 2 ? args[1] : args[0];
+      const r = await runTwinbox(["rule", "remove", params.rule_id, "--json"], opts);
       return formatResult(r);
     },
   });
@@ -158,8 +160,9 @@ export function registerTwinboxTaskTools(api) {
     parameters: Type.Object({
       rule_id: Type.String({ description: "Rule ID to test" }),
     }),
-    async execute({ rule_id }) {
-      const r = await runTwinbox(["rule", "test", "--rule-id", rule_id, "--json"], opts);
+    async execute(...args) {
+      const params = args.length >= 2 ? args[1] : args[0];
+      const r = await runTwinbox(["rule", "test", "--rule-id", params.rule_id, "--json"], opts);
       return formatResult(r);
     },
   });
