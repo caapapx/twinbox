@@ -99,6 +99,14 @@ class OrchestrationTest(unittest.TestCase):
         self.assertEqual(steps[0][0], "Phase 1 Incremental (daytime)")
         self.assertIn("scripts/phase1_incremental.sh", steps[0][1][1])
 
+    def test_nightly_full_keeps_full_phase1_loading_script(self) -> None:
+        job = get_scheduled_job("nightly-full")
+
+        steps = _scheduled_job_steps(job, self.repo_root)
+
+        self.assertEqual(steps[0][0], "Phase 1 Loading")
+        self.assertIn("scripts/phase1_loading.sh", steps[0][1][1])
+
     def test_run_scheduled_job_daytime_dry_run_returns_notify_payload(self) -> None:
         with TemporaryDirectory() as temp_dir:
             temp_root = Path(temp_dir)

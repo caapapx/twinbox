@@ -67,12 +67,14 @@ def test_merge_incremental_context_dedupes_by_id_and_folder_and_keeps_existing_b
         },
     )
 
-    assert [row["id"] for row in merged["envelopes"]] == ["100", "101"]
-    assert merged["envelopes"][0]["flags"] == ["Seen"]
+    assert [row["id"] for row in merged["envelopes"]] == ["101", "100"]
+    assert merged["envelopes"][1]["flags"] == ["Seen"]
     assert merged["sampled_bodies"]["100"]["body"] == "旧正文"
     assert merged["sampled_bodies"]["101"]["body"] == "新正文"
     assert merged["stats"]["total_envelopes"] == 2
     assert merged["stats"]["sampled_bodies"] == 2
+    assert merged["stats"]["folders_scanned"] == ["INBOX", "Sent"]
+    assert merged["owner_domain"] == "example.com"
     assert merged["generated_at"]
 
 
@@ -125,6 +127,32 @@ def test_merge_incremental_context_trims_rows_older_than_lookback_window(tmp_pat
     assert [row["id"] for row in merged["envelopes"]] == ["fresh-1"]
     assert "old-1" not in merged["sampled_bodies"]
     assert merged["stats"]["total_envelopes"] == 1
+
+
+def test_merge_incremental_context_creates_context_with_stable_defaults_when_file_missing(tmp_path):
+    existing_path = tmp_path / "runtime" / "context" / "phase1-context.json"
+
+    merged = merge_context.merge_incremental_context(
+        existing_path=existing_path,
+        new_envelopes=[
+            {
+                "id": "n1",
+                "folder": "INBOX",
+                "subject": "最新主题",
+                "date": "2026-03-26T10:00:00+08:00",
+                "flags": [],
+            }
+        ],
+        new_bodies={"n1": {"subject": "最新主题", "body": "最新正文"}},
+        owner_domain="example.com",
+        lookback_days=3,
+        folders_scanned=["INBOX"],
+    )
+
+    assert merged["owner_domain"] == "example.com"
+    assert merged["lookback_days"] == 3
+    assert merged["stats"]["folders_scanned"] == ["INBOX"]
+    assert [row["id"] for row in merged["envelopes"]] == ["n1"]
 
 
 def test_normalize_imap_envelope_returns_himalaya_compatible_shape():
