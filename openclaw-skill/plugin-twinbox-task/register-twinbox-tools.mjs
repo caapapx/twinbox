@@ -117,4 +117,50 @@ export function registerTwinboxTaskTools(api) {
       return formatResult(r);
     },
   });
+
+  api.registerTool({
+    name: "twinbox_rule_list",
+    description: "List all semantic routing rules. Runs: twinbox rule list --json",
+    parameters: Type.Object({}),
+    async execute() {
+      const r = await runTwinbox(["rule", "list", "--json"], opts);
+      return formatResult(r);
+    },
+  });
+
+  api.registerTool({
+    name: "twinbox_rule_add",
+    description: "Add or update a semantic routing rule. The rule_json should be a valid JSON string matching the RoutingRule schema.",
+    parameters: Type.Object({
+      rule_json: Type.String({ description: "Rule definition in JSON format" }),
+    }),
+    async execute({ rule_json }) {
+      const r = await runTwinbox(["rule", "add", "--rule-json", rule_json, "--json"], opts);
+      return formatResult(r);
+    },
+  });
+
+  api.registerTool({
+    name: "twinbox_rule_remove",
+    description: "Remove a semantic routing rule by ID.",
+    parameters: Type.Object({
+      rule_id: Type.String({ description: "Rule ID to remove" }),
+    }),
+    async execute({ rule_id }) {
+      const r = await runTwinbox(["rule", "remove", rule_id, "--json"], opts);
+      return formatResult(r);
+    },
+  });
+
+  api.registerTool({
+    name: "twinbox_rule_test",
+    description: "Test a semantic routing rule against recent threads to see its impact before saving.",
+    parameters: Type.Object({
+      rule_id: Type.String({ description: "Rule ID to test" }),
+    }),
+    async execute({ rule_id }) {
+      const r = await runTwinbox(["rule", "test", "--rule-id", rule_id, "--json"], opts);
+      return formatResult(r);
+    },
+  });
 }
