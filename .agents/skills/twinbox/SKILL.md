@@ -74,3 +74,5 @@ Read these when you need exact commands, exit codes, or preflight JSON shapes:
 - "what am I waiting on"
 - "generate weekly email digest"
 - "draft a reply to this thread"
+- "add a routing rule"
+- "test this email rule"
