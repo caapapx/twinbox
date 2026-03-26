@@ -52,10 +52,15 @@ test("registerTwinboxTaskTools registers expected tools and task/thread helpers 
   assert.deepEqual(names, [
     "twinbox_latest_mail",
     "twinbox_mailbox_status",
+    "twinbox_queue_complete",
+    "twinbox_queue_dismiss",
     "twinbox_rule_add",
     "twinbox_rule_list",
     "twinbox_rule_remove",
     "twinbox_rule_test",
+    "twinbox_schedule_list",
+    "twinbox_schedule_reset",
+    "twinbox_schedule_update",
     "twinbox_thread_inspect",
     "twinbox_thread_progress",
     "twinbox_todo",
@@ -85,4 +90,49 @@ test("registerTwinboxTaskTools registers expected tools and task/thread helpers 
   assert.match(iout.content[0].text, /inspect/);
   assert.match(iout.content[0].text, /thread-123/);
   assert.match(iout.content[0].text, /--json/);
+
+  const qComplete = tools.find((t) => t.name === "twinbox_queue_complete");
+  assert.ok(qComplete);
+  const qcout = await qComplete.execute({ thread_id: "工时填报提醒", action_taken: "已填报" });
+  assert.match(qcout.content[0].text, /queue/);
+  assert.match(qcout.content[0].text, /complete/);
+  assert.match(qcout.content[0].text, /工时填报提醒/);
+  assert.match(qcout.content[0].text, /--action-taken/);
+  assert.match(qcout.content[0].text, /已填报/);
+  assert.match(qcout.content[0].text, /--json/);
+
+  const qDismiss = tools.find((t) => t.name === "twinbox_queue_dismiss");
+  assert.ok(qDismiss);
+  const qdout = await qDismiss.execute({ thread_id: "rdg货架", reason: "下周再看" });
+  assert.match(qdout.content[0].text, /queue/);
+  assert.match(qdout.content[0].text, /dismiss/);
+  assert.match(qdout.content[0].text, /rdg货架/);
+  assert.match(qdout.content[0].text, /--reason/);
+  assert.match(qdout.content[0].text, /下周再看/);
+  assert.match(qdout.content[0].text, /--json/);
+
+  const scheduleList = tools.find((t) => t.name === "twinbox_schedule_list");
+  assert.ok(scheduleList);
+  const slout = await scheduleList.execute();
+  assert.match(slout.content[0].text, /schedule/);
+  assert.match(slout.content[0].text, /list/);
+  assert.match(slout.content[0].text, /--json/);
+
+  const scheduleUpdate = tools.find((t) => t.name === "twinbox_schedule_update");
+  assert.ok(scheduleUpdate);
+  const suout = await scheduleUpdate.execute({ job_name: "daily-refresh", cron: "0 * * * *" });
+  assert.match(suout.content[0].text, /schedule/);
+  assert.match(suout.content[0].text, /update/);
+  assert.match(suout.content[0].text, /daily-refresh/);
+  assert.match(suout.content[0].text, /0 \* \* \* \*/);
+  assert.match(suout.content[0].text, /--cron/);
+  assert.match(suout.content[0].text, /--json/);
+
+  const scheduleReset = tools.find((t) => t.name === "twinbox_schedule_reset");
+  assert.ok(scheduleReset);
+  const srout = await scheduleReset.execute({ job_name: "daily-refresh" });
+  assert.match(srout.content[0].text, /schedule/);
+  assert.match(srout.content[0].text, /reset/);
+  assert.match(srout.content[0].text, /daily-refresh/);
+  assert.match(srout.content[0].text, /--json/);
 });

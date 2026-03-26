@@ -50,8 +50,8 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 | Latest mail / today summary / "最新邮件情况" / 帮我查看下最新的邮件情况 | `twinbox task latest-mail --json` |
 | 最新未读邮件 / 未读 / 只看未读 / 「不要已读的」 | `twinbox task latest-mail --unread-only --json` **或** OpenClaw 工具 `twinbox_latest_mail` 且 **`unread_only: true`**（必须二选一执行，禁止只读 SKILL 就结束） |
 | "我有哪些待办 / 待回复 / 最值得关注的线程" | `twinbox task todo --json` |
-| 暂时忽略某个线程 / 标记已处理但先别再提醒 | `twinbox queue dismiss THREAD_ID --reason "..." --json` |
-| 标记某个线程已完成 | `twinbox queue complete THREAD_ID --action-taken "..." --json` |
+| 暂时忽略某个线程 / 标记已处理但先别再提醒 | `twinbox queue dismiss THREAD_ID --reason "..." --json`；OpenClaw 插件：`twinbox_queue_dismiss`（`thread_id`，可选 `reason`） |
+| 标记某个线程已完成（须落库，聊天里打 ✅ 不算） | `twinbox queue complete THREAD_ID --action-taken "..." --json`；OpenClaw 插件：`twinbox_queue_complete`（`thread_id`，可选 `action_taken`） |
 | 恢复一个 dismissed/completed 线程 | `twinbox queue restore THREAD_ID --json` |
 | 查看当前调度配置 | `twinbox schedule list --json` |
 | 修改 daily/weekly/nightly 调度时间 | `twinbox schedule update JOB_NAME --cron "30 9 * * *" --json` |
@@ -76,6 +76,8 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 
 ## Task Routing Rules
 
+- When the user confirms a thread is **done** or **dismissed**, you must persist queue state: run `twinbox queue complete` / `queue dismiss` with `--json`, or call OpenClaw tools `twinbox_queue_complete` / `twinbox_queue_dismiss`. Resolve `thread_id` from `task todo`, `task latest-mail`, or `thread inspect` — freeform weekly-brief lines alone are not thread keys.
+- The file `runtime/context/user-queue-state.yaml` is **created on the first successful** `queue complete` or `queue dismiss`; absence before that is normal.
 - Run the command first (`--json`), then summarize stdout in plain text for the user
 - Prefer `twinbox task ...` for common user prompts; these are thin wrappers, not a second pipeline
 - For the latest mail situation (including casual Chinese variants), use `twinbox task latest-mail --json` first; do not start with `preflight` unless connectivity is the explicit problem. If the user explicitly asks for "未读" (unread), pass `--unread-only` to the command or `unread_only: true` to the tool.
@@ -98,7 +100,8 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 
 ## Guardrails
 
-- Stay read-only by default
+- Stay read-only by default (mailbox IMAP remains read-only in Phase 1–4)
+- `queue complete` / `queue dismiss` only update **local** Twinbox queue visibility (`user-queue-state.yaml`); use them when the user asks to stop reminders for a **specific thread** they name or confirm
 - Do not send, delete, archive, or mutate mailbox state unless the user explicitly requests it and the runtime supports it
 - Do not claim `metadata.openclaw.schedules` is executing unless you verify it in the current platform
 - Do not treat `openclaw skills info twinbox = Ready` as proof that the current session prompt already contains `twinbox`

@@ -131,6 +131,44 @@ export function registerTwinboxTaskTools(api) {
   });
 
   api.registerTool({
+    name: "twinbox_queue_complete",
+    description:
+      "Persist thread as completed: writes runtime/context/user-queue-state.yaml so activity pulse and push no longer surface this thread_key until restored. Chinese: 已完成、标记完成、不用再提醒这个线程. MUST call when the user confirms a thread is done — chat-only checkmarks do not persist. Get thread_id from task todo / latest-mail / thread inspect. Runs: twinbox queue complete THREAD_ID --action-taken ... --json",
+    parameters: Type.Object({
+      thread_id: Type.String({ description: "Thread key / thread_id from Twinbox artifacts (same as CLI queue complete)" }),
+      action_taken: Type.Optional(
+        Type.String({ description: "Short note what the user did (default: 已完成)" }),
+      ),
+    }),
+    async execute(...args) {
+      const params = args.length >= 2 ? args[1] : args[0];
+      const threadId = params?.thread_id ?? "";
+      const action = params?.action_taken ?? "已完成";
+      const cliArgs = ["queue", "complete", threadId, "--action-taken", action, "--json"];
+      const r = await runTwinbox(cliArgs, opts);
+      return formatResult(r);
+    },
+  });
+
+  api.registerTool({
+    name: "twinbox_queue_dismiss",
+    description:
+      "Temporarily hide a thread from queue views; reappears if the thread fingerprint changes (new mail). Chinese: 先忽略、别再提醒、稍后处理. Persists to user-queue-state.yaml. MUST call for real suppression — not a chat-only acknowledgment. Runs: twinbox queue dismiss THREAD_ID --reason ... --json",
+    parameters: Type.Object({
+      thread_id: Type.String({ description: "Thread key / thread_id from Twinbox artifacts" }),
+      reason: Type.Optional(Type.String({ description: "Why dismissed (default: 已处理)" })),
+    }),
+    async execute(...args) {
+      const params = args.length >= 2 ? args[1] : args[0];
+      const threadId = params?.thread_id ?? "";
+      const reason = params?.reason ?? "已处理";
+      const cliArgs = ["queue", "dismiss", threadId, "--reason", reason, "--json"];
+      const r = await runTwinbox(cliArgs, opts);
+      return formatResult(r);
+    },
+  });
+
+  api.registerTool({
     name: "twinbox_weekly",
     description: "Weekly brief task projection (read-only). Runs: twinbox task weekly --json",
     parameters: Type.Object({}),
