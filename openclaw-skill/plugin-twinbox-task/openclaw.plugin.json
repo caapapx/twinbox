@@ -1,7 +1,7 @@
 {
   "id": "twinbox-task-tools",
   "name": "Twinbox task tools",
-  "description": "Registers deterministic agent tools that run twinbox task subcommands (read-only JSON).",
+  "description": "Registers deterministic agent tools that run twinbox task, queue, and schedule subcommands.",
   "version": "0.1.0",
   "configSchema": {
     "type": "object",

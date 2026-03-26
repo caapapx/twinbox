@@ -169,6 +169,51 @@ export function registerTwinboxTaskTools(api) {
   });
 
   api.registerTool({
+    name: "twinbox_schedule_list",
+    description:
+      "List effective Twinbox schedules (default + runtime override). Use for prompts like 查看当前调度、每天什么时候刷新、定时任务现在怎么配. Runs: twinbox schedule list --json",
+    parameters: Type.Object({}),
+    async execute() {
+      const r = await runTwinbox(["schedule", "list", "--json"], opts);
+      return formatResult(r);
+    },
+  });
+
+  api.registerTool({
+    name: "twinbox_schedule_update",
+    description:
+      "Update one Twinbox schedule override and attempt platform-side OpenClaw cron sync. Use for prompts like 每日刷新改成每小时、把 nightly 改到凌晨 3 点. Runs: twinbox schedule update JOB_NAME --cron ... --json",
+    parameters: Type.Object({
+      job_name: Type.String({ description: "Schedule name: daily-refresh | weekly-refresh | nightly-full-refresh" }),
+      cron: Type.String({ description: "Cron expression, usually 5-field; e.g. 0 * * * *" }),
+    }),
+    async execute(...args) {
+      const params = args.length >= 2 ? args[1] : args[0];
+      const jobName = params?.job_name ?? "";
+      const cron = params?.cron ?? "";
+      const cliArgs = ["schedule", "update", jobName, "--cron", cron, "--json"];
+      const r = await runTwinbox(cliArgs, opts);
+      return formatResult(r);
+    },
+  });
+
+  api.registerTool({
+    name: "twinbox_schedule_reset",
+    description:
+      "Reset one Twinbox schedule back to the default cron and attempt platform-side OpenClaw cron sync. Use for prompts like 恢复默认时间、把 daily 改回默认. Runs: twinbox schedule reset JOB_NAME --json",
+    parameters: Type.Object({
+      job_name: Type.String({ description: "Schedule name: daily-refresh | weekly-refresh | nightly-full-refresh" }),
+    }),
+    async execute(...args) {
+      const params = args.length >= 2 ? args[1] : args[0];
+      const jobName = params?.job_name ?? "";
+      const cliArgs = ["schedule", "reset", jobName, "--json"];
+      const r = await runTwinbox(cliArgs, opts);
+      return formatResult(r);
+    },
+  });
+
+  api.registerTool({
     name: "twinbox_weekly",
     description: "Weekly brief task projection (read-only). Runs: twinbox task weekly --json",
     parameters: Type.Object({}),

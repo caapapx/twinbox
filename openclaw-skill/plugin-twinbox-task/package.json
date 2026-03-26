@@ -1,7 +1,7 @@
 {
   "name": "twinbox-task-tools",
   "version": "0.1.0",
-  "description": "OpenClaw plugin: deterministic twinbox task tools (latest-mail, todo, progress, mailbox-status, weekly)",
+  "description": "OpenClaw plugin: deterministic twinbox task, queue, and schedule tools",
   "type": "module",
   "license": "MIT",
   "scripts": {
