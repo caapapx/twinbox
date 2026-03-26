@@ -33,6 +33,10 @@ def schedule_override_path(state_root: Path) -> Path:
     return state_root / "runtime" / "context" / "schedule-overrides.yaml"
 
 
+def _repo_schedule_path() -> Path:
+    return Path(__file__).resolve().parents[2] / "config" / "schedules.yaml"
+
+
 def _repo_skill_path() -> Path:
     return Path(__file__).resolve().parents[2] / "SKILL.md"
 
@@ -51,21 +55,11 @@ def _read_frontmatter(path: Path) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
-def load_schedule_defaults(skill_path: Path | None = None) -> dict[str, Any]:
-    path = skill_path or _repo_skill_path()
-    frontmatter = _read_frontmatter(path)
-    metadata = frontmatter.get("metadata", {})
-    if not isinstance(metadata, dict):
-        metadata = {}
-    openclaw = metadata.get("openclaw", {})
-    if not isinstance(openclaw, dict):
-        openclaw = {}
-    schedules = openclaw.get("schedules", [])
-    if not isinstance(schedules, list):
-        schedules = []
-
+def _normalize_schedule_rows(rows: Any) -> list[dict[str, str]]:
     normalized: list[dict[str, str]] = []
-    for row in schedules:
+    if not isinstance(rows, list):
+        rows = []
+    for row in rows:
         if not isinstance(row, dict):
             continue
         name = str(row.get("name", "") or "")
@@ -82,8 +76,43 @@ def load_schedule_defaults(skill_path: Path | None = None) -> dict[str, Any]:
                 "description": description,
             }
         )
+    return normalized
 
-    return {"timezone": DEFAULT_TIMEZONE, "schedules": normalized}
+
+def _load_schedule_defaults_from_config(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {"timezone": DEFAULT_TIMEZONE, "schedules": []}
+    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        return {"timezone": DEFAULT_TIMEZONE, "schedules": []}
+    timezone = str(payload.get("timezone", DEFAULT_TIMEZONE) or DEFAULT_TIMEZONE)
+    return {
+        "timezone": timezone,
+        "schedules": _normalize_schedule_rows(payload.get("schedules", [])),
+    }
+
+
+def _load_schedule_defaults_from_skill(path: Path) -> dict[str, Any]:
+    frontmatter = _read_frontmatter(path)
+    metadata = frontmatter.get("metadata", {})
+    if not isinstance(metadata, dict):
+        metadata = {}
+    openclaw = metadata.get("openclaw", {})
+    if not isinstance(openclaw, dict):
+        openclaw = {}
+    schedules = openclaw.get("schedules", [])
+    return {"timezone": DEFAULT_TIMEZONE, "schedules": _normalize_schedule_rows(schedules)}
+
+
+def load_schedule_defaults(
+    skill_path: Path | None = None,
+    schedule_path: Path | None = None,
+) -> dict[str, Any]:
+    config_defaults = _load_schedule_defaults_from_config(schedule_path or _repo_schedule_path())
+    if config_defaults["schedules"]:
+        return config_defaults
+    path = skill_path or _repo_skill_path()
+    return _load_schedule_defaults_from_skill(path)
 
 
 def load_schedule_overrides(state_root: Path) -> dict[str, Any]:
@@ -132,11 +161,15 @@ def _default_openclaw_runner(argv: list[str]) -> str:
     return completed.stdout
 
 
-def _schedule_binding(job_name: str, skill_path: Path | None = None) -> dict[str, str]:
+def _schedule_binding(
+    job_name: str,
+    skill_path: Path | None = None,
+    schedule_path: Path | None = None,
+) -> dict[str, str]:
     binding = SCHEDULE_BINDINGS.get(job_name)
     if not isinstance(binding, dict):
         raise ValueError(f"Unknown schedule: {job_name}")
-    defaults = load_schedule_defaults(skill_path)
+    defaults = load_schedule_defaults(skill_path, schedule_path)
     current = next((row for row in defaults["schedules"] if row["name"] == job_name), None)
     if not isinstance(current, dict):
         raise ValueError(f"Unknown schedule: {job_name}")
@@ -208,9 +241,10 @@ def sync_schedule_to_openclaw(
     cron: str,
     timezone: str,
     skill_path: Path | None = None,
+    schedule_path: Path | None = None,
     runner: Any = None,
 ) -> dict[str, Any]:
-    binding = _schedule_binding(job_name, skill_path)
+    binding = _schedule_binding(job_name, skill_path, schedule_path)
     run = runner or _default_openclaw_runner
     list_stdout = run(["openclaw", "cron", "list", "--all", "--json"])
     try:
@@ -301,6 +335,7 @@ def _platform_sync_payload(
     cron: str,
     timezone: str,
     skill_path: Path | None = None,
+    schedule_path: Path | None = None,
 ) -> dict[str, Any]:
     try:
         result = sync_schedule_to_openclaw(
@@ -308,6 +343,7 @@ def _platform_sync_payload(
             cron=cron,
             timezone=timezone,
             skill_path=skill_path,
+            schedule_path=schedule_path,
         )
         result["message"] = "OpenClaw cron job synced."
         return result
@@ -321,8 +357,12 @@ def _platform_sync_payload(
         }
 
 
-def load_schedule_config(state_root: Path, skill_path: Path | None = None) -> dict[str, Any]:
-    defaults = load_schedule_defaults(skill_path)
+def load_schedule_config(
+    state_root: Path,
+    skill_path: Path | None = None,
+    schedule_path: Path | None = None,
+) -> dict[str, Any]:
+    defaults = load_schedule_defaults(skill_path, schedule_path)
     overrides = load_schedule_overrides(state_root)
     override_map = overrides["overrides"]
     schedules: list[dict[str, Any]] = []
@@ -343,8 +383,11 @@ def load_schedule_config(state_root: Path, skill_path: Path | None = None) -> di
     return {"timezone": overrides.get("timezone", DEFAULT_TIMEZONE), "schedules": schedules}
 
 
-def _known_schedule_names(skill_path: Path | None = None) -> set[str]:
-    defaults = load_schedule_defaults(skill_path)
+def _known_schedule_names(
+    skill_path: Path | None = None,
+    schedule_path: Path | None = None,
+) -> set[str]:
+    defaults = load_schedule_defaults(skill_path, schedule_path)
     return {row["name"] for row in defaults["schedules"]}
 
 
@@ -354,8 +397,9 @@ def update_schedule_override(
     job_name: str,
     cron: str,
     skill_path: Path | None = None,
+    schedule_path: Path | None = None,
 ) -> dict[str, Any]:
-    if job_name not in _known_schedule_names(skill_path):
+    if job_name not in _known_schedule_names(skill_path, schedule_path):
         raise ValueError(f"Unknown schedule: {job_name}")
     error = validate_cron_expression(cron)
     if error:
@@ -366,13 +410,14 @@ def update_schedule_override(
     payload["overrides"][job_name] = str(cron)
     _write_schedule_overrides(state_root, payload)
 
-    config = load_schedule_config(state_root, skill_path)
+    config = load_schedule_config(state_root, skill_path, schedule_path)
     current = next(row for row in config["schedules"] if row["name"] == job_name)
     platform_sync = _platform_sync_payload(
         job_name=job_name,
         cron=current["effective_cron"],
         timezone=config["timezone"],
         skill_path=skill_path,
+        schedule_path=schedule_path,
     )
     return {
         "timezone": config["timezone"],
@@ -392,8 +437,9 @@ def reset_schedule_override(
     state_root: Path,
     job_name: str,
     skill_path: Path | None = None,
+    schedule_path: Path | None = None,
 ) -> dict[str, Any]:
-    if job_name not in _known_schedule_names(skill_path):
+    if job_name not in _known_schedule_names(skill_path, schedule_path):
         raise ValueError(f"Unknown schedule: {job_name}")
 
     payload = load_schedule_overrides(state_root)
@@ -401,13 +447,14 @@ def reset_schedule_override(
     payload["overrides"].pop(job_name, None)
     _write_schedule_overrides(state_root, payload)
 
-    config = load_schedule_config(state_root, skill_path)
+    config = load_schedule_config(state_root, skill_path, schedule_path)
     current = next(row for row in config["schedules"] if row["name"] == job_name)
     platform_sync = _platform_sync_payload(
         job_name=job_name,
         cron=current["effective_cron"],
         timezone=config["timezone"],
         skill_path=skill_path,
+        schedule_path=schedule_path,
     )
     return {
         "timezone": config["timezone"],

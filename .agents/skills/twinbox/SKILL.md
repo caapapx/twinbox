@@ -5,7 +5,7 @@ description: >-
   queue triage, pending replies, thread progress, weekly brief, phase refresh,
   and OpenClaw deployment diagnostics via `twinbox` and
   `twinbox-orchestrate`.
-metadata: {"openclaw":{"requires":{"env":["IMAP_HOST","IMAP_PORT","IMAP_LOGIN","IMAP_PASS","SMTP_HOST","SMTP_PORT","SMTP_LOGIN","SMTP_PASS","MAIL_ADDRESS"]},"primaryEnv":"IMAP_LOGIN","login":{"mode":"password-env","runtimeRequiredEnv":["IMAP_HOST","IMAP_PORT","IMAP_LOGIN","IMAP_PASS","SMTP_HOST","SMTP_PORT","SMTP_LOGIN","SMTP_PASS","MAIL_ADDRESS"],"optionalDefaults":{"MAIL_ACCOUNT_NAME":"myTwinbox","MAIL_DISPLAY_NAME":"{MAIL_ACCOUNT_NAME}","IMAP_ENCRYPTION":"tls","SMTP_ENCRYPTION":"tls"},"stages":["unconfigured","validated","mailbox-connected"],"preflightCommand":"twinbox mailbox preflight --json"},"schedules":[{"name":"daily-refresh","cron":"30 8 * * *","command":"twinbox-orchestrate run --phase 4","description":"Daily pre-computation of urgent/pending/sla queues at 08:30"},{"name":"weekly-refresh","cron":"30 17 * * 5","command":"twinbox-orchestrate run --phase 4","description":"Weekly brief refresh every Friday at 17:30"},{"name":"nightly-full-refresh","cron":"0 2 * * *","command":"twinbox-orchestrate run","description":"Nightly full pipeline refresh at 02:00"}]}}
+metadata: {"openclaw":{"requires":{"env":["IMAP_HOST","IMAP_PORT","IMAP_LOGIN","IMAP_PASS","SMTP_HOST","SMTP_PORT","SMTP_LOGIN","SMTP_PASS","MAIL_ADDRESS"]},"primaryEnv":"IMAP_LOGIN","login":{"mode":"password-env","runtimeRequiredEnv":["IMAP_HOST","IMAP_PORT","IMAP_LOGIN","IMAP_PASS","SMTP_HOST","SMTP_PORT","SMTP_LOGIN","SMTP_PASS","MAIL_ADDRESS"],"optionalDefaults":{"MAIL_ACCOUNT_NAME":"myTwinbox","MAIL_DISPLAY_NAME":"{MAIL_ACCOUNT_NAME}","IMAP_ENCRYPTION":"tls","SMTP_ENCRYPTION":"tls"},"stages":["unconfigured","validated","mailbox-connected"],"preflightCommand":"twinbox mailbox preflight --json"}}}
 ---
 
 # twinbox
@@ -85,7 +85,8 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 - If `activity-pulse.json` is missing or stale, run `twinbox-orchestrate schedule --job daytime-sync` and explain the refresh
 - `daytime-sync` now enters through the incremental Phase 1 entrypoint (`scripts/phase1_incremental.sh`) before Phase 3/4 daytime projection
 - The incremental Phase 1 path uses UID watermarks and automatically falls back to the existing full loader when `UIDVALIDITY` changes
-- `twinbox schedule update/reset` writes `runtime/context/schedule-overrides.yaml` and then attempts to sync the matching Twinbox OpenClaw cron job via `openclaw cron list/edit/add`; if Gateway access fails, the command still preserves the runtime override and exposes `platform_sync.status=error` in JSON output
+- Default schedule definitions now live in `config/schedules.yaml`; `twinbox schedule update/reset` writes `runtime/context/schedule-overrides.yaml` and then attempts to sync the matching Twinbox OpenClaw cron job via `openclaw cron list/edit/add`
+- If Gateway access fails, the command still preserves the runtime override and exposes `platform_sync.status=error` in JSON output
 - For schedule prompts, prefer native OpenClaw tools `twinbox_schedule_list` / `twinbox_schedule_update` / `twinbox_schedule_reset` over generic `cron` or workspace search
 - Stay read-only unless the user explicitly asks for draft/action generation
 - **Never end a task turn with only file reads and no text answer.** A turn with `assistant.content=[]` or no text is a failure — always produce real command output followed by a summary
@@ -96,7 +97,7 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 - Prefer a dedicated `twinbox` agent/session for Twinbox work; keep `main` for general chat
 - After skill or env changes, use a fresh Twinbox session; `skillsSnapshot` can freeze old injection results
 - Hosted env should come from `skills.entries.twinbox.env`; `state root/.env` is a local fallback, not the primary hosted config source
-- Treat `metadata.openclaw.schedules` as a declaration layer unless you verify platform-side execution in the current deployment
+- Treat OpenClaw schedule execution as a Twinbox-managed bridge cron concern; current default definitions come from `config/schedules.yaml`, not skill metadata
 - The currently verified refresh path is `openclaw cron -> system-event -> host bridge/poller -> twinbox-orchestrate schedule --job ...`
 
 ## Guardrails
@@ -104,7 +105,7 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 - Stay read-only by default (mailbox IMAP remains read-only in Phase 1–4)
 - `queue complete` / `queue dismiss` only update **local** Twinbox queue visibility (`user-queue-state.yaml`); use them when the user asks to stop reminders for a **specific thread** they name or confirm
 - Do not send, delete, archive, or mutate mailbox state unless the user explicitly requests it and the runtime supports it
-- Do not claim `metadata.openclaw.schedules` is executing unless you verify it in the current platform
+- Do not claim OpenClaw auto-imports schedule metadata; current verified schedule setup comes from `twinbox schedule update/reset` syncing bridge cron jobs
 - Do not treat `openclaw skills info twinbox = Ready` as proof that the current session prompt already contains `twinbox`
 - Do not claim the platform has automatically run `preflightCommand` unless you have evidence from a real execution path
 

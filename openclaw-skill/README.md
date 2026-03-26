@@ -114,11 +114,11 @@ bash ../scripts/install_openclaw_twinbox_init.sh
 
 但这仍不等价于：
 
-- `metadata.openclaw.schedules` 已被平台自动消费
+- skill metadata 中的 schedule 声明会被平台自动消费
 - 日内调度 / 每小时推送 / stale fallback 已闭环
 - `daytime-sync` 的 attention 新鲜度问题已经解决
 
-2026-03-26 的再次复核里，真实 `openclaw cron list --all --json` 只看到一个 Twinbox 相关 job：`twinbox-daily-refresh`。它的 payload 是 Twinbox 主动维护的 `systemEvent -> daytime-sync` bridge job；`weekly-refresh` 和 `nightly-full-refresh` 没有随着 `SKILL.md` metadata 自动出现。所以当前仍不能把 metadata schedules 当成平台已自动接通的事实。
+2026-03-26 的再次复核里，真实 `openclaw cron list --all --json` 只看到 Twinbox 主动维护的 bridge cron job；删除三条 Twinbox job 并重启 Gateway 后，它们不会仅凭 skill metadata 自动重建。当前默认 schedule 定义也已经迁到 `config/schedules.yaml`，所以不能再把 skill metadata schedules 当成平台或 runtime 的事实来源。
 
 ## 当前宿主桥接面
 
