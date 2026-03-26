@@ -217,12 +217,18 @@ def _normalize_envelope(
             if owner_addr and to_addr:
                 recipient_role = "to" if to_addr == owner_addr.lower() else "unknown"
 
+    flags = envelope.get("flags", [])
+    if not isinstance(flags, list):
+        flags = []
+    is_read = "Seen" in flags
+
     return {
         "id": str(envelope.get("id", "")),
         "folder": envelope.get("folder", "INBOX") or "INBOX",
         "subject": envelope.get("subject", "") or "",
         "date": envelope.get("date", "") or "",
         "has_attachment": bool(envelope.get("has_attachment", False)),
+        "is_read": is_read,
         "from": {
             "addr": sender.get("addr", envelope.get("from_addr", "")) or "",
             "name": sender.get("name", envelope.get("from_name", "")) or "",
@@ -608,11 +614,13 @@ def run_phase3_loading(state_root: Path) -> dict[str, object]:
             date_range = latest.get("date", "")
 
         thread_recipient_role = _aggregate_thread_recipient_role(rows)
+        unread_count = sum(1 for row in rows if not row.get("is_read", True))
 
         top_threads.append(
             {
                 "thread_key": thread["key"],
                 "count": thread["count"],
+                "unread_count": unread_count,
                 "latest_date": thread["latest_date"],
                 "latest_subject": latest.get("subject", ""),
                 "latest_from": _sender_addr(latest),

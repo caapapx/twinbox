@@ -63,9 +63,16 @@ export function registerTwinboxTaskTools(api) {
     name: "twinbox_latest_mail",
     description:
       "Latest mail / daily-urgent style snapshot (read-only). Use for Chinese prompts like 最新邮件、帮我查看下最新的邮件情况. Runs: twinbox task latest-mail --json",
-    parameters: Type.Object({}),
-    async execute() {
-      const r = await runTwinbox(["task", "latest-mail", "--json"], opts);
+    parameters: Type.Object({
+      unread_only: Type.Optional(Type.Boolean({ description: "If true, only returns threads that contain unread emails." })),
+    }),
+    async execute(...args) {
+      const params = args.length >= 2 ? args[1] : args[0];
+      const cliArgs = ["task", "latest-mail", "--json"];
+      if (params?.unread_only) {
+        cliArgs.push("--unread-only");
+      }
+      const r = await runTwinbox(cliArgs, opts);
       return formatResult(r);
     },
   });

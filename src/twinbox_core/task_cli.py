@@ -1095,6 +1095,11 @@ def cmd_task_latest_mail(args: argparse.Namespace) -> int:
         print(f"错误: {exc}", file=sys.stderr)
         return 1
 
+    if getattr(args, "unread_only", False):
+        payload["recent_activity"] = [i for i in payload.get("recent_activity", []) if i.get("unread_count", 0) > 0]
+        payload["needs_attention"] = [i for i in payload.get("needs_attention", []) if i.get("unread_count", 0) > 0]
+        payload["urgent_top_k"] = [i for i in payload.get("urgent_top_k", []) if i.get("unread_count", 0) > 0]
+
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0
@@ -1785,6 +1790,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     task_latest = task_sub.add_parser("latest-mail", help="Show the latest mail situation from activity pulse")
     task_latest.add_argument("--json", action="store_true", help="Output as JSON")
+    task_latest.add_argument("--unread-only", action="store_true", help="Only show threads with unread emails")
 
     task_todo = task_sub.add_parser("todo", help="Show urgent/pending todo items")
     task_todo.add_argument("--json", action="store_true", help="Output as JSON")

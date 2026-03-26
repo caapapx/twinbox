@@ -222,6 +222,7 @@ const envelopeSummaries = envelopes.map(e => ({
   from_addr: (e.from && e.from.addr) || '',
   date: e.date || '',
   has_attachment: !!e.has_attachment,
+  flags: e.flags || [],
 }));
 
 // Body map keyed by id

@@ -31,6 +31,7 @@ class ThreadSnapshot:
     latest_message_ref: str
     new_message_count: int
     message_count: int
+    unread_count: int
     queue_tags: list[str]
     waiting_on: str | None
     flow: str | None
@@ -48,6 +49,7 @@ class ThreadSnapshot:
             "latest_message_ref": self.latest_message_ref,
             "new_message_count": self.new_message_count,
             "message_count": self.message_count,
+            "unread_count": getattr(self, "unread_count", 0),
             "queue_tags": self.queue_tags,
             "waiting_on": self.waiting_on,
             "flow": self.flow,
@@ -234,6 +236,9 @@ def _build_thread_index(
             score += 20
         fingerprint = f"{latest_message_ref}|{_state_marker(queue_state)}"
         query_terms = sorted(set(_extract_tokens(thread_key) + _extract_tokens(latest.get("subject", ""))))
+        
+        unread_count = sum(1 for _, row in rows if "Seen" not in row.get("flags", []))
+
         snapshots.append(
             ThreadSnapshot(
                 thread_key=thread_key,
@@ -242,6 +247,7 @@ def _build_thread_index(
                 latest_message_ref=latest_message_ref,
                 new_message_count=len(in_window),
                 message_count=len(rows),
+                unread_count=unread_count,
                 queue_tags=queue_tags,
                 waiting_on=(
                     None if queue_state.get("waiting_on") in {None, ""} else str(queue_state.get("waiting_on"))
