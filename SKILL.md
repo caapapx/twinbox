@@ -49,9 +49,14 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 | "我有哪些待办 / 待回复 / 最值得关注的线程" | `twinbox task todo --json` |
 | "某个事情进展如何" / progress on a topic | `twinbox task progress QUERY --json` |
 | Mailbox status / env diagnosis | `twinbox task mailbox-status --json` |
+| Auto-detect email server config | `twinbox mailbox detect EMAIL --json` |
 | Weekly brief lookup | `twinbox task weekly --json` |
 | Manage semantic routing rules / "以后别把这类邮件派给我" | `twinbox rule list --json` / `twinbox rule add --rule-json ...` |
 | Test a routing rule against recent threads | `twinbox rule test --rule-id RULE_ID --json` |
+| Start onboarding flow | `twinbox onboarding start --json` |
+| Check onboarding progress | `twinbox onboarding status --json` |
+| Subscribe to push notifications | `twinbox push subscribe SESSION_ID --json` |
+| List push subscriptions | `twinbox push list --json` |
 | Inspect one exact thread | `twinbox thread inspect THREAD_ID --json` |
 | Explain why a thread is urgent / pending | `twinbox thread explain THREAD_ID --json` |
 | Daily digest | `twinbox digest daily --json` |
