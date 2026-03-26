@@ -62,7 +62,7 @@ export function registerTwinboxTaskTools(api) {
   api.registerTool({
     name: "twinbox_latest_mail",
     description:
-      "Latest mail / daily-urgent style snapshot (read-only). Use for Chinese prompts like 最新邮件、帮我查看下最新的邮件情况. Runs: twinbox task latest-mail --json",
+      "Latest mail / activity-pulse snapshot (read-only). Chinese triggers: 最新邮件、最新邮件情况、帮我查看下最新的邮件情况. Unread triggers (MUST set unread_only=true): 未读、最新未读、只看未读、未读邮件. Runs: twinbox task latest-mail [--unread-only] --json. After this tool returns, you MUST reply with a visible text summary (never end with empty assistant text).",
     parameters: Type.Object({
       unread_only: Type.Optional(Type.Boolean({ description: "If true, only returns threads that contain unread emails." })),
     }),

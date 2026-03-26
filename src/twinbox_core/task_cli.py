@@ -697,6 +697,131 @@ def cmd_mailbox_preflight(args: argparse.Namespace) -> int:
     return exit_code
 
 
+def cmd_mailbox_detect(args: argparse.Namespace) -> int:
+    """Auto-detect mailbox server configuration from email address."""
+    from .mailbox_detect import detect_to_env
+
+    email = args.email
+    result = detect_to_env(email, verbose=not args.json)
+
+    if result is None:
+        if args.json:
+            print(json.dumps({"error": "No valid IMAP/SMTP servers detected"}, ensure_ascii=False))
+        else:
+            print(f"❌ No valid servers detected for {email}")
+        return 1
+
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(f"✅ Detected config for {email}:")
+        print(f"  IMAP: {result['IMAP_HOST']}:{result['IMAP_PORT']} ({result['IMAP_ENCRYPTION']})")
+        print(f"  SMTP: {result['SMTP_HOST']}:{result['SMTP_PORT']} ({result['SMTP_ENCRYPTION']})")
+        print(f"  Confidence: {result['_confidence']}")
+        print(f"  Note: {result['_note']}")
+
+    return 0
+
+
+def cmd_onboarding_status(args: argparse.Namespace) -> int:
+    """Show onboarding progress."""
+    from .onboarding import load_state, get_stage_prompt
+
+    state = load_state(_state_root())
+
+    if args.json:
+        print(json.dumps(state.to_dict(), ensure_ascii=False, indent=2))
+    else:
+        print(f"📋 Onboarding Progress")
+        print(f"  Current Stage: {state.current_stage}")
+        print(f"  Completed: {', '.join(state.completed_stages) if state.completed_stages else 'None'}")
+        if state.current_stage not in ["not_started", "completed"]:
+            print(f"\n{get_stage_prompt(state.current_stage)}")
+
+    return 0
+
+
+def cmd_onboarding_start(args: argparse.Namespace) -> int:
+    """Start onboarding flow."""
+    from .onboarding import load_state, save_state, get_stage_prompt, get_next_stage
+
+    state_root = _state_root()
+    state = load_state(state_root)
+
+    if state.current_stage == "not_started":
+        next_stage = get_next_stage("not_started")
+        if next_stage:
+            state.current_stage = next_stage
+            save_state(state_root, state)
+
+    if args.json:
+        print(json.dumps({"stage": state.current_stage, "prompt": get_stage_prompt(state.current_stage)}, ensure_ascii=False))
+    else:
+        print(f"🚀 Starting Twinbox Onboarding\n")
+        print(get_stage_prompt(state.current_stage))
+
+    return 0
+
+
+def cmd_push_subscribe(args: argparse.Namespace) -> int:
+    """Subscribe to push notifications."""
+    from .push_subscription import subscribe
+
+    filters = {}
+    if args.min_urgency:
+        filters["min_urgency"] = args.min_urgency
+    sub = subscribe(_state_root(), args.session_id, filters)
+
+    if args.json:
+        print(json.dumps(sub.to_dict(), ensure_ascii=False, indent=2))
+    else:
+        print(f"✅ Subscribed {args.session_id}")
+
+    return 0
+
+
+def cmd_push_unsubscribe(args: argparse.Namespace) -> int:
+    """Unsubscribe from push notifications."""
+    from .push_subscription import unsubscribe
+
+    ok = unsubscribe(_state_root(), args.session_id)
+    if args.json:
+        print(json.dumps({"success": ok}, ensure_ascii=False))
+    else:
+        print(f"{'✅' if ok else '❌'} {args.session_id}")
+    return 0 if ok else 1
+
+
+def cmd_push_list(args: argparse.Namespace) -> int:
+    """List push subscriptions."""
+    from .push_subscription import load_subscriptions
+
+    subs = load_subscriptions(_state_root())
+    if args.json:
+        print(json.dumps({"subscriptions": [s.to_dict() for s in subs]}, ensure_ascii=False, indent=2))
+    else:
+        for s in subs:
+            print(f"{'✅' if s.enabled else '❌'} {s.session_id} ({s.push_count} pushes)")
+    return 0
+
+
+def cmd_push_dispatch(args: argparse.Namespace) -> int:
+    """Manually trigger push dispatch (for testing)."""
+    from .daytime_slice import load_activity_pulse
+    from .push_dispatcher import dispatch_push
+
+    state_root = _state_root()
+    payload = load_activity_pulse(state_root)
+    result = dispatch_push(state_root, payload, openclaw_bin=args.openclaw_bin)
+
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False))
+    else:
+        print(f"📤 Push dispatch: {result['sent']} sent, {result['failed']} failed, {result['skipped']} skipped")
+
+    return 0
+
+
 def _find_thread_in_artifacts(thread_id: str) -> dict | None:
     """Find thread information from Phase 3/4 artifacts."""
     canonical_root = _state_root()
@@ -1099,6 +1224,22 @@ def cmd_task_latest_mail(args: argparse.Namespace) -> int:
         payload["recent_activity"] = [i for i in payload.get("recent_activity", []) if i.get("unread_count", 0) > 0]
         payload["needs_attention"] = [i for i in payload.get("needs_attention", []) if i.get("unread_count", 0) > 0]
         payload["urgent_top_k"] = [i for i in payload.get("urgent_top_k", []) if i.get("unread_count", 0) > 0]
+        payload["unread_only"] = True
+        # Also filter notify_payload if it exists
+        if "notify_payload" in payload and isinstance(payload["notify_payload"], dict):
+            notify = payload["notify_payload"]
+            if "urgent_top_k" in notify:
+                notify["urgent_top_k"] = [i for i in notify.get("urgent_top_k", []) if i.get("unread_count", 0) > 0]
+            notify["unread_only"] = True
+        # Avoid stale push summary (still said "3 threads" while unread filter left 1)
+        n_urgent = len(payload.get("urgent_top_k") or [])
+        n_recent = len(payload.get("recent_activity") or [])
+        payload["summary"] = (
+            f"未读视图：推送区 {n_urgent} 条；近期活跃未读线程 {n_recent} 条"
+            f"（原始摘要：{payload.get('summary') or '无'}）"
+        )
+        if isinstance(payload.get("notify_payload"), dict):
+            payload["notify_payload"]["summary"] = payload["summary"]
 
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -1741,6 +1882,40 @@ def _build_parser() -> argparse.ArgumentParser:
     mailbox_preflight.add_argument("--page-size", default=5, type=int, help="Envelope page size")
     mailbox_preflight.add_argument("--json", action="store_true", help="Output as JSON")
 
+    mailbox_detect = mailbox_sub.add_parser("detect", help="Auto-detect server config from email")
+    mailbox_detect.add_argument("email", help="Email address to detect servers for")
+    mailbox_detect.add_argument("--json", action="store_true", help="Output as JSON")
+
+    # onboarding commands
+    onboarding_parser = subparsers.add_parser("onboarding", help="Conversational onboarding flow")
+    onboarding_sub = onboarding_parser.add_subparsers(dest="onboarding_command", required=True)
+
+    onboarding_start = onboarding_sub.add_parser("start", help="Start onboarding flow")
+    onboarding_start.add_argument("--json", action="store_true", help="Output as JSON")
+
+    onboarding_status = onboarding_sub.add_parser("status", help="Show onboarding progress")
+    onboarding_status.add_argument("--json", action="store_true", help="Output as JSON")
+
+    # push commands
+    push_parser = subparsers.add_parser("push", help="Push notification subscriptions")
+    push_sub = push_parser.add_subparsers(dest="push_command", required=True)
+
+    push_subscribe = push_sub.add_parser("subscribe", help="Subscribe to push notifications")
+    push_subscribe.add_argument("session_id", help="OpenClaw session ID")
+    push_subscribe.add_argument("--min-urgency", choices=["high", "medium", "low"], help="Minimum urgency filter")
+    push_subscribe.add_argument("--json", action="store_true", help="Output as JSON")
+
+    push_unsubscribe = push_sub.add_parser("unsubscribe", help="Unsubscribe from push")
+    push_unsubscribe.add_argument("session_id", help="OpenClaw session ID")
+    push_unsubscribe.add_argument("--json", action="store_true", help="Output as JSON")
+
+    push_list = push_sub.add_parser("list", help="List all subscriptions")
+    push_list.add_argument("--json", action="store_true", help="Output as JSON")
+
+    push_dispatch = push_sub.add_parser("dispatch", help="Manually trigger push dispatch")
+    push_dispatch.add_argument("--openclaw-bin", default="openclaw", help="OpenClaw binary path")
+    push_dispatch.add_argument("--json", action="store_true", help="Output as JSON")
+
     # queue commands
     queue_parser = subparsers.add_parser("queue", help="Queue management")
     queue_sub = queue_parser.add_subparsers(dest="queue_command", required=True)
@@ -1883,6 +2058,22 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "mailbox":
             if args.mailbox_command == "preflight":
                 return cmd_mailbox_preflight(args)
+            elif args.mailbox_command == "detect":
+                return cmd_mailbox_detect(args)
+        elif args.command == "onboarding":
+            if args.onboarding_command == "start":
+                return cmd_onboarding_start(args)
+            elif args.onboarding_command == "status":
+                return cmd_onboarding_status(args)
+        elif args.command == "push":
+            if args.push_command == "subscribe":
+                return cmd_push_subscribe(args)
+            elif args.push_command == "unsubscribe":
+                return cmd_push_unsubscribe(args)
+            elif args.push_command == "list":
+                return cmd_push_list(args)
+            elif args.push_command == "dispatch":
+                return cmd_push_dispatch(args)
         elif args.command == "queue":
             if args.queue_command == "list":
                 return cmd_queue_list(args)

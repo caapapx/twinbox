@@ -70,7 +70,6 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 - If `activity-pulse.json` is missing or stale, run `twinbox-orchestrate schedule --job daytime-sync` and explain the refresh
 - Stay read-only unless the user explicitly asks for draft/action generation
 - **Never end a task turn with only file reads and no text answer.** A turn with `assistant.content=[]` or no text is a failure — always produce real command output followed by a summary
-
 ## Hosted Defaults
 
 - Prefer a dedicated `twinbox` agent/session for Twinbox work; keep `main` for general chat

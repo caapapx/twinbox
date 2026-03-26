@@ -1,0 +1,143 @@
+#!/usr/bin/env python3
+"""
+Conversational onboarding flow with progress persistence.
+
+Stages:
+1. mailbox_login: Email detection + preflight
+2. profile_setup: Job role, habits, preferences
+3. material_import: Upload context materials
+4. routing_rules: Email filtering rules
+5. push_subscription: Notification preferences
+"""
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Literal
+
+OnboardingStage = Literal[
+    "not_started",
+    "mailbox_login",
+    "profile_setup",
+    "material_import",
+    "routing_rules",
+    "push_subscription",
+    "completed",
+]
+
+
+@dataclass
+class OnboardingState:
+    """Persistent onboarding progress."""
+
+    current_stage: OnboardingStage = "not_started"
+    completed_stages: list[str] = field(default_factory=list)
+    mailbox_config: dict[str, Any] = field(default_factory=dict)
+    profile_data: dict[str, Any] = field(default_factory=dict)
+    materials: list[str] = field(default_factory=list)
+    routing_rules: list[str] = field(default_factory=list)
+    push_enabled: bool = False
+    started_at: str | None = None
+    updated_at: str | None = None
+
+    def to_dict(self) -> dict:
+        return {
+            "current_stage": self.current_stage,
+            "completed_stages": self.completed_stages,
+            "mailbox_config": self.mailbox_config,
+            "profile_data": self.profile_data,
+            "materials": self.materials,
+            "routing_rules": self.routing_rules,
+            "push_enabled": self.push_enabled,
+            "started_at": self.started_at,
+            "updated_at": self.updated_at,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> OnboardingState:
+        return cls(
+            current_stage=data.get("current_stage", "not_started"),
+            completed_stages=data.get("completed_stages", []),
+            mailbox_config=data.get("mailbox_config", {}),
+            profile_data=data.get("profile_data", {}),
+            materials=data.get("materials", []),
+            routing_rules=data.get("routing_rules", []),
+            push_enabled=data.get("push_enabled", False),
+            started_at=data.get("started_at"),
+            updated_at=data.get("updated_at"),
+        )
+
+
+def get_state_path(state_root: Path) -> Path:
+    """Get onboarding state file path."""
+    return state_root / "runtime" / "onboarding-state.json"
+
+
+def load_state(state_root: Path) -> OnboardingState:
+    """Load onboarding state from disk."""
+    path = get_state_path(state_root)
+    if not path.exists():
+        return OnboardingState()
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return OnboardingState.from_dict(data)
+    except Exception:
+        return OnboardingState()
+
+
+def save_state(state_root: Path, state: OnboardingState) -> None:
+    """Save onboarding state to disk."""
+    path = get_state_path(state_root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    state.updated_at = datetime.now().isoformat()
+    if state.started_at is None:
+        state.started_at = state.updated_at
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(state.to_dict(), f, ensure_ascii=False, indent=2)
+
+
+STAGE_ORDER: list[OnboardingStage] = [
+    "not_started",
+    "mailbox_login",
+    "profile_setup",
+    "material_import",
+    "routing_rules",
+    "push_subscription",
+    "completed",
+]
+
+STAGE_PROMPTS = {
+    "mailbox_login": "📧 邮箱登录配置\n请提供您的邮箱地址，我会自动探测服务器配置并测试连接。",
+    "profile_setup": "👤 个人画像设置\n请告诉我您的职位、工作习惯和偏好，帮助我更好地理解邮件优先级。",
+    "material_import": "📄 上下文材料导入\n您可以上传项目文档、团队信息等材料，帮助我理解业务背景。",
+    "routing_rules": "🎯 邮件过滤规则\n配置语义路由规则，自动过滤不重要的邮件（如群组通知、系统告警）。",
+    "push_subscription": "🔔 推送通知设置\n配置紧急邮件推送通知，及时了解重要事项。",
+}
+
+
+def get_next_stage(current: OnboardingStage) -> OnboardingStage | None:
+    """Get next stage in onboarding flow."""
+    try:
+        idx = STAGE_ORDER.index(current)
+        if idx + 1 < len(STAGE_ORDER):
+            return STAGE_ORDER[idx + 1]
+    except ValueError:
+        pass
+    return None
+
+
+def complete_stage(state: OnboardingState, stage: OnboardingStage) -> None:
+    """Mark a stage as completed and advance to next."""
+    if stage not in state.completed_stages:
+        state.completed_stages.append(stage)
+    next_stage = get_next_stage(stage)
+    if next_stage:
+        state.current_stage = next_stage
+
+
+def get_stage_prompt(stage: OnboardingStage) -> str:
+    """Get guidance prompt for a stage."""
+    return STAGE_PROMPTS.get(stage, f"Stage: {stage}")
