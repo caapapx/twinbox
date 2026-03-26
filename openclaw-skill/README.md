@@ -90,6 +90,8 @@
 
 ## 初始化重点
 
+**从零安装与 cwd 约定以 [DEPLOY.md](./DEPLOY.md) §2 为准**（本文下方命令假设当前在 `openclaw-skill/`）。
+
 native OpenClaw 部署不要只迁 `~/.openclaw`，还要初始化 Twinbox roots：
 
 ```bash
@@ -115,6 +117,8 @@ bash ../scripts/install_openclaw_twinbox_init.sh
 - `metadata.openclaw.schedules` 已被平台自动消费
 - 日内调度 / 每小时推送 / stale fallback 已闭环
 - `daytime-sync` 的 attention 新鲜度问题已经解决
+
+2026-03-26 的再次复核里，真实 `openclaw cron list --all --json` 只看到一个 Twinbox 相关 job：`twinbox-daily-refresh`。它的 payload 是 Twinbox 主动维护的 `systemEvent -> daytime-sync` bridge job；`weekly-refresh` 和 `nightly-full-refresh` 没有随着 `SKILL.md` metadata 自动出现。所以当前仍不能把 metadata schedules 当成平台已自动接通的事实。
 
 ## 当前宿主桥接面
 
@@ -200,7 +204,7 @@ bash ../scripts/install_openclaw_twinbox_init.sh
 
 ## 当前文件
 
-- [DEPLOY.md](./DEPLOY.md)：OpenClaw skill 部署与验证说明
+- [DEPLOY.md](./DEPLOY.md)：Twinbox × OpenClaw **正式部署指南**（主路径、迁移、插件、清单、排障与回滚）
 - [twinbox-openclaw-bridge.service](./twinbox-openclaw-bridge.service)：用户态宿主 poller service 样例
 - [twinbox-openclaw-bridge.timer](./twinbox-openclaw-bridge.timer)：每分钟轮询一次 Gateway cron run 的 timer 样例
 - [twinbox-openclaw-bridge.env.example](./twinbox-openclaw-bridge.env.example)：`%h/.config/twinbox/twinbox-openclaw-bridge.env` 样例
