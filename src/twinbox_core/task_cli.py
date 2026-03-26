@@ -16,7 +16,7 @@ from .daytime_slice import DaytimeSliceError, load_activity_pulse, search_activi
 from .mailbox import format_preflight_text, run_preflight
 from .material_extract import MaterialExtractError, write_extract_for_import
 from .paths import resolve_state_root
-from .routing_rules import evaluate_rule, load_rules, load_rules_raw, save_rules_raw
+from .routing_rules import evaluate_rule, load_rules, load_rules_raw, save_rules_raw, RoutingRule
 
 @dataclass(frozen=True)
 class ThreadCard:
@@ -1581,12 +1581,45 @@ def cmd_rule_remove(args: argparse.Namespace) -> int:
 
 def cmd_rule_test(args: argparse.Namespace) -> int:
     """Test a routing rule against recent threads (dry run)."""
-    rules_path = _get_rules_path()
-    rules = load_rules(rules_path)
+    target_rule = None
     
-    target_rule = next((r for r in rules if r.id == args.rule_id), None)
-    if not target_rule:
-        print(f"错误: 未找到激活的规则 '{args.rule_id}'", file=sys.stderr)
+    if args.rule_json:
+        try:
+            r = json.loads(args.rule_json)
+            from .routing_rules import RuleCondition, RuleAction
+            
+            cond_data = r.get("conditions", {})
+            conditions = RuleCondition(
+                match_all=cond_data.get("match_all"),
+                match_any=cond_data.get("match_any"),
+            )
+            
+            act_data = r.get("actions", {})
+            actions = RuleAction(
+                set_state=act_data.get("set_state"),
+                set_waiting_on=act_data.get("set_waiting_on"),
+                skip_phase4=act_data.get("skip_phase4", False),
+            )
+            
+            target_rule = RoutingRule(
+                id=r.get("id", "test_rule"),
+                name=r.get("name", "Test Rule"),
+                active=r.get("active", True),
+                conditions=conditions,
+                actions=actions,
+            )
+        except Exception as e:
+            print(f"错误: 无法解析 rule-json - {e}", file=sys.stderr)
+            return 1
+    elif args.rule_id:
+        rules_path = _get_rules_path()
+        rules = load_rules(rules_path)
+        target_rule = next((r for r in rules if r.id == args.rule_id), None)
+        if not target_rule:
+            print(f"错误: 未找到激活的规则 '{args.rule_id}'", file=sys.stderr)
+            return 1
+    else:
+        print("错误: 必须提供 --rule-id 或 --rule-json", file=sys.stderr)
         return 1
 
     # Load recent threads from Phase 3 context pack
@@ -1809,7 +1842,9 @@ def _build_parser() -> argparse.ArgumentParser:
     rule_remove.add_argument("--json", action="store_true", help="Output as JSON")
 
     rule_test = rule_sub.add_parser("test", help="Test a routing rule against recent threads")
-    rule_test.add_argument("--rule-id", required=True, help="Rule ID to test")
+    group = rule_test.add_mutually_exclusive_group(required=True)
+    group.add_argument("--rule-id", help="Rule ID to test")
+    group.add_argument("--rule-json", help="Rule definition in JSON format to test without saving")
     rule_test.add_argument("--json", action="store_true", help="Output as JSON")
 
     return parser

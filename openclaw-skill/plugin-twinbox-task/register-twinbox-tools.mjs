@@ -156,13 +156,22 @@ export function registerTwinboxTaskTools(api) {
 
   api.registerTool({
     name: "twinbox_rule_test",
-    description: "Test a semantic routing rule against recent threads to see its impact before saving.",
+    description: "Test a semantic routing rule against recent threads to see its impact before saving. Provide EITHER rule_id (for existing rules) OR rule_json (for new/unsaved rules).",
     parameters: Type.Object({
-      rule_id: Type.String({ description: "Rule ID to test" }),
+      rule_id: Type.Optional(Type.String({ description: "Rule ID to test (if it already exists)" })),
+      rule_json: Type.Optional(Type.String({ description: "Rule definition in JSON format (to test before adding)" })),
     }),
     async execute(...args) {
       const params = args.length >= 2 ? args[1] : args[0];
-      const r = await runTwinbox(["rule", "test", "--rule-id", params.rule_id, "--json"], opts);
+      let cliArgs = ["rule", "test", "--json"];
+      if (params.rule_json) {
+        cliArgs.push("--rule-json", params.rule_json);
+      } else if (params.rule_id) {
+        cliArgs.push("--rule-id", params.rule_id);
+      } else {
+        return { content: [{ type: "text", text: "Error: Must provide either rule_id or rule_json" }] };
+      }
+      const r = await runTwinbox(cliArgs, opts);
       return formatResult(r);
     },
   });
