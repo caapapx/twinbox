@@ -20,7 +20,7 @@
 
 ## 最近实测状态
 
-- 本机已完成一次从 Docker Compose 形态迁到原生 npm OpenClaw 的验证
+- 本机已在原生 npm OpenClaw 上完成一轮托管 skill 与 Twinbox 联调验证
 - 当前原生 CLI 安装方式已确认可用：
   - `npm install -g openclaw@latest`
 - 当前原生默认目录按平台约定使用：
