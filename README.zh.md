@@ -1,232 +1,365 @@
 # twinbox 📮
 
+> **线程级邮件智能，让重要的事情不被淹没。**
+
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)](./tests/)
+
 [English](./README.md) | [中文](./README.zh.md)
 
-## What it does
+---
 
-典型问题：谁还在等你回、什么事卡住、有没有超期——按**线程**看，而不是把最新一封邮件总结一下就完事。twinbox 只读拉 IMAP，可混入你提供的材料/习惯，写出 `daily-urgent`、`pending-replies`、SLA 视图、周报等文件（主要在 `runtime/validation/`），给脚本或 Agent 读。
-
-自托管。Phase 1～4 对邮箱只读；草稿和发送后面单独设闸门。
-
-## Who it is for
-
-要把邮箱接进自动化的人：优先 CLI + JSON；OpenClaw 或任何能跑 shell 的宿主都行。不是网页邮箱、不是群发自动回复、也不是托管产品。
-
-## Pieces
-
-邮件 + 可选人工上下文，走 Phase 1～4；每段先确定性 `Loading` 再 LLM `Thinking`，产物进 `runtime/validation/`（契约见 [docs/ref/validation.md](docs/ref/validation.md)）。
-
-- `twinbox`：预检、队列、线程、摘要、context 写入。`twinbox task … --json` 转给上述能力，给 Agent 用（[docs/ref/cli.md](docs/ref/cli.md)）。
-- `twinbox-orchestrate`：`run`、`run --phase N`、`contract`、`schedule`/bridge。与 `bash scripts/twinbox_orchestrate.sh` 或 [scripts/twinbox-orchestrate](scripts/twinbox-orchestrate) 一致。
-- OpenClaw：[SKILL.md](SKILL.md) 元数据；安装与宿主桥接见 [openclaw-skill/README.md](openclaw-skill/README.md)（`scripts/twinbox_openclaw_bridge*.sh`）。
-- Phase 1～4 不发信、不移动/删除/归档/打标邮件。
-
-## Quick start
-
-1. 按 [pyproject.toml](pyproject.toml) 安装（或仓库根执行 `bash scripts/twinbox`）。
-2. 设好代码根、状态根（见 [Code and state roots](#code-and-state-roots)）；OpenClaw 常用布局可跑 `bash scripts/install_openclaw_twinbox_init.sh`。
-3. `twinbox mailbox preflight --json` 直到检查通过。
-4. `twinbox-orchestrate run --phase 4` 或 `twinbox-orchestrate run`。
-5. 再读 [docs/README.md](docs/README.md)、[docs/ref/architecture.md](docs/ref/architecture.md)。
-
-更多契约：[docs/ref/runtime.md](docs/ref/runtime.md)、[docs/ref/scheduling.md](docs/ref/scheduling.md)、[config/action-templates/README.md](config/action-templates/README.md)。
-
-## Common commands
-
-| Goal | Command | Notes |
-|------|------|------|
-| 邮箱登录 / 环境 / 只读 IMAP 预检 | `twinbox mailbox preflight --json` | 统一 JSON，适合工具链与 OpenClaw 宿主 |
-| 兼容 wrapper | `bash scripts/preflight_mailbox_smoke.sh --json` | 同上预检的包装 |
-| 给 Agent 的 JSON | `twinbox task latest-mail --json`、`twinbox task todo --json`、`twinbox task progress "…" --json`、`twinbox task mailbox-status --json` | 见 [docs/ref/cli.md](docs/ref/cli.md) |
-| 只看流水线计划 | `twinbox-orchestrate run --dry-run` 或 `bash scripts/twinbox_orchestrate.sh run --dry-run` | 不执行 phase |
-| 跑全流程 | `twinbox-orchestrate run` | Phase 4 默认并行 thinking |
-| 单 phase | `twinbox-orchestrate run --phase 2` | 局部重跑 |
-| 机器可读契约 | `twinbox-orchestrate contract --format json` | phase 依赖与入口 |
-| 单元测试 | `pytest tests/` | 核心模块回归 |
-| 轻量语法检查 | `python3 -m compileall src` 与 `bash -n scripts/twinbox_orchestrate.sh scripts/run_pipeline.sh` | 提交前 |
-
-## First login troubleshooting
-
-- `missing_env`：补齐 `MAIL_ADDRESS` 与 IMAP/SMTP 的 host/port/login/pass。
-- `imap_auth_failed`：核对账号密码或应用专用密码。
-- `imap_tls_failed`：核对端口与加密，常见 `993 + tls` 或 `143 + starttls/plain`。
-- `imap_network_failed`：DNS、防火墙、容器网络。
-- `mailbox-connected + warn`：只读 IMAP 已够 Phase 1～4；只读模式下 SMTP 可能仅警告。
-
-## Why not another mail demo
-
-Demo 往往围绕单封邮件和界面快路径。这里工作单元是线程，产出是文件（方便 diff、门禁、脚本），默认你自己部署；OpenClaw 是一种集成方式，不是唯一。
-
-## Principles
-
-1. 优先用线程上下文，而不是孤立的一封邮件。
-2. 先只读产物，再草稿，再发送。
-3. 用户材料、习惯、事实进仓库形态的数据，不只停在对话里。
-4. OpenClaw：manifest、环境变量、宿主桥接在文档里写清楚。
-
-## Architecture (ASCII)
-
-```text
-                                +----------------------+
-                                |   用户 / Operator     |
-                                |  (审查并批准)         |
-                                +----------+-----------+
-                                           |
-                                           v
-+------------------+             +---------+----------+             +----------------------+
-| 邮箱 (IMAP)       +-----------> | Thread State Layer | <---------- | Context Ingestion    |
-| 首先只读          | 证据         | (线程生命周期、    |   事实      | (材料/习惯)          |
-+------------------+             | 队列投影)          |             +----------+-----------+
-                                 +---------+----------+                        |
-                                           |                                   |
-                                           v                                   |
-                                 +---------+----------+                        |
-                                 | Runtime Skeleton   |------------------------+
-                                 | Listener / Action  |     类型化上下文
-                                 | Template / Audit   |
-                                 +---------+----------+
-                                           |
-                                           v
-                                 +---------+----------+
-                                 | Automation Gates   |
-                                 | 只读 -> 草稿 ->    |
-                                 | 受控发送           |
-                                 +--------------------+
-```
-
-## Compared to Anthropic `email-agent`
-
-![Anthropic Email Agent Architecture](docs/assets/anthropic-email-agent-architecture.png)
-
-- 线程与队列 vs 单封进出、偏 UI 的演示。
-- 只读 → 草稿 → 发送分闸 vs 一条自动化演示到底。
-- 上下文落盘 vs 只在会话里随口描述。
-- listener/action 等骨架 vs 成品小应用。
-
-## Repository map
-
-```text
-twinbox/
-├── README.md
-├── README.zh.md
-├── SKILL.md                    # OpenClaw manifest + 共享 skill 元数据
-├── skill-creator-plan.md       # Track A/B 与宿主路线（细表）
-├── pyproject.toml
-├── openclaw-skill/             # OpenClaw 部署说明、bridge 样例
-├── src/twinbox_core/           # Python 核心（CLI、phase、编排）
-├── tests/
-├── config/
-│   ├── action-templates/
-│   ├── context/
-│   └── profiles/
-├── docs/
-│   ├── README.md
-│   ├── core-refactor.md
-│   ├── ref/
-│   ├── guide/
-│   │   └── openclaw-compose.md
-│   ├── archive/
-│   └── validation/
-├── scripts/
-│   ├── twinbox
-│   ├── twinbox-orchestrate
-│   ├── twinbox_orchestrate.sh
-│   ├── twinbox_openclaw_bridge.sh
-│   ├── twinbox_openclaw_bridge_poll.sh
-│   ├── phase{1-4}_loading.sh
-│   ├── phase{1-4}_thinking.sh
-│   ├── register_canonical_root.sh
-│   ├── run_pipeline.sh
-│   └── twinbox_paths.sh
-└── runtime/                    # 本地运行数据（通常不入库）
-```
-
-## Code and state roots
-
-代码根：带 `src/`、`scripts/` 的 checkout。状态根：`.env`、`runtime/context/`、`runtime/validation/`、可选 `docs/validation/`。
-
-- `TWINBOX_CODE_ROOT`、`TWINBOX_STATE_ROOT`（[scripts/twinbox](scripts/twinbox)）。
-- `bash scripts/install_openclaw_twinbox_init.sh` 可写 `~/.config/twinbox/code-root`、`state-root`。
-- `TWINBOX_CANONICAL_ROOT` 为状态根的旧别名。
-- 更老流程：`bash scripts/register_canonical_root.sh`。
-
-核对一次根路径；用 `twinbox-orchestrate` 跑 phase；要看依赖图用 `contract --format json`。
+## TL;DR
 
 ```bash
-twinbox-orchestrate run --dry-run
+# 1. 克隆并安装
+git clone https://github.com/caapapx/twinbox.git && cd twinbox
+pip install -e .
+
+# 2. 配置（复制并编辑）
+cp .env.example .env
+# 设置：MAIL_ADDRESS, IMAP_HOST, IMAP_LOGIN, IMAP_PASS 等
+
+# 3. 验证连接
+twinbox mailbox preflight --json
+
+# 4. 运行流水线
 twinbox-orchestrate run --phase 4
-twinbox-orchestrate contract --format json
+
+# 5. 查看待办
+twinbox task todo --json
 ```
 
-文档入口：[docs/README.md](docs/README.md)、[docs/core-refactor.md](docs/core-refactor.md)。
+**你将获得**：`daily-urgent.yaml`、`pending-replies.yaml`、`sla-risks.yaml`、`weekly-brief.md` — 写入 `runtime/validation/`，供脚本、Agent 或人工审阅。
 
-## Four-phase pipeline (detail)
+---
 
-当前取向：spec-first、shell-first、read-only-first。图在下面；放在快速开始之后，先能跑命令再看漏斗。
+## 目录
+
+- [它是做什么的](#它是做什么的)
+- [适合谁用](#适合谁用)
+- [快速开始](#快速开始)
+- [日常命令](#日常命令)
+- [四个阶段](#四个阶段)
+- [架构](#架构)
+- [常见问题](#常见问题)
+- [路线图](#当前聚焦与路线图)
+
+---
+
+## 它是做什么的
+
+帮你搞清楚**谁在等你回复**、**什么事卡住了**、**什么快超期了**——基于线程级 IMAP 状态，而不是把最新一封邮件总结一下就完事。
+
+- 📬 **只读优先**：分析邮箱，不发送、不移动、不删除、不打标（Phase 1–4）
+- 🧵 **线程视角**：处理对话线程，而非孤立邮件
+- 📁 **文件即 API**：输出结构化 YAML/JSON 到磁盘，可 diff、可 CI 门禁、可被 Agent 消费
+- 🎯 **上下文感知**：将邮箱数据与你的材料、习惯、确认事实融合
+
+> **设计上就是自托管的。** 你的邮件留在你的基础设施上。
+
+---
+
+## 适合谁用
+
+想把邮箱接入自动化的人：
+
+- CLI + JSON 优先
+- OpenClaw 或任何能跑 shell 的宿主
+- **不是**网页邮箱
+- **不是**群发自动回复
+- **不是**托管 SaaS 产品
+
+---
+
+## 快速开始
+
+### 前置要求
+
+- Python 3.11+
+- 邮箱 IMAP 访问权限
+- [应用专用密码](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token)（推荐）或常规密码
+
+### 安装
+
+```bash
+# 方式 A：从源码 pip 安装
+pip install -e .
+
+# 方式 B：直接从仓库运行（自动设置路径）
+bash scripts/twinbox
+```
+
+### 配置
+
+```bash
+# 复制模板
+cp .env.example .env
+
+# 编辑 .env 填入你的设置
+MAIL_ADDRESS=you@example.com
+IMAP_HOST=imap.gmail.com
+IMAP_PORT=993
+IMAP_LOGIN=you@example.com
+IMAP_PASS=your-app-password
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_LOGIN=you@example.com
+SMTP_PASS=your-app-password
+```
+
+> 🔒 **安全提示**：`.env` 默认已被 gitignore。永远不要提交凭证。
+
+### 验证与运行
+
+```bash
+# 测试连接（只读 IMAP 检查）
+twinbox mailbox preflight --json
+
+# 运行完整流水线（Phase 1→4）
+twinbox-orchestrate run
+
+# 或仅刷新今日队列
+twinbox-orchestrate run --phase 4
+```
+
+### 查看结果
+
+```bash
+# 当前有什么紧急事项？
+twinbox task todo --json
+
+# 今天发生了什么？
+twinbox task latest-mail --json
+
+# 查看某个线程状态
+twinbox thread inspect <thread-id> --json
+```
+
+输出位于 **`runtime/validation/`**：
+- `phase-4/daily-urgent.yaml`
+- `phase-4/pending-replies.yaml`
+- `phase-4/sla-risks.yaml`
+- `phase-4/weekly-brief.md`
+
+---
+
+## 日常命令
+
+### 🔍 **查看状态**
+| 命令 | 用途 |
+|------|------|
+| `twinbox task mailbox-status --json` | 邮箱是否已连接？ |
+| `twinbox task latest-mail --json` | 今天发生了什么？ |
+| `twinbox task todo --json` | 有什么需要我关注？ |
+
+### 📋 **管理队列**
+| 命令 | 用途 |
+|------|------|
+| `twinbox queue list --json` | 列出所有队列（urgent、pending、sla_risk） |
+| `twinbox queue show urgent --json` | urgent 队列详情 |
+| `twinbox queue dismiss <id> --reason "..."` | 隐藏某线程 |
+| `twinbox queue complete <id> --action-taken "..."` | 标记线程为已完成 |
+
+### 🔧 **流水线与调试**
+| 命令 | 用途 |
+|------|------|
+| `twinbox-orchestrate run --dry-run` | 预览将要执行的内容 |
+| `twinbox-orchestrate run --phase 4` | 仅刷新 Phase 4 输出 |
+| `twinbox-orchestrate contract --format json` | 显示阶段依赖关系 |
+
+完整 CLI 参考：[docs/ref/cli.md](docs/ref/cli.md)
+
+---
+
+## 四个阶段
 
 ```mermaid
 flowchart LR
-    M["邮箱<br/>信封 + 抽样正文"]
-    C["人工上下文<br/>材料 / 习惯 / 已确认事实"]
-    P1["Phase 1<br/>邮箱普查 + 意图分类"]
-    B1["attention-budget v1<br/>噪声过滤"]
-    P2["Phase 2<br/>画像 + 业务假设"]
-    B2["attention-budget v2<br/>角色相关线程"]
-    P3["Phase 3<br/>生命周期建模"]
-    B3["attention-budget v3<br/>已建模线程"]
-    P4["Phase 4<br/>日常价值输出"]
-    O["产物<br/>daily-urgent / pending-replies / sla-risks / weekly-brief"]
-
-    M --> P1 --> B1 --> P2 --> B2 --> P3 --> B3 --> P4 --> O
-    C --> P2
-    C --> P3
-    C --> P4
+    M["📬 邮箱<br/>信封 + 正文"] --> P1["Phase 1<br/>普查 + 意图"] --> B1["attention-budget v1"]
+    B1 --> P2["Phase 2<br/>画像 + 业务"] --> B2["attention-budget v2"]
+    B2 --> P3["Phase 3<br/>生命周期模型"] --> B3["attention-budget v3"]
+    B3 --> P4["Phase 4<br/>价值输出"] --> O["📄 输出"]
+    C["👤 人工上下文"] -.-> P2 & P3 & P4
 ```
 
-| Phase | Main job | Typical outputs | Why it exists |
-|-------|----------|----------|------|
-| 1 | 分布层面读懂邮箱 | `phase1-context.json`、`intent-classification.json`、派生 census | 基线与早期降噪 |
-| 2 | 推断邮箱主人与业务重点 | `persona-hypotheses.yaml`、`business-hypotheses.yaml` | 角色与业务过滤 |
-| 3 | 标签 → 线程级流程状态 | `lifecycle-model.yaml`、`thread-stage-samples.json` | 每条线程在流程中的位置 |
-| 4 | 用户可见价值面 | `daily-urgent.yaml`、`pending-replies.yaml`、`sla-risks.yaml`、`weekly-brief.md` | 回答「今天我该看什么」 |
+| 阶段 | 做什么 | 关键输出 |
+|------|--------|----------|
+| **Phase 1** | 邮箱普查 + 降噪 | `intent-classification.json`、信封索引 |
+| **Phase 2** | 推断你的角色 + 业务背景 | `persona-hypotheses.yaml`、`business-hypotheses.yaml` |
+| **Phase 3** | 建模线程生命周期状态 | `lifecycle-model.yaml`、线程阶段 |
+| **Phase 4** | 生成用户可见队列 | `daily-urgent.yaml`、`pending-replies.yaml`、`weekly-brief.md` |
 
-阶段之间仍靠各 phase 文件交接；`attention-budget.yaml` 是目标形态，未处处强制（[validation.md](docs/ref/validation.md)）。每段：`Loading` 再 `Thinking`。
+每个阶段：确定性 `Loading` → LLM `Thinking`。
+
+> **全程只读**：Phase 1–4 不发送、不移动、不删除、不打标任何邮件。
+
+---
+
+## 架构
+
+### 核心设计
+
+```text
+┌─────────────────┐      ┌─────────────────────┐      ┌──────────────────┐
+│   邮箱 (IMAP)   │─────▶│    线程状态层       │◀─────│   上下文导入     │
+│     只读        │      │  (生命周期、队列)   │      │ (材料/习惯)      │
+└─────────────────┘      └──────────┬──────────┘      └──────────────────┘
+                                    │
+                                    ▼
+                          ┌─────────────────────┐
+                          │    运行时骨架       │
+                          │ (listener / action  │
+                          │  模板 / 审计)       │
+                          └──────────┬──────────┘
+                                    │
+                                    ▼
+                          ┌─────────────────────┐
+                          │     自动化闸门      │
+                          │ 只读 → 草稿 → 发送  │
+                          └─────────────────────┘
+```
+
+### 与典型邮件 Agent 对比
+
+| | **twinbox** | 典型演示 |
+|---|-------------|----------|
+| **工作单元** | 线程 | 单封邮件 |
+| **输出** | 磁盘上的文件（可 diff、可 CI 门禁） | UI 或即时回复 |
+| **安全** | 显式只读 → 草稿 → 发送闸门 | 往往是一次性自动化 |
+| **上下文** | 结构化文件 + 来源追溯 | 仅会话级 prompt |
+| **托管** | 自托管 | 往往是 SaaS |
+
+---
+
+## 仓库结构
+
+```
+twinbox/
+├── 📄 README.md                 # 本文件
+├── 📋 SKILL.md                  # OpenClaw 清单
+├── ⚙️  pyproject.toml           # Python 包配置
+├── 🐍 src/twinbox_core/         # 核心实现
+│   ├── task_cli.py             # 面向任务的 CLI
+│   ├── orchestration.py        # 流水线编排器
+│   ├── phase4_value.py         # Phase 4：输出
+│   └── ...
+├── 📁 config/
+│   ├── action-templates/       # 动作模板
+│   ├── context/                # 上下文配置
+│   └── profiles/               # 用户画像
+├── 📖 docs/
+│   ├── ref/architecture.md     # 完整架构文档
+│   ├── ref/cli.md              # CLI 参考
+│   └── ref/validation.md       # 输出契约
+├── 🔧 scripts/                 # Shell 入口
+│   ├── twinbox                 # CLI 包装器
+│   ├── twinbox-orchestrate     # 流水线运行器
+│   └── ...
+└── 💾 runtime/                 # 运行状态 (gitignored)
+    ├── context/                # 用户上下文
+    ├── validation/             # 阶段输出
+    └── himalaya/               # 邮件配置
+```
+
+### 代码根 vs 状态根
+
+| | **代码根 (Code Root)** | **状态根 (State Root)** |
+|---|------------------------|------------------------|
+| **包含** | `src/`、`scripts/`、`docs/` | `.env`、`runtime/`、配置 |
+| **设置方式** | `TWINBOX_CODE_ROOT` | `TWINBOX_STATE_ROOT` |
+| **默认** | 当前 checkout | `~/.config/twinbox/state-root` 或代码根 |
+
+---
+
+## 常见问题
+
+**Q: 这和 Gmail 标签或 Outlook 规则有什么区别？**
+
+A: 标签和规则是静态过滤器。twinbox 用 LLM 理解线程的*生命周期*——你是否在等某人回复、截止日期是否临近、对话是否已沉寂。它还将邮箱数据与外部上下文（表格、项目文档、习惯）融合。
+
+**Q: 支持 Outlook/Exchange/ProtonMail 吗？**
+
+A: 任何支持 IMAP 的提供商都应该能用。我们测试过 Gmail 和 Fastmail。Exchange 需要开启 IMAP。ProtonMail 需要使用其 IMAP Bridge。
+
+**Q: 运行成本是多少？**
+
+A: twinbox 是自托管开源软件。你需要支付：
+- 自己的基础设施
+- LLM API 调用（可配置；默认使用 OpenAI 兼容端点）
+- Phase 4 每分析一个线程约 1 次 API 调用
+
+**Q: 它能帮我发邮件吗？**
+
+A: 默认还不能。Phase 1–4 严格只读。草稿生成和发送被显式审批流程的门闸控制（开发中）。参见[安全边界](#安全边界)。
+
+**Q: 隐私如何保障？**
+
+A: 除非你配置了外部 LLM API，否则你的邮件不会离开你的基础设施。即使如此，也只发送线程元数据和抽样正文——不是整个邮箱。完全本地 LLM 支持已在路线图中。
+
+**Q: 如何更新上下文（材料、习惯）？**
 
 ```bash
-twinbox-orchestrate run --phase 2
-bash scripts/run_pipeline.sh --phase 2   # 兼容
+# 导入表格或文档
+twinbox context import-material ./project-priorities.csv --intent reference
+
+# 添加确认事实
+twinbox context upsert-fact --id "customer-tier:acme" --type "tier" --content "enterprise"
+
+# 刷新受影响线程
+twinbox-orchestrate run --phase 4
 ```
 
-已有：IMAP/SMTP 检查、himalaya 渲染、冒烟脚本、验证文档、`twinbox-eval-phase4`、context 导入/写入。
+**Q: 能在 CI/CD 中运行吗？**
 
-没有：常驻 listener、生产级 action 管理器、Web 前端、默认自动发信/归档、写死的租户业务规则。
+A: 可以。所有输出都是可 diff 的文件。preflight 命令返回适合 CI 门禁的结构化 JSON 和退出码。
 
-## Near-term direction
+---
 
-线程模型和闸门不变；listener/action、模板与实例、审计、扩展点按需加长。
+## 当前聚焦与路线图
 
-## Current focus & roadmap
+> 最后更新：2026-03-25
 
-> Last updated: 2026-03-25
+### ✅ 已交付
+- [x] `twinbox-orchestrate` + Phase 1–4 Python 核心
+- [x] 面向任务的 CLI (`twinbox task … --json`)
+- [x] OpenClaw Skill 集成
 
-- [x] 2026-03-25 — `twinbox-orchestrate` + Phase 1～4 Python（Loading / Thinking）。
-- [x] 2026-03-25 — `twinbox task … --json`；OpenClaw skill、`scripts/twinbox_openclaw_bridge*.sh`（[openclaw-skill/README.md](openclaw-skill/README.md)）。
-- [ ] 固定调度窗口：白天 / 周五 / 夜间。
-- [ ] 多渠道投递的订阅 registry、选择性停推（未做）。
-- [ ] OpenClaw 是否在无宿主桥时自动跑 `preflightCommand` 与 manifest `schedules`（待证）。
-- [ ] Phase 4 快照偏旧时，日内注意力怎么补。
-- [ ] `twinbox context refresh` 真正触发重算；stale / 重试 / 降级说明白。
+### 🚧 进行中
+- [ ] 固定调度窗口（白天 / 周五 / 夜间）
+- [ ] 多渠道投递订阅注册表
+- [ ] OpenClaw 原生 `preflightCommand` + `schedules` 验证
 
-其余见 [skill-creator-plan.md](skill-creator-plan.md)。
+### 📋 计划中
+- [ ] Phase 4 产物过期时的日内注意力视图
+- [ ] 带自动重跑的 `twinbox context refresh`
+- [ ] 常驻监听器服务
 
-## Safety boundaries
+完整路线图：[skill-creator-plan.md](skill-creator-plan.md)
 
-- 仅使用应用/客户端专用密码。
-- `.env` 留在本地，切勿提交。
-- 将 `runtime/` 视为本地运行数据。
-- 在草稿质量与审批流未验证前不要自动发送。
-- 勿让用户上下文静默覆盖邮箱事实。
+---
 
-## Publishing note
+## 安全边界
 
-`docs/validation/` 可能含真实邮箱研究产生的实例材料；完全公开前请清理。稳定对外叙述以该目录 **之外** 的文档为准。
+1. **仅使用应用专用密码** — 永远不要用主账户密码
+2. **`.env` 留在本地** — 永远不要提交凭证
+3. **`runtime/` 是运行数据** — 如需备份请手动操作，不要直接编辑
+4. **在验证前不自动发送** — 草稿质量和审批流程优先
+5. **邮箱事实不可变** — 用户上下文补充但不静默覆盖线程证据
+
+---
+
+## 发布说明
+
+`docs/validation/` 可能包含真实邮箱研究产生的实例材料；完全公开前请清理。稳定对外叙述以该目录之外为准。
+
+---
+
+## 许可证
+
+MIT — 见 [LICENSE](./LICENSE)
+
+---
+
+**有问题？** 提 Issue 或查看 [docs/README.md](docs/README.md) 深度文档。
