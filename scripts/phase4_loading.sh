@@ -24,7 +24,6 @@ PERSONA="${STATE_ROOT}/runtime/validation/phase-2/persona-hypotheses.yaml"
 
 MANUAL_FACTS="${STATE_ROOT}/runtime/context/manual-facts.yaml"
 MANUAL_HABITS="${STATE_ROOT}/runtime/context/manual-habits.yaml"
-CALIBRATION="${STATE_ROOT}/runtime/context/instance-calibration-notes.md"
 MATERIAL_EXTRACTS="${STATE_ROOT}/runtime/context/material-extracts"
 
 LOOKBACK_DAYS="${PIPELINE_LOOKBACK_DAYS:-7}"
@@ -88,11 +87,11 @@ mkdir -p "${MATERIAL_EXTRACTS}"
 
 # Build context pack: recent threads + live body fetch + lifecycle model + human context
 MATERIAL_MANIFEST="${STATE_ROOT}/runtime/context/material-manifest.json"
-node - <<'NODE' "${ENVELOPES}" "${BODIES}" "${THREAD_SAMPLES}" "${LIFECYCLE}" "${PERSONA}" "${CENSUS}" "${PHASE4_DIR}" "${HIMALAYA_BIN}" "${CONFIG_FILE}" "${ACCOUNT}" "${MAIL_ADDRESS}" "${LOOKBACK_DAYS}" "${MAX_BODY_FETCH}" "${MAX_THREAD_CANDIDATES}" "${MANUAL_FACTS}" "${MANUAL_HABITS}" "${CALIBRATION}" "${MATERIAL_EXTRACTS}" "${MATERIAL_MANIFEST}"
+node - <<'NODE' "${ENVELOPES}" "${BODIES}" "${THREAD_SAMPLES}" "${LIFECYCLE}" "${PERSONA}" "${CENSUS}" "${PHASE4_DIR}" "${HIMALAYA_BIN}" "${CONFIG_FILE}" "${ACCOUNT}" "${MAIL_ADDRESS}" "${LOOKBACK_DAYS}" "${MAX_BODY_FETCH}" "${MAX_THREAD_CANDIDATES}" "${MANUAL_FACTS}" "${MANUAL_HABITS}" "${MATERIAL_EXTRACTS}" "${MATERIAL_MANIFEST}"
 const fs = require('fs');
 const path = require('path');
 const cp = require('child_process');
-const [envelopesPath, bodiesPath, threadSamplesPath, lifecyclePath, personaPath, censusPath, phase4Dir, himalayaBin, configPath, account, mailAddress, lookbackDaysRaw, maxBodyFetchRaw, maxThreadCandidatesRaw, factsPath, habitsPath, calibrationPath, materialExtractsDir, materialManifestPath] = process.argv.slice(2);
+const [envelopesPath, bodiesPath, threadSamplesPath, lifecyclePath, personaPath, censusPath, phase4Dir, himalayaBin, configPath, account, mailAddress, lookbackDaysRaw, maxBodyFetchRaw, maxThreadCandidatesRaw, factsPath, habitsPath, materialExtractsDir, materialManifestPath] = process.argv.slice(2);
 
 function readMaterialExtractBundle(dir, manifestPath) {
   try {
@@ -290,7 +289,6 @@ for (const c of candidates) {
 // Human context
 const factsRaw = readIfExists(factsPath);
 const habitsRaw = readIfExists(habitsPath);
-const calibrationRaw = readIfExists(calibrationPath);
 const materialBundle = readMaterialExtractBundle(materialExtractsDir, materialManifestPath);
 const hasFacts = factsRaw && factsRaw !== 'facts: []';
 const hasHabits = habitsRaw && habitsRaw !== 'habits: []';
@@ -319,11 +317,9 @@ const context = {
   human_context: {
     has_facts: hasFacts,
     has_habits: hasHabits,
-    has_calibration: calibrationRaw.length > 50,
     has_material_extracts: hasMaterialExtracts,
     manual_facts_raw: hasFacts ? factsRaw : null,
     manual_habits_raw: hasHabits ? habitsRaw : null,
-    calibration_notes: calibrationRaw.length > 50 ? calibrationRaw.slice(0, 2500) : null,
     material_extracts_notes: hasMaterialExtracts ? materialBundle : null,
   },
 };
@@ -331,7 +327,7 @@ const context = {
 fs.writeFileSync(phase4Dir + '/context-pack.json', JSON.stringify(context, null, 2));
 console.log('Context pack: ' + threadContexts.length + ' threads, ' + recent.length + ' recent envelopes');
 console.log('  bodies: ' + fetched + ' fetched live, ' + (threadContexts.filter(t => t.body_excerpt).length - fetched) + ' from cache');
-console.log('  human_context: facts=' + (hasFacts ? 'yes' : 'no') + ' habits=' + (hasHabits ? 'yes' : 'no') + ' calibration=' + (calibrationRaw.length > 50 ? 'yes' : 'no') + ' materials=' + (hasMaterialExtracts ? 'yes' : 'no'));
+console.log('  human_context: facts=' + (hasFacts ? 'yes' : 'no') + ' habits=' + (hasHabits ? 'yes' : 'no') + ' materials=' + (hasMaterialExtracts ? 'yes' : 'no'));
 console.log('  -> ' + phase4Dir + '/context-pack.json');
 NODE
 

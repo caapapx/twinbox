@@ -560,11 +560,16 @@ def _load_object(path: Path) -> dict[str, object]:
 def _parse_response(raw: str, expected_key: str | None = None) -> dict[str, object]:
     try:
         parsed = json.loads(clean_json_text(raw))
-    except json.JSONDecodeError as e:
+    except (json.JSONDecodeError, LLMError) as e:
         # Fallback for severely truncated JSON
         print(f"Warning: JSON parse failed, attempting aggressive repair: {e}")
-        cleaned = clean_json_text(raw)
-        # Try to close dangling objects/arrays
+        # Use raw text and try to fix it manually since clean_json_text failed
+        cleaned = raw.strip()
+        if cleaned.startswith("```json"):
+            cleaned = cleaned[7:]
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3]
+        cleaned = cleaned.strip()
         
         # very aggressive repair for truncated JSON
         if cleaned.rfind('"') > cleaned.rfind('}') and cleaned.rfind('"') > cleaned.rfind(']'):
@@ -577,8 +582,11 @@ def _parse_response(raw: str, expected_key: str | None = None) -> dict[str, obje
              cleaned += '"'
              
         # Add missing commas or values if it ends abruptly
-        if cleaned.endswith(':'):
-            cleaned += '""'
+        cleaned_stripped = cleaned.strip()
+        if cleaned_stripped.endswith(':'):
+            cleaned = cleaned_stripped + '""'
+        elif cleaned_stripped.endswith(','):
+            cleaned = cleaned_stripped[:-1]
             
         while cleaned.count("[") > cleaned.count("]"):
             cleaned += "]"

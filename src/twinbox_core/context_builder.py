@@ -414,19 +414,16 @@ def _build_human_context(state_root: Path) -> dict[str, object]:
     runtime_context = state_root / "runtime/context"
     facts_raw = _read_text_if_exists(runtime_context / "manual-facts.yaml")
     habits_raw = _read_text_if_exists(runtime_context / "manual-habits.yaml")
-    calibration_raw = _read_text_if_exists(runtime_context / "instance-calibration-notes.md")
     facts_items = _parse_yaml_simple_items(facts_raw)
     habits_items = _parse_yaml_simple_items(habits_raw)
 
     return {
         "facts_raw": facts_raw,
         "habits_raw": habits_raw,
-        "calibration_raw": calibration_raw,
         "facts_items": facts_items,
         "habits_items": habits_items,
         "has_facts": len(facts_items) > 0,
         "has_habits": len(habits_items) > 0,
-        "has_calibration": len(calibration_raw) > 50,
     }
 
 
@@ -523,12 +520,8 @@ def run_phase2_loading(state_root: Path) -> dict[str, object]:
         "human_context": {
             "has_facts": human_context["has_facts"],
             "has_habits": human_context["has_habits"],
-            "has_calibration": human_context["has_calibration"],
             "manual_facts_raw": human_context["facts_raw"] if human_context["has_facts"] else None,
             "manual_habits_raw": human_context["habits_raw"] if human_context["has_habits"] else None,
-            "calibration_notes": human_context["calibration_raw"][:2000]
-            if human_context["has_calibration"]
-            else None,
         },
     }
 
@@ -651,12 +644,8 @@ def run_phase3_loading(state_root: Path) -> dict[str, object]:
         "human_context": {
             "has_facts": human_context["has_facts"],
             "has_habits": human_context["has_habits"],
-            "has_calibration": human_context["has_calibration"],
             "manual_facts_raw": human_context["facts_raw"] if human_context["has_facts"] else None,
             "manual_habits_raw": human_context["habits_raw"] if human_context["has_habits"] else None,
-            "calibration_notes": human_context["calibration_raw"][:2000]
-            if human_context["has_calibration"]
-            else None,
         },
     }
 
