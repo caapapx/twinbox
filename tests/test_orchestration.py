@@ -24,6 +24,7 @@ from twinbox_core.orchestration import (
     resolve_roots,
     run_steps,
 )
+from twinbox_core.push_subscription import PushSubscription
 
 
 class OrchestrationTest(unittest.TestCase):
@@ -150,6 +151,135 @@ class OrchestrationTest(unittest.TestCase):
             self.assertTrue((temp_root / "runtime/audit/schedule-runs.jsonl").is_file())
             self.assertTrue((temp_root / "runtime/validation/phase-4/activity-pulse.json").is_file())
             self.assertEqual(payload["notify_payload"]["urgent_top_k"][0]["thread_key"], "项目a资源申请")
+
+    def test_run_scheduled_job_daytime_dispatches_push_notifications(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            raw_dir = temp_root / "runtime/validation/phase-1/raw"
+            raw_dir.mkdir(parents=True)
+            recent = (datetime.now(ZoneInfo("Asia/Shanghai")) - timedelta(hours=1)).isoformat(timespec="seconds")
+            (raw_dir / "envelopes-merged.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "1",
+                            "folder": "INBOX",
+                            "subject": "项目A资源申请",
+                            "date": recent,
+                        }
+                    ],
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            completed = type(
+                "Completed",
+                (),
+                {"returncode": 0, "stdout": "ok", "stderr": ""},
+            )()
+            with patch("twinbox_core.orchestration.subprocess.run", return_value=completed), \
+                patch("twinbox_core.orchestration.get_active_subscriptions", return_value=[PushSubscription(session_id="sess-1")]), \
+                patch("twinbox_core.orchestration.dispatch_push", return_value={"sent": 1, "failed": 0, "skipped": 0}) as mock_dispatch:
+                exit_code, payload = run_scheduled_job(
+                    self.repo_root,
+                    temp_root,
+                    job_id="daytime-sync",
+                    event_source="system-event",
+                    dry_run=False,
+                    top_k=3,
+                    retry_once=True,
+                )
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(payload.get("push_dispatch"), {"sent": 1, "failed": 0, "skipped": 0})
+            mock_dispatch.assert_called_once()
+
+    def test_run_scheduled_job_daytime_skips_push_when_no_subscriptions(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            raw_dir = temp_root / "runtime/validation/phase-1/raw"
+            raw_dir.mkdir(parents=True)
+            recent = (datetime.now(ZoneInfo("Asia/Shanghai")) - timedelta(hours=1)).isoformat(timespec="seconds")
+            (raw_dir / "envelopes-merged.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "1",
+                            "folder": "INBOX",
+                            "subject": "项目A资源申请",
+                            "date": recent,
+                        }
+                    ],
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            completed = type(
+                "Completed",
+                (),
+                {"returncode": 0, "stdout": "ok", "stderr": ""},
+            )()
+            with patch("twinbox_core.orchestration.subprocess.run", return_value=completed), \
+                patch("twinbox_core.orchestration.get_active_subscriptions", return_value=[]), \
+                patch("twinbox_core.orchestration.dispatch_push") as mock_dispatch:
+                exit_code, payload = run_scheduled_job(
+                    self.repo_root,
+                    temp_root,
+                    job_id="daytime-sync",
+                    event_source="system-event",
+                    dry_run=False,
+                    top_k=3,
+                    retry_once=True,
+                )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIsNone(payload.get("push_dispatch"))
+            mock_dispatch.assert_not_called()
+
+    def test_run_scheduled_job_daytime_push_failure_is_captured_without_failing_job(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            raw_dir = temp_root / "runtime/validation/phase-1/raw"
+            raw_dir.mkdir(parents=True)
+            recent = (datetime.now(ZoneInfo("Asia/Shanghai")) - timedelta(hours=1)).isoformat(timespec="seconds")
+            (raw_dir / "envelopes-merged.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "1",
+                            "folder": "INBOX",
+                            "subject": "项目A资源申请",
+                            "date": recent,
+                        }
+                    ],
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            completed = type(
+                "Completed",
+                (),
+                {"returncode": 0, "stdout": "ok", "stderr": ""},
+            )()
+            with patch("twinbox_core.orchestration.subprocess.run", return_value=completed), \
+                patch("twinbox_core.orchestration.get_active_subscriptions", return_value=[PushSubscription(session_id="sess-1")]), \
+                patch("twinbox_core.orchestration.dispatch_push", side_effect=RuntimeError("push boom")):
+                exit_code, payload = run_scheduled_job(
+                    self.repo_root,
+                    temp_root,
+                    job_id="daytime-sync",
+                    event_source="system-event",
+                    dry_run=False,
+                    top_k=3,
+                    retry_once=True,
+                )
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(payload.get("push_dispatch", {}).get("status"), "failed")
+            self.assertIn("push boom", payload.get("push_dispatch", {}).get("error", ""))
 
     def test_parse_bridge_event_json(self) -> None:
         event = parse_bridge_event_text(

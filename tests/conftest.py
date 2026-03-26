@@ -31,6 +31,8 @@ def phase4_root(monkeypatch, tmp_path):
     """
     phase4_dir = tmp_path / "runtime" / "validation" / "phase-4"
     phase4_dir.mkdir(parents=True)
+    # resolve_state_root checks TWINBOX_STATE_ROOT before TWINBOX_CANONICAL_ROOT
+    monkeypatch.setenv("TWINBOX_STATE_ROOT", str(tmp_path))
     monkeypatch.setenv("TWINBOX_CANONICAL_ROOT", str(tmp_path))
     return phase4_dir
 

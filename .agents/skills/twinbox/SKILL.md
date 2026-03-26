@@ -1,78 +1,117 @@
 ---
 name: twinbox
 description: >-
-  Expert for this repo's mailbox pipeline and CLI: `twinbox` (preflight, queues
-  urgent/pending/sla, thread inspect/explain, daily/weekly digest, action
-  suggest/materialize, review list/show, context import/profile) and
-  `twinbox-orchestrate` (phase1-4 refresh, stale projections). Interprets JSON
-  from `--json`, `login_stage`, exit codes 2-5, `stale` flags, `runtime/` and
-  Himalaya config, IMAP read-only rules, and draft-safe boundaries. Use for any
-  task in the twinbox codebase that touches mailbox connectivity, triage,
-  "what am I waiting on", SLA-ish queues, standup rollups, orchestration
-  refresh, env var gaps, or slash commands `/twinbox-*`—even if the user never
-  says "twinbox". Do not use for generic Git, Docker, pytest, or unrelated
-  refactors with no mail/CLI artifact angle.
+  Twinbox mailbox skill for read-only email preflight, latest-mail summaries,
+  queue triage, pending replies, thread progress, weekly brief, phase refresh,
+  and OpenClaw deployment diagnostics via `twinbox` and
+  `twinbox-orchestrate`.
+metadata: {"openclaw":{"requires":{"env":["IMAP_HOST","IMAP_PORT","IMAP_LOGIN","IMAP_PASS","SMTP_HOST","SMTP_PORT","SMTP_LOGIN","SMTP_PASS","MAIL_ADDRESS"]},"primaryEnv":"IMAP_LOGIN","login":{"mode":"password-env","runtimeRequiredEnv":["IMAP_HOST","IMAP_PORT","IMAP_LOGIN","IMAP_PASS","SMTP_HOST","SMTP_PORT","SMTP_LOGIN","SMTP_PASS","MAIL_ADDRESS"],"optionalDefaults":{"MAIL_ACCOUNT_NAME":"myTwinbox","MAIL_DISPLAY_NAME":"{MAIL_ACCOUNT_NAME}","IMAP_ENCRYPTION":"tls","SMTP_ENCRYPTION":"tls"},"stages":["unconfigured","validated","mailbox-connected"],"preflightCommand":"twinbox mailbox preflight --json"},"schedules":[{"name":"daily-refresh","cron":"30 8 * * *","command":"twinbox-orchestrate run --phase 4","description":"Daily pre-computation of urgent/pending/sla queues at 08:30"},{"name":"weekly-refresh","cron":"30 17 * * 5","command":"twinbox-orchestrate run --phase 4","description":"Weekly brief refresh every Friday at 17:30"},{"name":"nightly-full-refresh","cron":"0 2 * * *","command":"twinbox-orchestrate run","description":"Nightly full pipeline refresh at 02:00"}]}}
 ---
 
-# twinbox (Codex skill)
+# twinbox
 
-Use this skill for mailbox onboarding, thread-state triage, queue surfaces, digest generation, and draft-safe email workflows **in this repository**.
+Use this skill for Twinbox mailbox onboarding, read-only preflight checks, latest-mail summaries, queue triage, thread progress lookup, weekly digest lookup, queue refresh, and deployment debugging in OpenClaw-managed environments.
 
-Prefer **slash commands** under `.Codex/commands/twinbox-*.md` when the user already names a flow (`/twinbox-queue`, `/twinbox-mailbox`, etc.); use this skill for ad-hoc tasks and when combining several CLI steps.
+## Session and verification (mechanism, not IDE-specific)
 
-## Scope
+Twinbox mail state is produced by **`twinbox` / `twinbox-orchestrate` on the OpenClaw host** and consumed inside a **`twinbox` agent session** (tool policy + session history + Gateway). Regressions such as empty assistant payloads, “read SKILL only”, or silent turns are addressed by **session design and test procedure** (fresh session when needed, bootstrap turn, split long suites, optional **`plugin-twinbox-task`** tools), documented in `openclaw-skill/prompt-test.md` and `scripts/run_openclaw_prompt_tests.py` — not by relabeling the client app.
 
-- Read and summarize mailbox-backed artifacts (queues, threads, digests)
-- Reconstruct thread-level workflow state from CLI JSON
-- Run read-only mailbox preflight and interpret `login_stage`
-- Guide context import / profile updates when the user explicitly wants writes
-- Generate or refine drafts; never send without explicit user confirmation and policy
+## Turn contract
 
-## Out of scope
+For mail/queue/digest requests: run the matching `twinbox` command with `--json`, then reply with a text summary. Never end with only tool reads and no text response.
 
-- No auto-send unless the user explicitly confirms and policy allows
-- No mailbox deletion, move, archive, or destructive cleanup via automation
-- No exfiltration of raw email bodies to third parties without approval
+## Use For
 
-## Expected environment
+- Mailbox env collection and login preflight via `twinbox mailbox preflight --json`
+- Summarizing "latest mail situation", "today's updates", or "what happened today"
+- Listing urgent items, pending replies, and SLA-ish risks from current artifacts
+- Looking up the latest progress of one thread, subject, project, or business keyword
+- Showing daily / pulse / weekly digests from current Twinbox artifacts
+- Suggesting actions or review items from current queue state
+- Checking whether Twinbox runtime is mounted and runnable in the current OpenClaw host
+- Refreshing pipeline artifacts with `twinbox-orchestrate schedule --job ...` or `run --phase <n>`
+- Explaining urgent / pending / SLA / weekly outputs under `runtime/validation/phase-4/`
+- Diagnosing why a deployed Twinbox/OpenClaw skill is still missing, blocked, stale, or not refreshing
 
-- Mailbox credentials in `.env` or injected env vars
-- Runtime-required keys: `IMAP_HOST`, `IMAP_PORT`, `IMAP_LOGIN`, `IMAP_PASS`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_LOGIN`, `SMTP_PASS`, `MAIL_ADDRESS`
-- Defaults: `MAIL_ACCOUNT_NAME=myTwinbox`, `MAIL_DISPLAY_NAME` derived, `IMAP_ENCRYPTION=tls`, `SMTP_ENCRYPTION=tls`
-- Himalaya config at `runtime/himalaya/config.toml`; artifacts under `runtime/`
+## Task Entrypoints
 
-## Mailbox login stages
+**REQUIRED STEPS for any task request:**
 
-- `unconfigured`: missing required mailbox settings
-- `validated`: settings resolved and config rendered; IMAP not yet verified
-- `mailbox-connected`: read-only IMAP preflight succeeded
+1. Match the user's request to a command in the list below.
+2. Execute that command now.
+3. Write a text answer summarizing the real output.
 
-## Tooling
+Reading this file is step 0 only. The turn is **not complete** until you have executed a command (step 2) and written a text answer (step 3). If you have only read files or memory so far, proceed to step 2 immediately — do not end the turn.
 
-- `scripts/check_env.sh` — env key validation
-- `scripts/render_himalaya_config.sh` — render backend config
-- `twinbox mailbox preflight --json` — structured mailbox preflight
-- `scripts/preflight_mailbox_smoke.sh` — shell wrapper around preflight
+| User intent | Command |
+|-------------|---------|
+| Latest mail / today summary / "最新邮件情况" / 帮我查看下最新的邮件情况 | `twinbox task latest-mail --json` |
+| 最新未读邮件 / 未读 / 只看未读 / 「不要已读的」 | `twinbox task latest-mail --unread-only --json` **或** OpenClaw 工具 `twinbox_latest_mail` 且 **`unread_only: true`**（必须二选一执行，禁止只读 SKILL 就结束） |
+| "我有哪些待办 / 待回复 / 最值得关注的线程" | `twinbox task todo --json` |
+| "某个事情进展如何" / progress on a topic | `twinbox task progress QUERY --json` |
+| Mailbox status / env diagnosis | `twinbox task mailbox-status --json` |
+| Weekly brief lookup | `twinbox task weekly --json` |
+| Manage semantic routing rules / "以后别把这类邮件派给我" | `twinbox rule list --json` / `twinbox rule add --rule-json ...` |
+| Test a routing rule against recent threads | `twinbox rule test --rule-id RULE_ID --json` |
+| Start onboarding flow | `twinbox onboarding start --json` |
+| Check onboarding progress | `twinbox onboarding status --json` |
+| Advance onboarding to next stage | `twinbox onboarding next --json` |
+| Inspect one exact thread / “把这个线程内容返回给我看看” / “先读这个线程” | `twinbox thread inspect THREAD_ID --json` 或 OpenClaw 工具 `twinbox_thread_inspect` 且传 `thread_id` |
+| Explain why a thread is urgent / pending | `twinbox thread explain THREAD_ID --json` |
+| Daily digest | `twinbox digest daily --json` |
+| Weekly brief | `twinbox digest weekly --json` |
+| Suggest next actions | `twinbox action suggest --json` |
+| Materialize one suggested action | `twinbox action materialize ACTION_ID --json` |
+| Review items | `twinbox review list --json` / `twinbox review show REVIEW_ID --json` |
+| Refresh hourly/daytime projection | `twinbox-orchestrate schedule --job daytime-sync --format json` |
+| Refresh full nightly/weekly pipeline | `twinbox-orchestrate schedule --job nightly-full --format json` |
 
-## Bundled references
+## Task Routing Rules
 
-Read these when you need exact commands, exit codes, or preflight JSON shapes:
+- Run the command first (`--json`), then summarize stdout in plain text for the user
+- Prefer `twinbox task ...` for common user prompts; these are thin wrappers, not a second pipeline
+- For the latest mail situation (including casual Chinese variants), use `twinbox task latest-mail --json` first; do not start with `preflight` unless connectivity is the explicit problem. If the user explicitly asks for "未读" (unread), pass `--unread-only` to the command or `unread_only: true` to the tool.
+- If the user wants one exact thread's content/details/status, prefer `twinbox thread inspect THREAD_ID --json` or `twinbox_thread_inspect`; do not use `task progress` unless the request is fuzzy/topic-based.
+- If `activity-pulse.json` is missing or stale, run `twinbox-orchestrate schedule --job daytime-sync` and explain the refresh
+- Stay read-only unless the user explicitly asks for draft/action generation
+- **Never end a task turn with only file reads and no text answer.** A turn with `assistant.content=[]` or no text is a failure — always produce real command output followed by a summary
+- **OpenClaw 模型偶发空回复**：若连续出现「有 token 但正文为空」，先**新开会话**再试；技能/工具更新后旧会话里的 `skillsSnapshot` 可能仍引用旧说明（见 Hosted Defaults）。
 
-- `references/cli-quick-ref.md` — MVP command list, exit codes, key JSON patterns
-- `references/login.md` — login state machine, env vars, read-only boundaries
+## Hosted Defaults
 
-## Evaluation (中文全链路)
+- Prefer a dedicated `twinbox` agent/session for Twinbox work; keep `main` for general chat
+- After skill or env changes, use a fresh Twinbox session; `skillsSnapshot` can freeze old injection results
+- Hosted env should come from `skills.entries.twinbox.env`; `state root/.env` is a local fallback, not the primary hosted config source
+- Treat `metadata.openclaw.schedules` as a declaration layer unless you verify platform-side execution in the current deployment
+- The currently verified refresh path is `openclaw cron -> system-event -> host bridge/poller -> twinbox-orchestrate schedule --job ...`
 
-- `evals/full-chain-2026-03-24.json` — 中文用户提问版全链路测试集（`live_steps[].user_prompt_zh` 与 CLI 逐步对照；含合成夹具与离线 FO/LC 题）
-- `evals/run-full-chain-live.sh` — 从该 JSON 读取 `user_prompt_zh` 并执行只读命令（仓库根目录下运行）
+## Guardrails
 
-## Trigger phrases (examples)
+- Stay read-only by default
+- Do not send, delete, archive, or mutate mailbox state unless the user explicitly requests it and the runtime supports it
+- Do not claim `metadata.openclaw.schedules` is executing unless you verify it in the current platform
+- Do not treat `openclaw skills info twinbox = Ready` as proof that the current session prompt already contains `twinbox`
+- Do not claim the platform has automatically run `preflightCommand` unless you have evidence from a real execution path
 
-- "sync my mailbox"
-- "scan unread emails"
-- "triage today's emails"
-- "what am I waiting on"
-- "generate weekly email digest"
-- "draft a reply to this thread"
-- "add a routing rule"
-- "test this email rule"
+## Fast Checks
+
+- `twinbox task mailbox-status --json`
+- `twinbox task latest-mail --json`
+- `twinbox task todo --json`
+- `twinbox task progress QUERY --json`
+- `twinbox digest pulse --json`
+- `twinbox-orchestrate roots`
+- `twinbox-orchestrate contract --phase 4`
+- `twinbox-orchestrate schedule --job daytime-sync --format json`
+- `twinbox-orchestrate run --phase 1`
+- `twinbox-orchestrate run --phase 4`
+
+## Runtime Notes
+
+- `mailbox-connected` means read-only IMAP preflight succeeded
+- `status=warn` with `smtp_skipped_read_only` is acceptable for preflight
+- OpenClaw-native deployments should inject mailbox env into process env via `skills.entries.twinbox.env`; `state root/.env` is a local fallback, not the preferred hosted config source
+- If Twinbox stops appearing in answers after a deploy, check env gating first, then session-level `skillsSnapshot`
+- If Twinbox commands fail, first verify env, mounted repo root, `runtime/bin/himalaya`, and Python dependencies on the OpenClaw host
+
+**Claude Code skill (deeper repo workflow):** [`.claude/skills/twinbox/SKILL.md`](.claude/skills/twinbox/SKILL.md)

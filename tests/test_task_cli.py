@@ -672,6 +672,60 @@ class TestQueueDigestThreadCli:
         assert payload[0]["thread_key"] == "宁夏fdz现场国化资源申请"
 
 
+class TestOnboardingCli:
+    """Onboarding flow should support start/status/advance with persisted state."""
+
+    def test_onboarding_start_initializes_mailbox_stage(self, monkeypatch, tmp_path, capsys):
+        monkeypatch.setenv("TWINBOX_STATE_ROOT", str(tmp_path))
+        monkeypatch.setenv("TWINBOX_CANONICAL_ROOT", str(tmp_path))
+
+        assert main(["onboarding", "start", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+
+        assert payload["stage"] == "mailbox_login"
+        assert "邮箱" in payload["prompt"]
+
+    def test_onboarding_next_advances_stage_and_marks_completed(self, monkeypatch, tmp_path, capsys):
+        monkeypatch.setenv("TWINBOX_STATE_ROOT", str(tmp_path))
+        monkeypatch.setenv("TWINBOX_CANONICAL_ROOT", str(tmp_path))
+
+        assert main(["onboarding", "start", "--json"]) == 0
+        _ = capsys.readouterr()
+
+        assert main(["onboarding", "next", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+
+        assert payload["completed_stage"] == "mailbox_login"
+        assert payload["current_stage"] == "profile_setup"
+        assert "mailbox_login" in payload["completed_stages"]
+
+    def test_onboarding_next_without_start_bootstraps_and_advances(self, monkeypatch, tmp_path, capsys):
+        monkeypatch.setenv("TWINBOX_STATE_ROOT", str(tmp_path))
+        monkeypatch.setenv("TWINBOX_CANONICAL_ROOT", str(tmp_path))
+
+        assert main(["onboarding", "next", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+
+        assert payload["completed_stage"] == "mailbox_login"
+        assert payload["current_stage"] == "profile_setup"
+        assert "mailbox_login" in payload["completed_stages"]
+
+    def test_onboarding_status_json_contract(self, monkeypatch, tmp_path, capsys):
+        monkeypatch.setenv("TWINBOX_STATE_ROOT", str(tmp_path))
+        monkeypatch.setenv("TWINBOX_CANONICAL_ROOT", str(tmp_path))
+
+        assert main(["onboarding", "start", "--json"]) == 0
+        _ = capsys.readouterr()
+
+        assert main(["onboarding", "status", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+
+        assert payload["current_stage"] == "mailbox_login"
+        assert isinstance(payload["completed_stages"], list)
+        assert "started_at" in payload
+        assert "updated_at" in payload
+
+
 class TestMailboxCli:
     """Mailbox preflight routing and JSON passthrough."""
 
@@ -756,6 +810,47 @@ class TestTaskRoutes:
         assert payload["task"] == "latest-mail"
         assert payload["summary"] == "2 条线程需要关注"
         assert payload["urgent_top_k"][0]["thread_key"] == "项目A资源申请"
+
+    def test_task_latest_mail_unread_only_filters_and_rewrites_summary(self, phase4_root, capsys):
+        (phase4_root / "activity-pulse.json").write_text(
+            json.dumps(
+                {
+                    "generated_at": "2026-03-24T10:00:00+08:00",
+                    "notify_payload": {
+                        "generated_at": "2026-03-24T10:00:00+08:00",
+                        "stale": False,
+                        "urgent_top_k": [
+                            {"thread_key": "unread-urgent", "why": "x", "unread_count": 1},
+                            {"thread_key": "read-urgent", "why": "y", "unread_count": 0},
+                        ],
+                        "pending_count": 2,
+                        "summary": "推送摘要三条",
+                    },
+                    "notifiable_items": [],
+                    "recent_activity": [
+                        {"thread_key": "unread-recent", "unread_count": 2},
+                        {"thread_key": "read-recent", "unread_count": 0},
+                    ],
+                    "needs_attention": [
+                        {"thread_key": "unread-attn", "unread_count": 1},
+                    ],
+                    "thread_index": [],
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        assert main(["task", "latest-mail", "--unread-only", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["unread_only"] is True
+        assert [i["thread_key"] for i in payload["urgent_top_k"]] == ["unread-urgent"]
+        assert [i["thread_key"] for i in payload["recent_activity"]] == ["unread-recent"]
+        assert [i["thread_key"] for i in payload["needs_attention"]] == ["unread-attn"]
+        assert "未读视图" in payload["summary"]
+        assert "推送摘要三条" in payload["summary"]
+        assert payload["notify_payload"]["summary"] == payload["summary"]
+        assert payload["notify_payload"]["unread_only"] is True
 
     def test_task_todo_json_wraps_existing_queue_views(self, write_phase4, capsys):
         write_phase4("daily-urgent.yaml", {

@@ -881,6 +881,53 @@ def cmd_onboarding_start(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_onboarding_next(args: argparse.Namespace) -> int:
+    """Complete current onboarding stage and move to next stage."""
+    from .onboarding import complete_stage, get_next_stage, get_stage_prompt, load_state, save_state
+
+    state_root = _state_root()
+    state = load_state(state_root)
+
+    if state.current_stage == "not_started":
+        next_stage = get_next_stage("not_started")
+        if next_stage:
+            state.current_stage = next_stage
+
+    if state.current_stage == "completed":
+        output = {
+            "completed_stage": None,
+            "current_stage": "completed",
+            "completed_stages": state.completed_stages,
+            "prompt": "Onboarding already completed.",
+        }
+        if args.json:
+            print(json.dumps(output, ensure_ascii=False, indent=2))
+        else:
+            print("✅ Onboarding 已完成")
+        return 0
+
+    completed_stage = state.current_stage
+    complete_stage(state, state.current_stage)
+    save_state(state_root, state)
+
+    output = {
+        "completed_stage": completed_stage,
+        "current_stage": state.current_stage,
+        "completed_stages": state.completed_stages,
+        "prompt": get_stage_prompt(state.current_stage),
+    }
+
+    if args.json:
+        print(json.dumps(output, ensure_ascii=False, indent=2))
+    else:
+        print(f"✅ 已完成阶段: {completed_stage}")
+        print(f"➡️ 当前阶段: {state.current_stage}")
+        if state.current_stage != "completed":
+            print(get_stage_prompt(state.current_stage))
+
+    return 0
+
+
 def cmd_push_subscribe(args: argparse.Namespace) -> int:
     """Subscribe to push notifications."""
     from .push_subscription import subscribe
@@ -2102,6 +2149,9 @@ def _build_parser() -> argparse.ArgumentParser:
     onboarding_status = onboarding_sub.add_parser("status", help="Show onboarding progress")
     onboarding_status.add_argument("--json", action="store_true", help="Output as JSON")
 
+    onboarding_next = onboarding_sub.add_parser("next", help="Complete current stage and move to next")
+    onboarding_next.add_argument("--json", action="store_true", help="Output as JSON")
+
     # push commands
     push_parser = subparsers.add_parser("push", help="Push notification subscriptions")
     push_sub = push_parser.add_subparsers(dest="push_command", required=True)
@@ -2271,6 +2321,8 @@ def main(argv: list[str] | None = None) -> int:
                 return cmd_onboarding_start(args)
             elif args.onboarding_command == "status":
                 return cmd_onboarding_status(args)
+            elif args.onboarding_command == "next":
+                return cmd_onboarding_next(args)
         elif args.command == "push":
             if args.push_command == "subscribe":
                 return cmd_push_subscribe(args)

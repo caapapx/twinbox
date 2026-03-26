@@ -18,6 +18,8 @@ from uuid import uuid4
 from twinbox_core.daytime_slice import DaytimeSliceError, write_activity_pulse
 from twinbox_core.openclaw_bridge import OpenClawBridgeError, poll_openclaw_bridge
 from twinbox_core.paths import PathResolutionError, resolve_existing_dir, resolve_state_root
+from twinbox_core.push_dispatcher import dispatch_push
+from twinbox_core.push_subscription import get_active_subscriptions
 
 
 @dataclass(frozen=True)
@@ -649,6 +651,7 @@ def run_scheduled_job(
         archive_path: str | None = None
         pulse_path: str | None = None
         pulse_payload: dict[str, object] | None = None
+        push_dispatch_result: dict[str, object] | None = None
         final_exit = 1
 
         for attempt_index in range(1, attempt_total + 1):
@@ -680,6 +683,19 @@ def run_scheduled_job(
             attempts.append(attempt_record)
             final_exit = step_exit
             if step_exit == 0:
+                if not dry_run and pulse_payload and job.id == "daytime-sync":
+                    active_subscriptions = get_active_subscriptions(state_root)
+                    if active_subscriptions:
+                        try:
+                            push_dispatch_result = dispatch_push(state_root, pulse_payload)
+                        except Exception as exc:
+                            push_dispatch_result = {
+                                "status": "failed",
+                                "error": str(exc),
+                                "sent": 0,
+                                "failed": len(active_subscriptions),
+                                "skipped": 0,
+                            }
                 break
 
         finished_at = datetime.now().astimezone().isoformat(timespec="seconds")
@@ -704,6 +720,7 @@ def run_scheduled_job(
                 "attempts": attempts,
                 "archive_path": archive_path,
                 "activity_pulse_path": pulse_path,
+                "push_dispatch": push_dispatch_result,
             }
             log_path = _append_schedule_log(state_root, record)
 
@@ -717,6 +734,7 @@ def run_scheduled_job(
             "finished_at": finished_at,
             "retry_attempted": len(attempts) > 1,
             "alert_required": final_exit != 0,
+            "push_dispatch": push_dispatch_result,
             "artifact_paths": {
                 "activity_pulse": pulse_path,
                 "archive": archive_path,

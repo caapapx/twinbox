@@ -55,6 +55,7 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 | Test a routing rule against recent threads | `twinbox rule test --rule-id RULE_ID --json` |
 | Start onboarding flow | `twinbox onboarding start --json` |
 | Check onboarding progress | `twinbox onboarding status --json` |
+| Advance onboarding to next stage | `twinbox onboarding next --json` |
 | Subscribe to push notifications | `twinbox push subscribe SESSION_ID --json` |
 | List push subscriptions | `twinbox push list --json` |
 | Inspect one exact thread / “把这个线程内容返回给我看看” / “先读这个线程” | `twinbox thread inspect THREAD_ID --json` 或 OpenClaw 工具 `twinbox_thread_inspect` 且传 `thread_id` |

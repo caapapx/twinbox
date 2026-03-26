@@ -63,6 +63,7 @@
 但也新增了一条明确边界：
 
 - agent 在自然语言提示下“自己执行 Twinbox preflight”目前仍不可靠，不能把它当成 `preflightCommand` 或 skill command 已闭环的证据
+- 对话式渐进初始化现在已经覆盖用户态配置主路径：邮箱探测/登录、画像、材料、路由规则、推送订阅；但宿主态部署动作（skill 同步、Gateway reload、env 注入、bridge/poller/systemd 安装）仍需外部执行路径，不能假设只靠渠道消息框自动完成
 
 ## 推荐使用策略
 
