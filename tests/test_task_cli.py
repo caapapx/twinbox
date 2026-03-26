@@ -592,17 +592,48 @@ class TestQueueDigestThreadCli:
     def test_schedule_update_and_reset_json_contract(self, monkeypatch, tmp_path, capsys):
         monkeypatch.setenv("TWINBOX_STATE_ROOT", str(tmp_path))
         monkeypatch.setenv("TWINBOX_CANONICAL_ROOT", str(tmp_path))
+        sync_results = iter(
+            [
+                {
+                    "status": "updated",
+                    "job_id": "job-1",
+                    "job_name": "daily-refresh",
+                    "scheduled_job": "daytime-sync",
+                    "platform_name": "twinbox-daily-refresh",
+                    "cron": "45 9 * * *",
+                    "timezone": "Asia/Shanghai",
+                    "message": "OpenClaw cron job synced.",
+                },
+                {
+                    "status": "updated",
+                    "job_id": "job-1",
+                    "job_name": "daily-refresh",
+                    "scheduled_job": "daytime-sync",
+                    "platform_name": "twinbox-daily-refresh",
+                    "cron": "30 8 * * *",
+                    "timezone": "Asia/Shanghai",
+                    "message": "OpenClaw cron job synced.",
+                },
+            ]
+        )
+        monkeypatch.setattr(
+            "twinbox_core.schedule_override.sync_schedule_to_openclaw",
+            lambda **_kwargs: next(sync_results),
+        )
 
         assert main(["schedule", "update", "daily-refresh", "--cron", "45 9 * * *", "--json"]) == 0
         updated = json.loads(capsys.readouterr().out)
         assert updated["job_name"] == "daily-refresh"
         assert updated["effective_cron"] == "45 9 * * *"
-        assert "OpenClaw" in updated["next_action"]
+        assert updated["platform_sync"]["status"] == "updated"
+        assert updated["platform_sync"]["job_id"] == "job-1"
+        assert updated["next_action"] == "OpenClaw cron job synced."
 
         assert main(["schedule", "reset", "daily-refresh", "--json"]) == 0
         reset = json.loads(capsys.readouterr().out)
         assert reset["job_name"] == "daily-refresh"
         assert reset["source"] == "default"
+        assert reset["platform_sync"]["status"] == "updated"
 
     def test_schedule_update_invalid_cron_exits_1(self, monkeypatch, tmp_path):
         monkeypatch.setenv("TWINBOX_STATE_ROOT", str(tmp_path))

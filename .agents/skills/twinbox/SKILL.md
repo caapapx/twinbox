@@ -83,7 +83,7 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 - If `activity-pulse.json` is missing or stale, run `twinbox-orchestrate schedule --job daytime-sync` and explain the refresh
 - `daytime-sync` now enters through the incremental Phase 1 entrypoint (`scripts/phase1_incremental.sh`) before Phase 3/4 daytime projection
 - The incremental Phase 1 path uses UID watermarks and automatically falls back to the existing full loader when `UIDVALIDITY` changes
-- `twinbox schedule update/reset` only changes `runtime/context/schedule-overrides.yaml`; OpenClaw-hosted cron still requires manual redeploy or refresh because platform-side dynamic schedule update is not wired yet
+- `twinbox schedule update/reset` writes `runtime/context/schedule-overrides.yaml` and then attempts to sync the matching Twinbox OpenClaw cron job via `openclaw cron list/edit/add`; if Gateway access fails, the command still preserves the runtime override and exposes `platform_sync.status=error` in JSON output
 - Stay read-only unless the user explicitly asks for draft/action generation
 - **Never end a task turn with only file reads and no text answer.** A turn with `assistant.content=[]` or no text is a failure — always produce real command output followed by a summary
 - **OpenClaw 模型偶发空回复**：若连续出现「有 token 但正文为空」，先**新开会话**再试；技能/工具更新后旧会话里的 `skillsSnapshot` 可能仍引用旧说明（见 Hosted Defaults）。
