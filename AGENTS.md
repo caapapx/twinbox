@@ -47,3 +47,7 @@
    - **推送**：具备 `git` 写权限与网络、且用户**未**要求「勿推送 / 仅本地 / draft」时，执行 `git push` 到当前跟踪的远程分支（本仓库约定为 `master`）
    - **环境受限**：沙箱禁用网络、无凭据、或推送被拒时，说明原因并保留本地 commit，由用户手动 `git push`
    - **禁止**：对共享分支 `git push --force`；非用户明确要求不擅自 `git commit --no-verify` / 绕过 hook
+7. **Skill 与 OpenClaw 同步约束**：当新增或修改 CLI 命令、核心功能（如新增参数、修改规则逻辑）或 OpenClaw Tool (`register-twinbox-tools.mjs`) 时，**必须**执行以下同步操作：
+   - 更新 `SKILL.md`（以及 `.agents/skills/twinbox/SKILL.md` 等相关副本）中对应的说明、参数和示例。
+   - 将最新的 `SKILL.md` 同步到 OpenClaw 目录：`cp SKILL.md ~/.openclaw/skills/twinbox/SKILL.md`
+   - 重新加载 OpenClaw 网关以使 Tool 变更生效：`openclaw gateway restart`

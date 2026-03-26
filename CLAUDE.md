@@ -23,6 +23,7 @@ twinbox 是一个以线程为中心的邮件 Copilot 基础设施。
 4. 新增文档先查 `docs/README.md`，优先合并，避免扩目录
 5. 新增/移动入口级文档时同步更新索引（`docs/README.md`、`AGENTS.md` 核心文档入口或子目录 README）；细则见 AGENTS.md
 6. 约定验证（如相关 pytest / 指定 smoke）高置信度通过后：应 `git commit`；环境允许且未要求仅本地时应 `git push`；禁止对共享分支 `push --force`；细则见 AGENTS.md
+7. **Skill 同步约束**：新增或修改 CLI 命令、核心功能或 Tool 时，必须同步更新 `SKILL.md` 并部署到 OpenClaw（详见 AGENTS.md 协作约束）。
 
 ## 文档索引与协作规则
 
