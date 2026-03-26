@@ -1,0 +1,29 @@
+[
+  {
+    "id": "sample-direct",
+    "folder": "INBOX",
+    "subject": "To you with CC",
+    "from": {"name": "Alice", "addr": "alice@example.com"},
+    "to": {"name": "Owner", "addr": "owner@example.com"},
+    "cc": {"name": "Bob", "addr": "bob@example.com"}
+  },
+  {
+    "id": "sample-multi-to",
+    "folder": "INBOX",
+    "subject": "Multiple To",
+    "from": {"addr": "noreply@example.com"},
+    "to": [
+      {"name": "Group", "addr": "group@example.com"},
+      {"name": "Owner", "addr": "owner@example.com"}
+    ],
+    "cc": []
+  },
+  {
+    "id": "sample-list",
+    "folder": "INBOX",
+    "subject": "Mailing list",
+    "from": {"addr": "list-bounce@example.com"},
+    "to": [{"addr": "dev-group@example.com"}],
+    "list_id": "<dev-group.example.com>"
+  }
+]
