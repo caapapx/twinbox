@@ -10,6 +10,7 @@ rules:
       value:
       - group_only
       - cc_only
+      - indirect
     - field: semantic_intent
       operator: is_true
       value: 这是一封系统自动生成的告警、监控或流水线通知
@@ -30,6 +31,7 @@ rules:
       value:
       - group_only
       - cc_only
+      - indirect
     - field: semantic_intent
       operator: is_true
       value: 这是一封关于部署资源申请、版本发布或审批的邮件

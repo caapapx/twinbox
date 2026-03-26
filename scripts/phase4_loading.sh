@@ -262,11 +262,30 @@ for (const c of candidates) {
   try {
     const phase3Context = JSON.parse(fs.readFileSync(phase4Dir.replace('phase-4', 'phase-3') + '/context-pack.json', 'utf8'));
     const p3Thread = (phase3Context.top_threads || []).find(t => t.thread_key === c.key);
-    if (p3Thread && p3Thread.recipient_role) {
+    if (p3Thread && p3Thread.recipient_role && p3Thread.recipient_role !== 'unknown') {
       recipientRole = p3Thread.recipient_role;
     }
   } catch (e) {
     // Ignore
+  }
+
+  // Fallback to envelope 'to' field if still unknown
+  if (recipientRole === 'unknown') {
+    const ownerAddr = mailAddress.toLowerCase();
+    let isTo = false;
+    if (e.to) {
+      if (Array.isArray(e.to)) {
+        isTo = e.to.some(t => (t.addr || t.email || '').toLowerCase() === ownerAddr);
+      } else if (typeof e.to === 'object') {
+        isTo = (e.to.addr || e.to.email || '').toLowerCase() === ownerAddr;
+      }
+    }
+    // If we have a 'to' field but owner is not in it, it's indirect (cc/group)
+    if (!isTo && e.to && (Array.isArray(e.to) ? e.to.length > 0 : Object.keys(e.to).length > 0)) {
+      recipientRole = 'indirect';
+    } else if (isTo) {
+      recipientRole = 'direct';
+    }
   }
 
   threadContexts.push({
@@ -295,7 +314,6 @@ const hasHabits = habitsRaw && habitsRaw !== 'habits: []';
 const hasMaterialExtracts = materialBundle.trim().length > 50;
 const ownerFocus = {
   primary_role_hypotheses: extractPersonaHypotheses(personaRaw, 3),
-  weekly_brief_priorities: extractBulletBlock(calibrationRaw, '应优先看到', 4),
   demote_categories: [
     '与当前岗位主线无关的广播类通知',
     '培训、HR、泛宣传邮件（除非本周明确要求本人处理）',
