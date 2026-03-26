@@ -167,6 +167,7 @@ const bodyMap = new Map(existingBodies.map(b => [String(b.id), b]));
 function normThread(subject) {
   return String(subject || '').toLowerCase()
     .replace(/^(\s*(re|fw|fwd|回复|转发|答复)\s*[:：])+\s*/gi, '')
+    .replace(/[-_ ]?(20\d{6}|\d{8})$/, '')
     .replace(/\s+/g, ' ').trim() || '(no-subject)';
 }
 
@@ -255,7 +256,8 @@ for (const c of candidates) {
   }
 
   // Find lifecycle stage from Phase 3
-  const sample = (threadSamples.samples || []).find(s => s.thread_key === c.key);
+  // Phase 3 thread_key format: "subject(count)", Phase 4 c.key is plain subject
+  const sample = (threadSamples.samples || []).find(s => s.thread_key.replace(/\(\d+\)$/, '') === c.key);
   
   // Find recipient_role from Phase 3 context pack if available
   let recipientRole = 'unknown';
