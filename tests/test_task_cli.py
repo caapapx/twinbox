@@ -479,6 +479,88 @@ class TestQueueDigestThreadCli:
         assert "daily-urgent.yaml" in out
         assert "phase-4" in out
 
+    def test_queue_dismiss_writes_user_queue_state(self, phase4_root, capsys):
+        (phase4_root / "activity-pulse.json").write_text(
+            json.dumps(
+                {
+                    "generated_at": "2026-03-24T10:00:00+08:00",
+                    "notifiable_items": [],
+                    "recent_activity": [],
+                    "needs_attention": [],
+                    "thread_index": [
+                        {
+                            "thread_key": "项目北辰资源申请",
+                            "latest_subject": "项目北辰资源申请",
+                            "last_activity_at": "2026-03-24T09:30:00+08:00",
+                            "latest_message_ref": "INBOX#501",
+                            "new_message_count": 1,
+                            "message_count": 1,
+                            "unread_count": 1,
+                            "queue_tags": ["pending"],
+                            "waiting_on": "me",
+                            "flow": "delivery",
+                            "stage": "open",
+                            "why": "等待资源确认",
+                            "fingerprint": "INBOX#501|pending|me|delivery|open",
+                            "query_terms": ["项目北辰"],
+                            "score": 50,
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        assert main(["queue", "dismiss", "项目北辰资源申请", "--reason", "已处理", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+
+        assert payload["thread_key"] == "项目北辰资源申请"
+        assert payload["status"] == "dismissed"
+
+    def test_queue_complete_and_restore_return_json_contract(self, phase4_root, capsys):
+        (phase4_root / "activity-pulse.json").write_text(
+            json.dumps(
+                {
+                    "generated_at": "2026-03-24T10:00:00+08:00",
+                    "notifiable_items": [],
+                    "recent_activity": [],
+                    "needs_attention": [],
+                    "thread_index": [
+                        {
+                            "thread_key": "Invoice #2026-003",
+                            "latest_subject": "Invoice #2026-003",
+                            "last_activity_at": "2026-03-24T09:30:00+08:00",
+                            "latest_message_ref": "INBOX#900",
+                            "new_message_count": 1,
+                            "message_count": 1,
+                            "unread_count": 0,
+                            "queue_tags": ["urgent"],
+                            "waiting_on": "them",
+                            "flow": "billing",
+                            "stage": "approval",
+                            "why": "等待对方确认",
+                            "fingerprint": "INBOX#900|urgent|them|billing|approval",
+                            "query_terms": ["invoice"],
+                            "score": 60,
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        assert main(["queue", "complete", "Invoice #2026-003", "--action-taken", "已归档", "--json"]) == 0
+        completed = json.loads(capsys.readouterr().out)
+        assert completed["status"] == "completed"
+
+        assert main(["queue", "restore", "Invoice #2026-003", "--json"]) == 0
+        restored = json.loads(capsys.readouterr().out)
+        assert restored["status"] == "restored"
+
     def test_digest_daily_json_schema(self, phase4_root, capsys):
         """Daily digest JSON must include digest_type, sections, generated_at, stale."""
         assert main(["digest", "daily", "--json"]) == 0

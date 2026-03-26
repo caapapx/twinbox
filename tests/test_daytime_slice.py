@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import yaml
 
@@ -68,6 +70,7 @@ def test_build_activity_pulse_projects_recent_threads(monkeypatch, tmp_path):
 
 def test_write_activity_pulse_updates_dedupe_and_suppresses_duplicate(monkeypatch, tmp_path):
     monkeypatch.setenv("TWINBOX_CANONICAL_ROOT", str(tmp_path))
+    recent = (datetime.now(ZoneInfo("Asia/Shanghai")) - timedelta(hours=1)).isoformat(timespec="seconds")
     _write_json(
         tmp_path / "runtime/validation/phase-1/raw/envelopes-merged.json",
         [
@@ -75,7 +78,7 @@ def test_write_activity_pulse_updates_dedupe_and_suppresses_duplicate(monkeypatc
                 "id": "301",
                 "folder": "INBOX",
                 "subject": "客户A部署反馈",
-                "date": "2026-03-25T09:00:00+08:00",
+                "date": recent,
             }
         ],
     )
@@ -110,3 +113,84 @@ def test_search_activity_pulse_supports_thread_key_and_business_keyword(monkeypa
     assert by_thread_key
     assert by_keyword[0]["thread_key"] == "宁夏fdz现场国化资源申请"
     assert by_thread_key[0]["thread_key"] == "宁夏fdz现场国化资源申请"
+
+
+def test_build_activity_pulse_filters_dismissed_threads(monkeypatch, tmp_path):
+    monkeypatch.setenv("TWINBOX_CANONICAL_ROOT", str(tmp_path))
+    _write_json(
+        tmp_path / "runtime/validation/phase-1/raw/envelopes-merged.json",
+        [
+            {
+                "id": "501",
+                "folder": "INBOX",
+                "subject": "项目北辰资源申请",
+                "date": "2026-03-26T10:00:00+08:00",
+            }
+        ],
+    )
+    _write_yaml(
+        tmp_path / "runtime/context/user-queue-state.yaml",
+        {
+            "dismissed": [
+                {
+                    "thread_key": "项目北辰资源申请",
+                    "dismissed_at": "2026-03-26T10:05:00+08:00",
+                    "reason": "已看过",
+                    "dismissed_from_queue": "pending",
+                    "snapshot": {
+                        "latest_message_ref": "INBOX#501",
+                        "message_count": 1,
+                        "fingerprint": "INBOX#501||||",
+                        "last_activity_at": "2026-03-26T10:00:00+08:00",
+                    },
+                }
+            ],
+            "completed": [],
+        },
+    )
+
+    pulse = build_activity_pulse(top_k=3)
+
+    assert pulse["notifiable_items"] == []
+    assert pulse["thread_index"] == []
+
+
+def test_build_activity_pulse_reactivates_dismissed_thread_on_new_fingerprint(monkeypatch, tmp_path):
+    monkeypatch.setenv("TWINBOX_CANONICAL_ROOT", str(tmp_path))
+    _write_json(
+        tmp_path / "runtime/validation/phase-1/raw/envelopes-merged.json",
+        [
+            {
+                "id": "601",
+                "folder": "INBOX",
+                "subject": "项目北辰资源申请",
+                "date": "2026-03-26T10:30:00+08:00",
+            }
+        ],
+    )
+    _write_yaml(
+        tmp_path / "runtime/context/user-queue-state.yaml",
+        {
+            "dismissed": [
+                {
+                    "thread_key": "项目北辰资源申请",
+                    "dismissed_at": "2026-03-26T10:05:00+08:00",
+                    "reason": "已看过",
+                    "dismissed_from_queue": "pending",
+                    "snapshot": {
+                        "latest_message_ref": "INBOX#500",
+                        "message_count": 1,
+                        "fingerprint": "INBOX#500||||",
+                        "last_activity_at": "2026-03-26T10:00:00+08:00",
+                    },
+                }
+            ],
+            "completed": [],
+        },
+    )
+
+    pulse = build_activity_pulse(top_k=3)
+
+    assert pulse["thread_index"][0]["thread_key"] == "项目北辰资源申请"
+    payload = yaml.safe_load((tmp_path / "runtime/context/user-queue-state.yaml").read_text(encoding="utf-8"))
+    assert payload["dismissed"] == []

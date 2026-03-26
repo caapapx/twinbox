@@ -424,8 +424,8 @@ def _scheduled_job_steps(job: ScheduledJob, code_root: Path) -> list[tuple[str, 
     if job.id == "daytime-sync":
         return [
             (
-                "Phase 1 Loading (daytime)",
-                ["bash", str(code_root / "scripts/phase1_loading.sh"), "--sample-body-count", "30"],
+                "Phase 1 Incremental (daytime)",
+                ["bash", str(code_root / "scripts/phase1_incremental.sh"), "--sample-body-count", "30"],
             ),
             (
                 "Phase 3 Loading (daytime)",

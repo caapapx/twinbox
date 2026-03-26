@@ -23,6 +23,7 @@ from .mailbox import format_preflight_text, run_preflight
 from .material_extract import MaterialExtractError, write_extract_for_import
 from .paths import resolve_state_root
 from .routing_rules import evaluate_rule, load_rules, load_rules_raw, save_rules_raw, RoutingRule
+from .user_queue_state import complete_thread, dismiss_thread, restore_thread
 
 @dataclass(frozen=True)
 class ThreadCard:
@@ -224,6 +225,20 @@ def _find_thread_in_activity_pulse(thread_id: str) -> dict[str, Any] | None:
         if isinstance(item, dict) and _thread_matches(item.get("thread_key"), thread_id):
             return item
     return None
+
+
+def _pulse_snapshot_for_thread(thread_id: str) -> dict[str, Any] | None:
+    item = _find_thread_in_activity_pulse(thread_id)
+    if not isinstance(item, dict):
+        return None
+    return {
+        "thread_key": str(item.get("thread_key", "") or ""),
+        "latest_message_ref": str(item.get("latest_message_ref", "") or ""),
+        "message_count": int(item.get("message_count", 0) or 0),
+        "fingerprint": str(item.get("fingerprint", "") or ""),
+        "last_activity_at": str(item.get("last_activity_at", "") or ""),
+        "queue_tags": item.get("queue_tags", []) if isinstance(item.get("queue_tags"), list) else [],
+    }
 
 
 def _find_thread_sampled_body(thread_id: str, latest_message_ref: str = "") -> dict[str, Any] | None:
@@ -519,6 +534,71 @@ twinbox 的队列视图从 Phase 4 artifacts 投影而来，不是独立的数�
 - urgent 队列不需要审阅，可直接执行
 """
     print(explanation.strip())
+    return 0
+
+
+def cmd_queue_dismiss(args: argparse.Namespace) -> int:
+    """Dismiss a thread from queue-facing pulse views."""
+    snapshot = _pulse_snapshot_for_thread(args.thread_id)
+    if not snapshot:
+        print(f"错误: 未找到线程 '{args.thread_id}'", file=sys.stderr)
+        return 1
+    queue_tags = snapshot.get("queue_tags", [])
+    dismissed_from_queue = queue_tags[0] if isinstance(queue_tags, list) and queue_tags else ""
+    dismiss_thread(
+        state_root=_state_root(),
+        thread_key=str(snapshot["thread_key"]),
+        snapshot=snapshot,
+        reason=args.reason,
+        dismissed_from_queue=dismissed_from_queue,
+    )
+    output = {
+        "thread_key": snapshot["thread_key"],
+        "status": "dismissed",
+        "reason": args.reason,
+    }
+    if args.json:
+        print(json.dumps(output, ensure_ascii=False, indent=2))
+    else:
+        print(f"已忽略线程: {snapshot['thread_key']}")
+    return 0
+
+
+def cmd_queue_complete(args: argparse.Namespace) -> int:
+    """Mark a thread as completed so it stays hidden until restored."""
+    snapshot = _pulse_snapshot_for_thread(args.thread_id)
+    if not snapshot:
+        print(f"错误: 未找到线程 '{args.thread_id}'", file=sys.stderr)
+        return 1
+    complete_thread(
+        state_root=_state_root(),
+        thread_key=str(snapshot["thread_key"]),
+        snapshot=snapshot,
+        action_taken=args.action_taken,
+    )
+    output = {
+        "thread_key": snapshot["thread_key"],
+        "status": "completed",
+        "action_taken": args.action_taken,
+    }
+    if args.json:
+        print(json.dumps(output, ensure_ascii=False, indent=2))
+    else:
+        print(f"已完成线程: {snapshot['thread_key']}")
+    return 0
+
+
+def cmd_queue_restore(args: argparse.Namespace) -> int:
+    """Restore a thread back to visible queue state."""
+    restore_thread(state_root=_state_root(), thread_key=args.thread_id)
+    output = {
+        "thread_key": args.thread_id,
+        "status": "restored",
+    }
+    if args.json:
+        print(json.dumps(output, ensure_ascii=False, indent=2))
+    else:
+        print(f"已恢复线程: {args.thread_id}")
     return 0
 
 
@@ -2189,6 +2269,20 @@ def _build_parser() -> argparse.ArgumentParser:
 
     queue_sub.add_parser("explain", help="Explain queue projection")
 
+    queue_dismiss = queue_sub.add_parser("dismiss", help="Dismiss a thread from queue views")
+    queue_dismiss.add_argument("thread_id", help="Thread key to dismiss")
+    queue_dismiss.add_argument("--reason", default="已处理", help="Why this thread is being dismissed")
+    queue_dismiss.add_argument("--json", action="store_true", help="Output as JSON")
+
+    queue_complete = queue_sub.add_parser("complete", help="Mark a thread as completed")
+    queue_complete.add_argument("thread_id", help="Thread key to complete")
+    queue_complete.add_argument("--action-taken", default="已完成", help="Action that closed the thread")
+    queue_complete.add_argument("--json", action="store_true", help="Output as JSON")
+
+    queue_restore = queue_sub.add_parser("restore", help="Restore a dismissed or completed thread")
+    queue_restore.add_argument("thread_id", help="Thread key to restore")
+    queue_restore.add_argument("--json", action="store_true", help="Output as JSON")
+
     # thread commands
     thread_parser = subparsers.add_parser("thread", help="Thread inspection")
     thread_sub = thread_parser.add_subparsers(dest="thread_command", required=True)
@@ -2343,6 +2437,12 @@ def main(argv: list[str] | None = None) -> int:
                 return cmd_queue_show(args)
             elif args.queue_command == "explain":
                 return cmd_queue_explain(args)
+            elif args.queue_command == "dismiss":
+                return cmd_queue_dismiss(args)
+            elif args.queue_command == "complete":
+                return cmd_queue_complete(args)
+            elif args.queue_command == "restore":
+                return cmd_queue_restore(args)
         elif args.command == "thread":
             if args.thread_command == "inspect":
                 return cmd_thread_inspect(args)

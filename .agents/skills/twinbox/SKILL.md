@@ -25,6 +25,7 @@ For mail/queue/digest requests: run the matching `twinbox` command with `--json`
 - Mailbox env collection and login preflight via `twinbox mailbox preflight --json`
 - Summarizing "latest mail situation", "today's updates", or "what happened today"
 - Listing urgent items, pending replies, and SLA-ish risks from current artifacts
+- Dismissing, completing, or restoring queue-visible threads through `twinbox queue ...`
 - Looking up the latest progress of one thread, subject, project, or business keyword
 - Showing daily / pulse / weekly digests from current Twinbox artifacts
 - Suggesting actions or review items from current queue state
@@ -48,6 +49,9 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 | Latest mail / today summary / "最新邮件情况" / 帮我查看下最新的邮件情况 | `twinbox task latest-mail --json` |
 | 最新未读邮件 / 未读 / 只看未读 / 「不要已读的」 | `twinbox task latest-mail --unread-only --json` **或** OpenClaw 工具 `twinbox_latest_mail` 且 **`unread_only: true`**（必须二选一执行，禁止只读 SKILL 就结束） |
 | "我有哪些待办 / 待回复 / 最值得关注的线程" | `twinbox task todo --json` |
+| 暂时忽略某个线程 / 标记已处理但先别再提醒 | `twinbox queue dismiss THREAD_ID --reason "..." --json` |
+| 标记某个线程已完成 | `twinbox queue complete THREAD_ID --action-taken "..." --json` |
+| 恢复一个 dismissed/completed 线程 | `twinbox queue restore THREAD_ID --json` |
 | "某个事情进展如何" / progress on a topic | `twinbox task progress QUERY --json` |
 | Mailbox status / env diagnosis | `twinbox task mailbox-status --json` |
 | Weekly brief lookup | `twinbox task weekly --json` |
@@ -73,6 +77,7 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 - For the latest mail situation (including casual Chinese variants), use `twinbox task latest-mail --json` first; do not start with `preflight` unless connectivity is the explicit problem. If the user explicitly asks for "未读" (unread), pass `--unread-only` to the command or `unread_only: true` to the tool.
 - If the user wants one exact thread's content/details/status, prefer `twinbox thread inspect THREAD_ID --json` or `twinbox_thread_inspect`; do not use `task progress` unless the request is fuzzy/topic-based.
 - If `activity-pulse.json` is missing or stale, run `twinbox-orchestrate schedule --job daytime-sync` and explain the refresh
+- `daytime-sync` now enters through the incremental Phase 1 entrypoint (`scripts/phase1_incremental.sh`) before Phase 3/4 daytime projection
 - Stay read-only unless the user explicitly asks for draft/action generation
 - **Never end a task turn with only file reads and no text answer.** A turn with `assistant.content=[]` or no text is a failure — always produce real command output followed by a summary
 - **OpenClaw 模型偶发空回复**：若连续出现「有 token 但正文为空」，先**新开会话**再试；技能/工具更新后旧会话里的 `skillsSnapshot` 可能仍引用旧说明（见 Hosted Defaults）。
@@ -98,6 +103,9 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 - `twinbox task mailbox-status --json`
 - `twinbox task latest-mail --json`
 - `twinbox task todo --json`
+- `twinbox queue dismiss THREAD_ID --reason "已处理" --json`
+- `twinbox queue complete THREAD_ID --action-taken "已归档" --json`
+- `twinbox queue restore THREAD_ID --json`
 - `twinbox task progress QUERY --json`
 - `twinbox digest pulse --json`
 - `twinbox-orchestrate roots`

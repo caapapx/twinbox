@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 from twinbox_core.orchestration import (
     CLI_ENTRYPOINT,
     LEGACY_ENTRYPOINT,
+    _scheduled_job_steps,
     contract_payload,
     dispatch_bridge_event,
     get_phase_contract,
@@ -89,6 +90,14 @@ class OrchestrationTest(unittest.TestCase):
         self.assertEqual(job.id, "daytime-sync")
         self.assertTrue(job.updates_dedupe)
         self.assertFalse(job.archive_on_success)
+
+    def test_daytime_sync_uses_incremental_phase1_script(self) -> None:
+        job = get_scheduled_job("daytime-sync")
+
+        steps = _scheduled_job_steps(job, self.repo_root)
+
+        self.assertEqual(steps[0][0], "Phase 1 Incremental (daytime)")
+        self.assertIn("scripts/phase1_incremental.sh", steps[0][1][1])
 
     def test_run_scheduled_job_daytime_dry_run_returns_notify_payload(self) -> None:
         with TemporaryDirectory() as temp_dir:

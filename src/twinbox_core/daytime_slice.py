@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 import yaml
 
 from .paths import resolve_state_root as resolve_shared_state_root
+from .user_queue_state import filter_thread_snapshots
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 
@@ -299,18 +300,25 @@ def build_activity_pulse(
 
     queue_membership, queue_generated = _queue_membership(resolved_root)
     snapshots = _build_thread_index(envelopes, queue_membership, window_hours=window_hours)
+    visible_snapshots = [
+        ThreadSnapshot(**item)
+        for item in filter_thread_snapshots(
+            state_root=resolved_root,
+            snapshots=[snapshot.to_dict() for snapshot in snapshots],
+        )
+    ]
     dedupe_state = _load_dedupe_state(resolved_root)
     delivered = dedupe_state.get("threads", {}) if isinstance(dedupe_state.get("threads"), dict) else {}
-    notifiable = _filter_notifiable(snapshots, delivered, top_k=top_k)
-    recent_activity = [item for item in snapshots if item.new_message_count > 0][:20]
-    needs_attention = [item for item in snapshots if item.queue_tags][:20]
+    notifiable = _filter_notifiable(visible_snapshots, delivered, top_k=top_k)
+    recent_activity = [item for item in visible_snapshots if item.new_message_count > 0][:20]
+    needs_attention = [item for item in visible_snapshots if item.queue_tags][:20]
 
     payload = {
         "generated_at": generated_at(),
         "window_hours": window_hours,
         "top_k": top_k,
         "summary": {
-            "tracked_threads": len(snapshots),
+            "tracked_threads": len(visible_snapshots),
             "recent_activity_count": len(recent_activity),
             "needs_attention_count": len(needs_attention),
             "notifiable_count": len(notifiable),
@@ -330,7 +338,7 @@ def build_activity_pulse(
         "notifiable_items": [item.to_dict() for item in notifiable],
         "recent_activity": [item.to_dict() for item in recent_activity],
         "needs_attention": [item.to_dict() for item in needs_attention],
-        "thread_index": [item.to_dict() for item in snapshots],
+        "thread_index": [item.to_dict() for item in visible_snapshots],
     }
     return payload
 
