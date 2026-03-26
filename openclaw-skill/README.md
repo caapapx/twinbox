@@ -63,7 +63,7 @@
 但也新增了一条明确边界：
 
 - agent 在自然语言提示下“自己执行 Twinbox preflight”目前仍不可靠，不能把它当成 `preflightCommand` 或 skill command 已闭环的证据
-- **分层设计**（详见 [DEPLOY.md](./DEPLOY.md) §1.2、§2.8）：用户态配置主路径是在 OpenClaw **`twinbox` 会话**里走 `twinbox onboarding …` 对话引导，长耗时刷新由 `twinbox-orchestrate schedule` / bridge / cron 在**后台**执行；**宿主态一次性接线**（skill 同步、Gateway reload、`skills.entries.twinbox.env`、roots init、可选 bridge/timer）仍需按 DEPLOY §2 在 shell/运维侧完成，不能假设仅靠聊天就能写入 `openclaw.json` 或安装 systemd
+- **分层设计**（详见 [DEPLOY.md](./DEPLOY.md) §2、§3.8）：用户态配置主路径是在 OpenClaw **`twinbox` 会话**里走 `twinbox onboarding …` 对话引导，长耗时刷新由 `twinbox-orchestrate schedule` / bridge / cron 在**后台**执行；**宿主态一次性接线**（skill 同步、Gateway reload、`skills.entries.twinbox.env`、roots init、可选 bridge/timer）仍需按 DEPLOY **§3** 在 shell/运维侧完成，不能假设仅靠聊天就能写入 `openclaw.json` 或安装 systemd
 
 ## 推荐使用策略
 
@@ -90,7 +90,7 @@
 
 ## 初始化重点
 
-**从零安装与 cwd 约定以 [DEPLOY.md](./DEPLOY.md) §2 为准**（本文下方命令假设当前在 `openclaw-skill/`）。
+**从零安装与 cwd 约定以 [DEPLOY.md](./DEPLOY.md) §3 为准**（本文下方命令假设当前在 `openclaw-skill/`）。
 
 native OpenClaw 部署不要只迁 `~/.openclaw`，还要初始化 Twinbox roots：
 
