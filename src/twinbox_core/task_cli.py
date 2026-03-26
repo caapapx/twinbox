@@ -690,16 +690,20 @@ def cmd_material_preview(args: argparse.Namespace) -> int:
             print(f"表头: {table_headers[0].strip()}")
         print()
 
-    # Analyze Phase 3 context for relevant threads
+    # Analyze context for relevant threads (prefer Phase 4 which has lifecycle_flow)
+    phase4_context = canonical_root / "runtime" / "validation" / "phase-4" / "context-pack.json"
     phase3_context = canonical_root / "runtime" / "validation" / "phase-3" / "context-pack.json"
-    if phase3_context.exists():
-        ctx = json.loads(phase3_context.read_text(encoding="utf-8"))
-        top_threads = ctx.get("top_threads", [])
+
+    context_path = phase4_context if phase4_context.exists() else phase3_context
+    if context_path.exists():
+        ctx = json.loads(context_path.read_text(encoding="utf-8"))
+        # Phase 4 uses 'threads', Phase 3 uses 'top_threads'
+        threads = ctx.get("threads") or ctx.get("top_threads", [])
 
         # Count threads by lifecycle_flow
         flow_counts = {}
-        for t in top_threads:
-            flow = t.get("lifecycle_flow", "UNMODELED")
+        for t in threads:
+            flow = t.get("lifecycle_flow") or "UNMODELED"
             flow_counts[flow] = flow_counts.get(flow, 0) + 1
 
         print("本周线程分布:")
