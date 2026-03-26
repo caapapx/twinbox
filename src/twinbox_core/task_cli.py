@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from dataclasses import dataclass
 from datetime import datetime
@@ -12,7 +13,12 @@ from typing import Any
 
 import yaml
 
-from .daytime_slice import DaytimeSliceError, load_activity_pulse, search_activity_pulse
+from .daytime_slice import (
+    DaytimeSliceError,
+    _normalize_thread as _normalize_activity_thread,
+    load_activity_pulse,
+    search_activity_pulse,
+)
 from .mailbox import format_preflight_text, run_preflight
 from .material_extract import MaterialExtractError, write_extract_for_import
 from .paths import resolve_state_root
@@ -140,6 +146,17 @@ def _load_yaml_artifact(path: Path) -> dict[str, Any]:
     return content
 
 
+def _load_json_artifact(path: Path) -> dict[str, Any]:
+    """Load a JSON artifact and return {} on any failure."""
+    if not path.exists():
+        return {}
+    try:
+        content = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return content if isinstance(content, dict) else {}
+
+
 def _is_stale(generated_at_str: str, max_age_hours: int = 24) -> bool:
     """Check if artifact is stale based on generated_at timestamp."""
     try:
@@ -158,6 +175,107 @@ def _get_phase4_dir() -> Path:
 
 def _state_root() -> Path:
     return resolve_state_root(Path.cwd())
+
+
+def _strip_thread_display_prefix(thread_id: str) -> str:
+    return re.sub(r"^\[(?:CC|GRP)\]\s*", "", str(thread_id or "").strip(), flags=re.IGNORECASE)
+
+
+def _thread_lookup_key(thread_id: str) -> str:
+    return _normalize_activity_thread(_strip_thread_display_prefix(thread_id))
+
+
+def _thread_matches(candidate: object, target: str) -> bool:
+    candidate_text = str(candidate or "").strip()
+    target_text = _strip_thread_display_prefix(target)
+    return (
+        candidate_text == target_text
+        or _thread_lookup_key(candidate_text) == _thread_lookup_key(target_text)
+    )
+
+
+def _message_id_from_ref(message_ref: object) -> str:
+    text = str(message_ref or "")
+    if "#" not in text:
+        return ""
+    return text.rsplit("#", 1)[-1].strip()
+
+
+def _find_thread_in_phase3_context(thread_id: str) -> dict[str, Any] | None:
+    payload = _load_json_artifact(_state_root() / "runtime" / "validation" / "phase-3" / "context-pack.json")
+    top_threads = payload.get("top_threads", [])
+    if not isinstance(top_threads, list):
+        return None
+    for item in top_threads:
+        if isinstance(item, dict) and _thread_matches(item.get("thread_key"), thread_id):
+            return item
+    return None
+
+
+def _find_thread_in_activity_pulse(thread_id: str) -> dict[str, Any] | None:
+    try:
+        payload = load_activity_pulse(_state_root())
+    except DaytimeSliceError:
+        return None
+    thread_index = payload.get("thread_index", [])
+    if not isinstance(thread_index, list):
+        return None
+    for item in thread_index:
+        if isinstance(item, dict) and _thread_matches(item.get("thread_key"), thread_id):
+            return item
+    return None
+
+
+def _find_thread_sampled_body(thread_id: str, latest_message_ref: str = "") -> dict[str, Any] | None:
+    payload = _load_json_artifact(_state_root() / "runtime" / "context" / "phase1-context.json")
+    sampled_bodies = payload.get("sampled_bodies", {})
+    envelopes = payload.get("envelopes", [])
+    if not isinstance(sampled_bodies, dict):
+        sampled_bodies = {}
+    if not isinstance(envelopes, list):
+        envelopes = []
+
+    preferred_id = _message_id_from_ref(latest_message_ref)
+    if preferred_id:
+        row = sampled_bodies.get(preferred_id)
+        if isinstance(row, dict):
+            return {
+                "message_id": preferred_id,
+                "subject": str(row.get("subject", "") or ""),
+                "body": str(row.get("body", "") or ""),
+                "date": "",
+            }
+
+    for envelope in reversed(envelopes):
+        if not isinstance(envelope, dict) or not _thread_matches(envelope.get("subject"), thread_id):
+            continue
+        message_id = str(envelope.get("id", "") or "")
+        row = sampled_bodies.get(message_id)
+        if not isinstance(row, dict):
+            continue
+        return {
+            "message_id": message_id,
+            "subject": str(row.get("subject", envelope.get("subject", "")) or ""),
+            "body": str(row.get("body", "") or ""),
+            "date": str(envelope.get("date", "") or ""),
+        }
+    return None
+
+
+def _thread_confidence(queue_data: dict[str, Any], pulse_data: dict[str, Any], context_data: dict[str, Any]) -> float:
+    for raw in (
+        queue_data.get("urgency_score"),
+        context_data.get("intent_confidence"),
+        pulse_data.get("score"),
+    ):
+        if raw is None or raw == "":
+            continue
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            continue
+        return value if value <= 1 else value / 100.0
+    return 0.0
 
 
 def _recipient_role_map() -> dict[str, str]:
@@ -827,6 +945,7 @@ def _find_thread_in_artifacts(thread_id: str) -> dict | None:
     canonical_root = _state_root()
 
     validation_root = canonical_root / "runtime" / "validation"
+    queue_hit: dict[str, Any] | None = None
 
     # Search in Phase 4 artifacts
     phase4_files = [
@@ -844,15 +963,42 @@ def _find_thread_in_artifacts(thread_id: str) -> dict | None:
 
         if queue_key in data and isinstance(data[queue_key], list):
             for item in data[queue_key]:
-                if item.get("thread_key") == thread_id:
-                    return {
-                        "thread_id": thread_id,
+                if _thread_matches(item.get("thread_key"), thread_id):
+                    queue_hit = {
+                        "thread_id": str(item.get("thread_key", "") or _strip_thread_display_prefix(thread_id)),
                         "queue_type": queue_key,
                         "data": item,
                         "source": str(artifact_path),
                     }
+                    break
+        if queue_hit:
+            break
+    pulse_item = _find_thread_in_activity_pulse(thread_id)
+    context_item = _find_thread_in_phase3_context(thread_id)
+    sampled_body = _find_thread_sampled_body(
+        thread_id,
+        latest_message_ref=str((pulse_item or {}).get("latest_message_ref", "") or ""),
+    )
 
-    return None
+    if not queue_hit and not pulse_item and not context_item and not sampled_body:
+        return None
+
+    resolved_thread_id = (
+        str((queue_hit or {}).get("thread_id", "") or "")
+        or str(((queue_hit or {}).get("data", {}) or {}).get("thread_key", "") or "")
+        or str((pulse_item or {}).get("thread_key", "") or "")
+        or str((context_item or {}).get("thread_key", "") or "")
+        or _strip_thread_display_prefix(thread_id)
+    )
+    return {
+        "thread_id": resolved_thread_id,
+        "queue_type": str((queue_hit or {}).get("queue_type", "") or ""),
+        "data": ((queue_hit or {}).get("data", {}) or {}),
+        "source": str((queue_hit or {}).get("source", "") or ""),
+        "pulse": pulse_item or {},
+        "context": context_item or {},
+        "sampled_body": sampled_body or {},
+    }
 
 
 def cmd_thread_inspect(args: argparse.Namespace) -> int:
@@ -863,24 +1009,77 @@ def cmd_thread_inspect(args: argparse.Namespace) -> int:
         print(f"错误: 未找到线程 '{args.thread_id}'", file=sys.stderr)
         return 1
 
-    data = thread_info["data"]
+    data = thread_info.get("data", {})
+    pulse_data = thread_info.get("pulse", {})
+    context_data = thread_info.get("context", {})
+    sampled_body = thread_info.get("sampled_body", {})
+    latest_subject = (
+        str(pulse_data.get("latest_subject", "") or "")
+        or str(context_data.get("latest_subject", "") or "")
+        or str(sampled_body.get("subject", "") or "")
+    )
+    last_activity_at = (
+        str(data.get("last_activity_at", "") or "")
+        or str(pulse_data.get("last_activity_at", "") or "")
+        or str(context_data.get("latest_date", "") or "")
+        or str(sampled_body.get("date", "") or "")
+        or "unknown"
+    )
+    waiting_on = (
+        str(data.get("waiting_on", "") or "")
+        or str(pulse_data.get("waiting_on", "") or "")
+        or "unknown"
+    )
+    why = (
+        str(data.get("why", "") or "")
+        or str(pulse_data.get("why", "") or "")
+        or str(context_data.get("body_excerpt", "") or "")
+    )
+    evidence_refs = [
+        ref for ref in [
+            str(data.get("evidence_source", "") or ""),
+            str(pulse_data.get("latest_message_ref", "") or ""),
+        ] if ref
+    ] or ["unknown"]
+    context_refs = [
+        ref for ref in [
+            str(data.get("flow", "") or ""),
+            str(context_data.get("intent", "") or ""),
+        ] if ref
+    ] or ["unknown"]
+    confidence = _thread_confidence(data, pulse_data, context_data)
+    content_excerpt = (
+        str(sampled_body.get("body", "") or "")
+        or str(context_data.get("body_excerpt", "") or "")
+    )
+    participants = context_data.get("participants", [])
+    if not isinstance(participants, list):
+        participants = []
 
     if args.json:
         output = {
             "thread_id": thread_info["thread_id"],
             "state": data.get("stage", "unknown"),
-            "waiting_on": data.get("waiting_on", "unknown"),
-            "last_activity_at": data.get("last_activity_at", "unknown"),
-            "confidence": data.get("urgency_score", 0) / 100.0,
-            "evidence_refs": [data.get("evidence_source", "unknown")],
-            "context_refs": [data.get("flow", "unknown")],
-            "why": data.get("why", ""),
+            "waiting_on": waiting_on,
+            "last_activity_at": last_activity_at,
+            "confidence": confidence,
+            "evidence_refs": evidence_refs,
+            "context_refs": context_refs,
+            "why": why,
+            "latest_subject": latest_subject,
+            "latest_message_ref": str(pulse_data.get("latest_message_ref", "") or ""),
+            "message_count": int(pulse_data.get("message_count", 0) or 0),
+            "unread_count": int(pulse_data.get("unread_count", 0) or 0),
+            "new_message_count": int(pulse_data.get("new_message_count", 0) or 0),
+            "queue_tags": pulse_data.get("queue_tags", []) if isinstance(pulse_data.get("queue_tags"), list) else [],
+            "participants": participants,
+            "content_excerpt": content_excerpt,
             "explainability": {
-                "state_reasoning": data.get("why", ""),
+                "state_reasoning": why,
                 "confidence_factors": [
-                    f"Urgency score: {data.get('urgency_score', 0)}",
-                    f"Owner: {data.get('owner', 'unknown')}",
-                    f"Action hint: {data.get('action_hint', 'none')}",
+                    f"Urgency score: {data.get('urgency_score', pulse_data.get('score', 0))}",
+                    f"Owner: {data.get('owner', context_data.get('latest_from', 'unknown'))}",
+                    f"Action hint: {data.get('action_hint', pulse_data.get('why', 'none'))}",
                 ],
             },
         }
@@ -889,18 +1088,25 @@ def cmd_thread_inspect(args: argparse.Namespace) -> int:
         lines = [
             f"线程: {thread_info['thread_id']}",
             f"状态: {data.get('stage', 'unknown')}",
-            f"等待: {data.get('waiting_on', 'unknown')}",
-            f"置信度: {data.get('urgency_score', 0) / 100.0:.2f}",
+            f"等待: {waiting_on}",
+            f"最近主题: {latest_subject or 'unknown'}",
+            f"最近活动: {last_activity_at}",
+            f"置信度: {confidence:.2f}",
             "",
             "证据:",
-            f"- {data.get('evidence_source', 'unknown')}",
+            *[f"- {ref}" for ref in evidence_refs],
             "",
             "上下文:",
-            f"- flow: {data.get('flow', 'unknown')}",
-            f"- owner: {data.get('owner', 'unknown')}",
+            *[f"- {ref}" for ref in context_refs],
             "",
-            f"原因: {data.get('why', '')}",
+            f"原因: {why}",
         ]
+        if content_excerpt:
+            lines.extend([
+                "",
+                "内容摘要:",
+                content_excerpt[:600],
+            ])
         print("\n".join(lines))
 
     return 0

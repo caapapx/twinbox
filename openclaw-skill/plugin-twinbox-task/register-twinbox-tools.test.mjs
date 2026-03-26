@@ -33,7 +33,7 @@ test("formatResult prefers stdout then stderr", () => {
   assert.match(err.content[0].text, /bad/);
 });
 
-test("registerTwinboxTaskTools registers five tools and latest-mail spawns expected argv", async () => {
+test("registerTwinboxTaskTools registers expected tools and task/thread helpers spawn expected argv", async () => {
   const dir = mkdtempSync(join(tmpdir(), "twinbox-plugin-"));
   const fake = join(dir, "fake-twinbox.sh");
   writeFileSync(fake, "#!/bin/sh\nprintf '%s\\n' \"$@\"\n");
@@ -52,6 +52,11 @@ test("registerTwinboxTaskTools registers five tools and latest-mail spawns expec
   assert.deepEqual(names, [
     "twinbox_latest_mail",
     "twinbox_mailbox_status",
+    "twinbox_rule_add",
+    "twinbox_rule_list",
+    "twinbox_rule_remove",
+    "twinbox_rule_test",
+    "twinbox_thread_inspect",
     "twinbox_thread_progress",
     "twinbox_todo",
     "twinbox_weekly",
@@ -72,4 +77,12 @@ test("registerTwinboxTaskTools registers five tools and latest-mail spawns expec
   assert.match(pout.content[0].text, /acme/);
   assert.match(pout.content[0].text, /--limit/);
   assert.match(pout.content[0].text, /3/);
+
+  const inspect = tools.find((t) => t.name === "twinbox_thread_inspect");
+  assert.ok(inspect);
+  const iout = await inspect.execute({ thread_id: "thread-123" });
+  assert.match(iout.content[0].text, /thread/);
+  assert.match(iout.content[0].text, /inspect/);
+  assert.match(iout.content[0].text, /thread-123/);
+  assert.match(iout.content[0].text, /--json/);
 });

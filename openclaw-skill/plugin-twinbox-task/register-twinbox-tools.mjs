@@ -100,7 +100,7 @@ export function registerTwinboxTaskTools(api) {
   api.registerTool({
     name: "twinbox_thread_progress",
     description:
-      "Thread progress by subject / keyword / thread key (read-only). Runs: twinbox task progress QUERY --json",
+      "Thread progress by subject / keyword / thread key (read-only). Use this for topic progress or fuzzy lookup, not for returning one exact thread's full state/content. Runs: twinbox task progress QUERY --json",
     parameters: Type.Object({
       query: Type.String({ description: "Subject fragment, thread key, or business keyword" }),
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 20, default: 5 })),
@@ -111,6 +111,21 @@ export function registerTwinboxTaskTools(api) {
       const q = params?.query ?? "";
       const args2 = ["task", "progress", q, "--limit", String(limit), "--json"];
       const r = await runTwinbox(args2, opts);
+      return formatResult(r);
+    },
+  });
+
+  api.registerTool({
+    name: "twinbox_thread_inspect",
+    description:
+      "Inspect one exact thread's state/details (read-only). Use this when the user asks to return a specific thread's content, read the thread first, or inspect one known thread key. Runs: twinbox thread inspect THREAD_ID --json",
+    parameters: Type.Object({
+      thread_id: Type.String({ description: "Exact thread ID / thread key to inspect" }),
+    }),
+    async execute(...args) {
+      const params = args.length >= 2 ? args[1] : args[0];
+      const threadId = params?.thread_id ?? "";
+      const r = await runTwinbox(["thread", "inspect", threadId, "--json"], opts);
       return formatResult(r);
     },
   });

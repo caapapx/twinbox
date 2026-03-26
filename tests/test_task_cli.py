@@ -545,6 +545,96 @@ class TestQueueDigestThreadCli:
         assert not missing, f"ThreadCard contract fields missing: {missing}"
         assert body["thread_id"] == "thread-xyz"
 
+    def test_thread_inspect_falls_back_to_context_and_returns_content_excerpt(self, phase4_root, capsys):
+        state_root = phase4_root.parents[2]
+        phase3_dir = state_root / "runtime" / "validation" / "phase-3"
+        phase3_dir.mkdir(parents=True, exist_ok=True)
+        (phase3_dir / "context-pack.json").write_text(
+            json.dumps(
+                {
+                    "top_threads": [
+                        {
+                            "thread_key": "【部署资源申请】广东aq-mbzk-v0.9.3部署资源申请",
+                            "latest_date": "2026-03-25T15:00:00+08:00",
+                            "latest_subject": "Re: 答复：【部署资源申请】广东AQ-MBZK-V0.9.3部署资源申请",
+                            "body_excerpt": "From: sczhang24@example.com\nSubject: Re: 答复：【部署资源申请】广东AQ-MBZK-V0.9.3部署资源申请",
+                            "participants": ["sczhang24@example.com", "yangli73@example.com"],
+                            "recipient_role": "group_only",
+                        }
+                    ]
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        (phase4_root / "activity-pulse.json").write_text(
+            json.dumps(
+                {
+                    "generated_at": "2026-03-25T15:05:00+08:00",
+                    "notifiable_items": [],
+                    "recent_activity": [],
+                    "needs_attention": [],
+                    "thread_index": [
+                        {
+                            "thread_key": "【部署资源申请】广东aq-mbzk-v0.9.3部署资源申请",
+                            "latest_subject": "Re: 答复：【部署资源申请】广东AQ-MBZK-V0.9.3部署资源申请",
+                            "last_activity_at": "2026-03-25T15:00:00+08:00",
+                            "latest_message_ref": "INBOX#1752733651",
+                            "new_message_count": 4,
+                            "message_count": 4,
+                            "unread_count": 3,
+                            "queue_tags": [],
+                            "why": "最近24小时新增 4 封邮件",
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        context_dir = state_root / "runtime" / "context"
+        context_dir.mkdir(parents=True, exist_ok=True)
+        (context_dir / "phase1-context.json").write_text(
+            json.dumps(
+                {
+                    "generated_at": "2026-03-25T15:05:00+08:00",
+                    "lookback_days": 7,
+                    "owner_domain": "example.com",
+                    "envelopes": [
+                        {
+                            "id": "1752733651",
+                            "subject": "Re: 答复：【部署资源申请】广东AQ-MBZK-V0.9.3部署资源申请",
+                            "date": "2026-03-25 15:00+08:00",
+                            "flags": [],
+                        }
+                    ],
+                    "sampled_bodies": {
+                        "1752733651": {
+                            "subject": "Re: 答复：【部署资源申请】广东AQ-MBZK-V0.9.3部署资源申请",
+                            "body": "From: sczhang24@example.com\nSubject: Re: 答复：【部署资源申请】广东AQ-MBZK-V0.9.3部署资源申请\n\nMBZK-V0.9.2版本：http://artifact.example/v092\nMBZK-V0.9.3版本：http://artifact.example/v093",
+                        }
+                    },
+                    "stats": {},
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        assert main(["thread", "inspect", "【部署资源申请】广东aq-mbzk-v0.9.3部署资源申请", "--json"]) == 0
+        body = json.loads(capsys.readouterr().out)
+        assert body["thread_id"] == "【部署资源申请】广东aq-mbzk-v0.9.3部署资源申请"
+        assert body["last_activity_at"] == "2026-03-25T15:00:00+08:00"
+        assert body["latest_subject"] == "Re: 答复：【部署资源申请】广东AQ-MBZK-V0.9.3部署资源申请"
+        assert body["latest_message_ref"] == "INBOX#1752733651"
+        assert body["unread_count"] == 3
+        assert "MBZK-V0.9.3版本" in body["content_excerpt"]
+
     def test_thread_progress_searches_activity_pulse(self, phase4_root, capsys):
         (phase4_root / "activity-pulse.json").write_text(
             json.dumps(

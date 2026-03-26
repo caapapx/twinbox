@@ -57,7 +57,7 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 | Check onboarding progress | `twinbox onboarding status --json` |
 | Subscribe to push notifications | `twinbox push subscribe SESSION_ID --json` |
 | List push subscriptions | `twinbox push list --json` |
-| Inspect one exact thread | `twinbox thread inspect THREAD_ID --json` |
+| Inspect one exact thread / “把这个线程内容返回给我看看” / “先读这个线程” | `twinbox thread inspect THREAD_ID --json` 或 OpenClaw 工具 `twinbox_thread_inspect` 且传 `thread_id` |
 | Explain why a thread is urgent / pending | `twinbox thread explain THREAD_ID --json` |
 | Daily digest | `twinbox digest daily --json` |
 | Weekly brief | `twinbox digest weekly --json` |
@@ -72,6 +72,7 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 - Run the command first (`--json`), then summarize stdout in plain text for the user
 - Prefer `twinbox task ...` for common user prompts; these are thin wrappers, not a second pipeline
 - For the latest mail situation (including casual Chinese variants), use `twinbox task latest-mail --json` first; do not start with `preflight` unless connectivity is the explicit problem. If the user explicitly asks for "未读" (unread), pass `--unread-only` to the command or `unread_only: true` to the tool.
+- If the user wants one exact thread's content/details/status, prefer `twinbox thread inspect THREAD_ID --json` or `twinbox_thread_inspect`; do not use `task progress` unless the request is fuzzy/topic-based.
 - If `activity-pulse.json` is missing or stale, run `twinbox-orchestrate schedule --job daytime-sync` and explain the refresh
 - Stay read-only unless the user explicitly asks for draft/action generation
 - **Never end a task turn with only file reads and no text answer.** A turn with `assistant.content=[]` or no text is a failure — always produce real command output followed by a summary
