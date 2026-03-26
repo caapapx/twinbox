@@ -319,22 +319,58 @@ A: 可以。所有输出都是可 diff 的文件。preflight 命令返回适合 
 
 ## 当前聚焦与路线图
 
-> 最后更新：2026-03-25
+> 最后更新：2026-03-26
 
 ### ✅ 已交付
-- [x] `twinbox-orchestrate` + Phase 1–4 Python 核心
-- [x] 面向任务的 CLI (`twinbox task … --json`)
-- [x] OpenClaw Skill 集成
+
+**核心流水线**
+- [x] `twinbox-orchestrate` + Phase 1–4 Python 核心（Loading / Thinking）
+- [x] 面向任务的 CLI（`twinbox task … --json`）— 45+ 命令
+- [x] 增量日内同步（UID 水位线 + 自动回退）
+- [x] 活动脉冲 / 日内切片视图（`twinbox digest pulse`）
+
+**邮箱与引导**
+- [x] IMAP 只读预检，结构化 JSON 输出
+- [x] 邮箱自动探测（`twinbox mailbox detect`）
+- [x] 引导流程（`twinbox onboarding start/status/next`）
+- [x] 推送订阅系统（`twinbox push subscribe/unsubscribe`）
+
+**队列与上下文管理**
+- [x] 队列 dismiss/complete/restore 带持久化
+- [x] 调度时间覆盖（`twinbox schedule update/reset`）
+- [x] 材料导入支持 intent（reference vs template_hint）
+- [x] 语义路由规则（`twinbox rule list/add/remove/test`）
+- [x] 收件人角色处理（direct/cc_only/group_only/indirect）
+- [x] 仅未读过滤（`--unread-only`）
+
+**OpenClaw 集成**
+- [x] SKILL.md 清单含 `metadata.openclaw`
+- [x] OpenClaw 调度工具（同步到平台 cron）
+- [x] OpenClaw 队列工具（通过工具完成/dismiss）
 
 ### 🚧 进行中
-- [ ] 固定调度窗口（白天 / 周五 / 夜间）
+
+**平台验证**
+- [ ] OpenClaw 原生 `preflightCommand` 自动执行验证
+- [ ] `metadata.openclaw.schedules` 自动导入验证
+- [ ] `twinbox` Agent 的托管会话隔离
+
+**可靠性与扩展**
 - [ ] 多渠道投递订阅注册表
-- [ ] OpenClaw 原生 `preflightCommand` + `schedules` 验证
+- [ ] 过期产物自动回退与重试
+- [ ] 运行时归档快照（夜间/每周/失败）
 
 ### 📋 计划中
-- [ ] Phase 4 产物过期时的日内注意力视图
-- [ ] 带自动重跑的 `twinbox context refresh`
+
+**自动化层**
 - [ ] 常驻监听器服务
+- [ ] 草稿生成与审批闸门
+- [ ] 上下文刷新触发真实重跑
+
+**审阅与审计**
+- [ ] 结构化审计轨迹（`runtime/audit/`）
+- [ ] 动作模板注册表
+- [ ] 审阅面 UI/CLI
 
 完整路线图：[skill-creator-plan.md](skill-creator-plan.md)
 

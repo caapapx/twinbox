@@ -319,22 +319,58 @@ A: Yes. All outputs are files you can diff. The preflight command returns struct
 
 ## Current Focus & Roadmap
 
-> Last updated: 2026-03-25
+> Last updated: 2026-03-26
 
 ### ✅ Shipped
-- [x] `twinbox-orchestrate` + Phase 1–4 Python core
-- [x] Task-facing CLI (`twinbox task … --json`)
-- [x] OpenClaw skill integration
+
+**Core Pipeline**
+- [x] `twinbox-orchestrate` + Phase 1–4 Python core (Loading / Thinking)
+- [x] Task-facing CLI (`twinbox task … --json`) — 45+ commands
+- [x] Incremental daytime sync (UID watermark + fallback)
+- [x] Activity pulse / daytime-slice view (`twinbox digest pulse`)
+
+**Mailbox & Onboarding**
+- [x] IMAP read-only preflight with structured JSON output
+- [x] Mailbox auto-detection (`twinbox mailbox detect`)
+- [x] Onboarding flow (`twinbox onboarding start/status/next`)
+- [x] Push subscription system (`twinbox push subscribe/unsubscribe`)
+
+**Queue & Context Management**
+- [x] Queue dismiss/complete/restore with persistence
+- [x] Schedule overrides (`twinbox schedule update/reset`)
+- [x] Material import with intent (reference vs template_hint)
+- [x] Semantic routing rules (`twinbox rule list/add/remove/test`)
+- [x] Recipient role handling (direct/cc_only/group_only/indirect)
+- [x] Unread-only filtering (`--unread-only`)
+
+**OpenClaw Integration**
+- [x] SKILL.md manifest with `metadata.openclaw`
+- [x] OpenClaw schedule tools (sync to platform cron)
+- [x] OpenClaw queue tools (complete/dismiss via tools)
 
 ### 🚧 In Progress
-- [ ] Fixed schedule windows (daytime / Friday / nightly)
+
+**Platform Verification**
+- [ ] OpenClaw native `preflightCommand` auto-execution verification
+- [ ] `metadata.openclaw.schedules` auto-import validation
+- [ ] Hosted session isolation for `twinbox` agent
+
+**Reliability & Extensions**
 - [ ] Subscription registry for multi-channel delivery
-- [ ] OpenClaw native `preflightCommand` + `schedules` verification
+- [ ] Stale artifact fallback with automatic retry
+- [ ] Runtime archive snapshots (nightly/weekly/failure)
 
 ### 📋 Planned
-- [ ] Daytime attention view when Phase 4 artifacts are stale
-- [ ] `twinbox context refresh` with automatic rerun
+
+**Automation Layers**
 - [ ] Long-running listener service
+- [ ] Draft generation with approval gates
+- [ ] Context refresh triggering actual rerun
+
+**Review & Audit**
+- [ ] Structured audit trail (`runtime/audit/`)
+- [ ] Action template registry
+- [ ] Review surface UI/CLI
 
 Full roadmap: [skill-creator-plan.md](skill-creator-plan.md)
 
