@@ -26,6 +26,7 @@ For mail/queue/digest requests: run the matching `twinbox` command with `--json`
 - Summarizing "latest mail situation", "today's updates", or "what happened today"
 - Listing urgent items, pending replies, and SLA-ish risks from current artifacts
 - Dismissing, completing, or restoring queue-visible threads through `twinbox queue ...`
+- Listing, overriding, or resetting runtime schedule config through `twinbox schedule ...`
 - Looking up the latest progress of one thread, subject, project, or business keyword
 - Showing daily / pulse / weekly digests from current Twinbox artifacts
 - Suggesting actions or review items from current queue state
@@ -52,6 +53,9 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 | 暂时忽略某个线程 / 标记已处理但先别再提醒 | `twinbox queue dismiss THREAD_ID --reason "..." --json` |
 | 标记某个线程已完成 | `twinbox queue complete THREAD_ID --action-taken "..." --json` |
 | 恢复一个 dismissed/completed 线程 | `twinbox queue restore THREAD_ID --json` |
+| 查看当前调度配置 | `twinbox schedule list --json` |
+| 修改 daily/weekly/nightly 调度时间 | `twinbox schedule update JOB_NAME --cron "30 9 * * *" --json` |
+| 恢复某个调度到默认时间 | `twinbox schedule reset JOB_NAME --json` |
 | "某个事情进展如何" / progress on a topic | `twinbox task progress QUERY --json` |
 | Mailbox status / env diagnosis | `twinbox task mailbox-status --json` |
 | Weekly brief lookup | `twinbox task weekly --json` |
@@ -79,6 +83,7 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 - If `activity-pulse.json` is missing or stale, run `twinbox-orchestrate schedule --job daytime-sync` and explain the refresh
 - `daytime-sync` now enters through the incremental Phase 1 entrypoint (`scripts/phase1_incremental.sh`) before Phase 3/4 daytime projection
 - The incremental Phase 1 path uses UID watermarks and automatically falls back to the existing full loader when `UIDVALIDITY` changes
+- `twinbox schedule update/reset` only changes `runtime/context/schedule-overrides.yaml`; OpenClaw-hosted cron still requires manual redeploy or refresh because platform-side dynamic schedule update is not wired yet
 - Stay read-only unless the user explicitly asks for draft/action generation
 - **Never end a task turn with only file reads and no text answer.** A turn with `assistant.content=[]` or no text is a failure — always produce real command output followed by a summary
 - **OpenClaw 模型偶发空回复**：若连续出现「有 token 但正文为空」，先**新开会话**再试；技能/工具更新后旧会话里的 `skillsSnapshot` 可能仍引用旧说明（见 Hosted Defaults）。
@@ -107,6 +112,9 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 - `twinbox queue dismiss THREAD_ID --reason "已处理" --json`
 - `twinbox queue complete THREAD_ID --action-taken "已归档" --json`
 - `twinbox queue restore THREAD_ID --json`
+- `twinbox schedule list --json`
+- `twinbox schedule update daily-refresh --cron "30 9 * * *" --json`
+- `twinbox schedule reset daily-refresh --json`
 - `twinbox task progress QUERY --json`
 - `twinbox digest pulse --json`
 - `twinbox-orchestrate roots`

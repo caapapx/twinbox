@@ -23,6 +23,7 @@ from .mailbox import format_preflight_text, run_preflight
 from .material_extract import MaterialExtractError, write_extract_for_import
 from .paths import resolve_state_root
 from .routing_rules import evaluate_rule, load_rules, load_rules_raw, save_rules_raw, RoutingRule
+from .schedule_override import load_schedule_config, reset_schedule_override, update_schedule_override
 from .user_queue_state import complete_thread, dismiss_thread, restore_thread
 
 @dataclass(frozen=True)
@@ -599,6 +600,69 @@ def cmd_queue_restore(args: argparse.Namespace) -> int:
         print(json.dumps(output, ensure_ascii=False, indent=2))
     else:
         print(f"已恢复线程: {args.thread_id}")
+    return 0
+
+
+def cmd_schedule_list(args: argparse.Namespace) -> int:
+    """List effective schedule config merged from defaults and runtime overrides."""
+    payload = load_schedule_config(_state_root())
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    lines = [f"时区: {payload.get('timezone', '')}", "", "当前调度:", ""]
+    for row in payload.get("schedules", []):
+        if not isinstance(row, dict):
+            continue
+        lines.extend(
+            [
+                f"- {row.get('name', 'unknown')}: {row.get('effective_cron', '')} ({row.get('source', 'default')})",
+                f"  默认: {row.get('default_cron', '')}",
+                f"  命令: {row.get('command', '')}",
+            ]
+        )
+    print("\n".join(lines))
+    return 0
+
+
+def cmd_schedule_update(args: argparse.Namespace) -> int:
+    """Update one runtime schedule override."""
+    try:
+        payload = update_schedule_override(
+            state_root=_state_root(),
+            job_name=args.job_name,
+            cron=args.cron,
+        )
+    except ValueError as exc:
+        print(f"错误: {exc}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    print(f"已更新 {payload['job_name']} -> {payload['effective_cron']}")
+    print(payload["next_action"])
+    return 0
+
+
+def cmd_schedule_reset(args: argparse.Namespace) -> int:
+    """Reset one runtime schedule override back to default."""
+    try:
+        payload = reset_schedule_override(
+            state_root=_state_root(),
+            job_name=args.job_name,
+        )
+    except ValueError as exc:
+        print(f"错误: {exc}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    print(f"已恢复 {payload['job_name']} 默认 cron: {payload['effective_cron']}")
+    print(payload["next_action"])
     return 0
 
 
@@ -2283,6 +2347,21 @@ def _build_parser() -> argparse.ArgumentParser:
     queue_restore.add_argument("thread_id", help="Thread key to restore")
     queue_restore.add_argument("--json", action="store_true", help="Output as JSON")
 
+    schedule_parser = subparsers.add_parser("schedule", help="Schedule override management")
+    schedule_sub = schedule_parser.add_subparsers(dest="schedule_command", required=True)
+
+    schedule_list = schedule_sub.add_parser("list", help="List effective schedules")
+    schedule_list.add_argument("--json", action="store_true", help="Output as JSON")
+
+    schedule_update = schedule_sub.add_parser("update", help="Update one schedule override")
+    schedule_update.add_argument("job_name", help="Schedule name to override")
+    schedule_update.add_argument("--cron", required=True, help="5-field cron expression")
+    schedule_update.add_argument("--json", action="store_true", help="Output as JSON")
+
+    schedule_reset = schedule_sub.add_parser("reset", help="Reset one schedule override")
+    schedule_reset.add_argument("job_name", help="Schedule name to reset")
+    schedule_reset.add_argument("--json", action="store_true", help="Output as JSON")
+
     # thread commands
     thread_parser = subparsers.add_parser("thread", help="Thread inspection")
     thread_sub = thread_parser.add_subparsers(dest="thread_command", required=True)
@@ -2443,6 +2522,13 @@ def main(argv: list[str] | None = None) -> int:
                 return cmd_queue_complete(args)
             elif args.queue_command == "restore":
                 return cmd_queue_restore(args)
+        elif args.command == "schedule":
+            if args.schedule_command == "list":
+                return cmd_schedule_list(args)
+            elif args.schedule_command == "update":
+                return cmd_schedule_update(args)
+            elif args.schedule_command == "reset":
+                return cmd_schedule_reset(args)
         elif args.command == "thread":
             if args.thread_command == "inspect":
                 return cmd_thread_inspect(args)

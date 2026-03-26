@@ -561,6 +561,55 @@ class TestQueueDigestThreadCli:
         restored = json.loads(capsys.readouterr().out)
         assert restored["status"] == "restored"
 
+    def test_schedule_list_json_exposes_defaults_and_overrides(self, monkeypatch, tmp_path, capsys):
+        monkeypatch.setenv("TWINBOX_STATE_ROOT", str(tmp_path))
+        monkeypatch.setenv("TWINBOX_CANONICAL_ROOT", str(tmp_path))
+        override_path = tmp_path / "runtime" / "context" / "schedule-overrides.yaml"
+        override_path.parent.mkdir(parents=True, exist_ok=True)
+        override_path.write_text(
+            yaml.safe_dump(
+                {
+                    "timezone": "Asia/Shanghai",
+                    "overrides": {
+                        "daily-refresh": "30 9 * * *",
+                    },
+                },
+                allow_unicode=True,
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
+
+        assert main(["schedule", "list", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+        by_name = {row["name"]: row for row in payload["schedules"]}
+
+        assert payload["timezone"] == "Asia/Shanghai"
+        assert by_name["daily-refresh"]["effective_cron"] == "30 9 * * *"
+        assert by_name["daily-refresh"]["source"] == "override"
+        assert by_name["weekly-refresh"]["source"] == "default"
+
+    def test_schedule_update_and_reset_json_contract(self, monkeypatch, tmp_path, capsys):
+        monkeypatch.setenv("TWINBOX_STATE_ROOT", str(tmp_path))
+        monkeypatch.setenv("TWINBOX_CANONICAL_ROOT", str(tmp_path))
+
+        assert main(["schedule", "update", "daily-refresh", "--cron", "45 9 * * *", "--json"]) == 0
+        updated = json.loads(capsys.readouterr().out)
+        assert updated["job_name"] == "daily-refresh"
+        assert updated["effective_cron"] == "45 9 * * *"
+        assert "OpenClaw" in updated["next_action"]
+
+        assert main(["schedule", "reset", "daily-refresh", "--json"]) == 0
+        reset = json.loads(capsys.readouterr().out)
+        assert reset["job_name"] == "daily-refresh"
+        assert reset["source"] == "default"
+
+    def test_schedule_update_invalid_cron_exits_1(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("TWINBOX_STATE_ROOT", str(tmp_path))
+        monkeypatch.setenv("TWINBOX_CANONICAL_ROOT", str(tmp_path))
+
+        assert main(["schedule", "update", "daily-refresh", "--cron", "30 9 * *", "--json"]) == 1
+
     def test_digest_daily_json_schema(self, phase4_root, capsys):
         """Daily digest JSON must include digest_type, sections, generated_at, stale."""
         assert main(["digest", "daily", "--json"]) == 0
