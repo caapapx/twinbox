@@ -29,6 +29,8 @@ from .routing_rules import evaluate_rule, load_rules, load_rules_raw, save_rules
 from .schedule_override import disable_schedule, enable_schedule, load_schedule_config, reset_schedule_override, update_schedule_override
 from .user_queue_state import complete_thread, dismiss_thread, restore_thread
 
+from .task_cli_daemon import dispatch_daemon, register_daemon_parser
+
 @dataclass(frozen=True)
 class ThreadCard:
     """Thread card for queue display."""
@@ -2478,6 +2480,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    register_daemon_parser(subparsers)
+
     # context commands
     context_parser = subparsers.add_parser("context", help="Context management")
     context_sub = context_parser.add_subparsers(dest="context_command", required=True)
@@ -2804,6 +2808,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
+        if args.command == "daemon":
+            return dispatch_daemon(args)
         if args.command == "context":
             if args.context_command == "import-material":
                 return cmd_context_import_material(args)

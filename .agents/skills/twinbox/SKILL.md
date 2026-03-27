@@ -79,6 +79,7 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 | Start onboarding flow | `twinbox onboarding start --json` |
 | Check onboarding progress | `twinbox onboarding status --json` |
 | Advance onboarding to next stage | `twinbox onboarding next --json` |
+| 后台 JSON-RPC daemon（省 Python 冷启动；可选） | `twinbox daemon start` / `daemon stop` / `daemon restart`；状态：`twinbox daemon status --json`。Socket：`$TWINBOX_STATE_ROOT/run/daemon.sock`。可选 Go 入口：`cmd/twinbox-go`（RPC 失败则 `exec` Python） |
 | Subscribe to push notifications | `twinbox push subscribe SESSION_ID --json` |
 | List push subscriptions | `twinbox push list --json` |
 | Inspect one exact thread / “把这个线程内容返回给我看看” / “先读这个线程” | `twinbox thread inspect THREAD_ID --json` 或 OpenClaw 工具 `twinbox_thread_inspect` 且传 `thread_id` |
@@ -142,6 +143,7 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 - `twinbox task progress QUERY --json`
 - `twinbox digest pulse --json`
 - `twinbox-orchestrate roots`
+- `twinbox daemon status --json`（daemon 未启用时 `status=stopped` 属正常）
 - `twinbox-orchestrate contract --phase 4`
 - `twinbox-orchestrate schedule --job daytime-sync --format json`
 - `twinbox-orchestrate run --phase 1`

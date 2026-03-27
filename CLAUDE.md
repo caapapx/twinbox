@@ -17,13 +17,17 @@ twinbox 是一个以线程为中心的邮件 Copilot 基础设施。
 
 ## 开发约束
 
-1. 只使用 master 分支
+1. 主线为 `master`；feature 在独立分支开发（如 `dev-go`），合并后删除该分支
 2. 提交信息格式：`type: short description`
 3. Phase 1-4 只读，禁止 send/move/delete/archive/flag
 4. 新增文档先查 `docs/README.md`，优先合并，避免扩目录
 5. 新增/移动入口级文档时同步更新索引（`docs/README.md`、`AGENTS.md` 核心文档入口或子目录 README）；细则见 AGENTS.md
 6. 约定验证（如相关 pytest / 指定 smoke）高置信度通过后：应 `git commit`；环境允许且未要求仅本地时应 `git push`；禁止对共享分支 `push --force`；细则见 AGENTS.md
 7. **Skill 同步约束**：新增或修改 CLI 命令、核心功能或 Tool 时，必须同步更新 `SKILL.md` 并部署到 OpenClaw（详见 AGENTS.md 协作约束）。
+
+## 开发约束（dev-go 分支）
+
+本分支为 feature 分支，用于开发 Python daemon + Go 客户端。合并回 `master` 后删除；合并前可在此分支上提交与推送。
 
 ## 文档索引与协作规则
 
