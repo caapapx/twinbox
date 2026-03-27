@@ -6,7 +6,6 @@ onboarding remains conversational (twinbox onboarding …).
 
 from __future__ import annotations
 
-import json
 import os
 import platform
 import shutil
@@ -24,6 +23,12 @@ from .openclaw_config_merge import (
     deep_merge_openclaw,
     merge_twinbox_openclaw_entry,
     remove_twinbox_skill_entry_from_openclaw,
+)
+from .openclaw_json_io import (
+    atomic_write_json,
+    default_openclaw_fragment_path,
+    load_openclaw_json,
+    load_openclaw_json_with_file_ops,
 )
 from .openclaw_deploy_runtime import (
     LocalFileOps,
@@ -112,35 +117,6 @@ class _RollbackContext:
     openclaw_bin: str
 
 
-def default_openclaw_fragment_path(code_root: Path) -> Path:
-    return code_root / "openclaw-skill" / "openclaw.fragment.json"
-
-
-def _parse_openclaw_json_text(path: Path, text: str) -> dict[str, Any]:
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"Invalid JSON in {path}: {exc}") from exc
-    return data
-
-
-def _load_openclaw_json_with_file_ops(
-    file_ops: LocalFileOps | Any,
-    path: Path,
-) -> dict[str, Any]:
-    if not file_ops.is_file(path):
-        return {}
-    return _parse_openclaw_json_text(path, file_ops.read_text(path, encoding="utf-8"))
-
-
-def load_openclaw_json(path: Path) -> dict[str, Any]:
-    return _load_openclaw_json_with_file_ops(LocalFileOps(), path)
-
-
-def atomic_write_json(path: Path, data: dict[str, Any]) -> None:
-    LocalFileOps().write_json_atomic(path, data)
-
-
 def _append_step(
     report: OpenClawDeployReport,
     step_id: str,
@@ -224,7 +200,7 @@ def _merge_openclaw_json_step(
     missing_required: list[str],
 ) -> bool:
     try:
-        existing = _load_openclaw_json_with_file_ops(runtime.file_ops, ctx.openclaw_json)
+        existing = load_openclaw_json_with_file_ops(runtime.file_ops, ctx.openclaw_json)
     except ValueError as exc:
         return _fail_step(report, "merge_openclaw_json", str(exc))
 
@@ -249,7 +225,7 @@ def _merge_openclaw_json_step(
 
     if frag_resolved is not None:
         try:
-            fragment_data = _load_openclaw_json_with_file_ops(runtime.file_ops, frag_resolved)
+            fragment_data = load_openclaw_json_with_file_ops(runtime.file_ops, frag_resolved)
         except ValueError as exc:
             return _fail_step(report, "merge_openclaw_fragment", str(exc))
         base = deep_merge_openclaw(existing, fragment_data)
@@ -508,7 +484,7 @@ def _strip_openclaw_json_step(
     runtime: OpenClawDeployRuntime,
 ) -> bool:
     try:
-        existing = _load_openclaw_json_with_file_ops(runtime.file_ops, ctx.openclaw_json)
+        existing = load_openclaw_json_with_file_ops(runtime.file_ops, ctx.openclaw_json)
     except ValueError as exc:
         return _fail_step(report, "strip_openclaw_json", str(exc))
 
