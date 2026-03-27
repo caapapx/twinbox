@@ -18,7 +18,7 @@ Twinbox mail state is produced by **`twinbox` / `twinbox-orchestrate` on the Ope
 
 ## Turn contract
 
-For mail/queue/digest requests: run the matching `twinbox` command with `--json`, then reply with a text summary. Never end with only tool reads and no text response.
+For **all** twinbox command executions (mail, queue, digest, onboarding, deploy, schedule, rule, etc.): run the matching `twinbox` command with `--json`, then reply with a text summary. Never end with only tool calls and no text response. A turn with `payloads=[]` or `assistant.content=[]` is always a failure.
 
 ## Use For
 
