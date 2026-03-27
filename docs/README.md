@@ -14,7 +14,8 @@
 
 - [`ref/`](./ref/architecture.md): 架构、契约、CLI、运行时参考
 - [`guide/`](./guide/): 操作与集成指南
-- [`../openclaw-skill/`](../openclaw-skill/README.md): OpenClaw 托管 skill、部署与宿主桥接（仓库根目录）；正式部署步骤见 [`../openclaw-skill/DEPLOY.md`](../openclaw-skill/DEPLOY.md)
+- [`../openclaw-skill/`](../openclaw-skill/README.md): OpenClaw 托管 skill、部署与宿主桥接（仓库根目录）；正式部署步骤见 [`../openclaw-skill/DEPLOY.md`](../openclaw-skill/DEPLOY.md)；排障见 [`../openclaw-skill/TROUBLESHOOT.md`](../openclaw-skill/TROUBLESHOOT.md)；附录见 [`../openclaw-skill/DEPLOY-APPENDIX.md`](../openclaw-skill/DEPLOY-APPENDIX.md)
+- [`ref/openclaw-deploy-model.md`](./ref/openclaw-deploy-model.md): OpenClaw 三层分工设计模型与数据流（配合 DEPLOY.md 操作路径阅读）
 - [`archive/`](./archive/README.md): 历史方案和旧评估
 - [`validation/`](./validation/README.md): 本地验证工件，路径保持不变
 - [`assets/`](./assets/README.md): 文档配图

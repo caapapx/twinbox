@@ -19,6 +19,10 @@
 
 - 文档入口：`docs/README.md`
 - 架构：`docs/ref/architecture.md`
+- OpenClaw 部署操作主路径：`openclaw-skill/DEPLOY.md`
+- OpenClaw 部署设计模型：`docs/ref/openclaw-deploy-model.md`
+- OpenClaw 排障与回滚：`openclaw-skill/TROUBLESHOOT.md`
+- OpenClaw 部署附录：`openclaw-skill/DEPLOY-APPENDIX.md`
 - 核心重构计划：`docs/core-refactor.md`
 - 验证工件契约：`docs/ref/validation.md`
 - 编排契约：`docs/ref/orchestration.md`
