@@ -20,6 +20,7 @@ Env:
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import re
@@ -202,6 +203,21 @@ def check_pass(pid: str, text: str) -> tuple[bool, str]:
 
 
 def main() -> int:
+    # Line-buffer stdout so log files are not empty during a run
+    sys.stdout.reconfigure(line_buffering=True)
+
+    ap = argparse.ArgumentParser(
+        description="Run OpenClaw prompt-test.md cases via openclaw agent.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    ap.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Parse and print prompt order without running any agent turns.",
+    )
+    args = ap.parse_args()
+
     openclaw = os.environ.get("OPENCLAW_BIN", "openclaw")
     agent_id = os.environ.get("AGENT_ID", "twinbox")
     timeout_sec = int(os.environ.get("AGENT_TIMEOUT", "180"))
@@ -209,6 +225,14 @@ def main() -> int:
     thinking = os.environ.get("AGENT_THINKING", "off")
 
     prompts = parse_prompts(PROMPT_MD)
+
+    if args.dry_run:
+        print(f"Prompt file: {PROMPT_MD}")
+        print("Order:", ", ".join(ORDER))
+        for pid in ORDER:
+            print(f"  {pid}: {prompts.get(pid, 'MISSING')[:80]!r}")
+        return 0
+
     failures: list[str] = []
 
     sid_a = os.environ.get("OPENCLAW_PROMPT_TEST_NATURAL_SESSION_ID") or str(uuid.uuid4())

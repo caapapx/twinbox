@@ -1,10 +1,14 @@
 ---
 name: twinbox
 description: >-
-  Twinbox mailbox skill for read-only email preflight, latest-mail summaries,
-  queue triage, pending replies, thread progress, weekly brief, phase refresh,
-  and OpenClaw deployment diagnostics via `twinbox` and
-  `twinbox-orchestrate`.
+  Twinbox mailbox skill. REQUIRED behavior: after running any twinbox CLI
+  command, always produce a text summary for the user — never stop with tool
+  calls alone; a turn with no text reply is a failure. If a command fails
+  (e.g. missing activity-pulse.json), explain why and suggest the fix (run
+  twinbox-orchestrate schedule --job daytime-sync). Use for: email preflight,
+  latest-mail, queue triage, onboarding (start/status/next), weekly digest,
+  thread progress, schedule management, and OpenClaw deploy diagnostics via
+  `twinbox` / `twinbox-orchestrate`.
 metadata: {"openclaw":{"requires":{"env":["IMAP_HOST","IMAP_PORT","IMAP_LOGIN","IMAP_PASS","SMTP_HOST","SMTP_PORT","SMTP_LOGIN","SMTP_PASS","MAIL_ADDRESS"]},"primaryEnv":"IMAP_LOGIN","login":{"mode":"password-env","runtimeRequiredEnv":["IMAP_HOST","IMAP_PORT","IMAP_LOGIN","IMAP_PASS","SMTP_HOST","SMTP_PORT","SMTP_LOGIN","SMTP_PASS","MAIL_ADDRESS"],"optionalDefaults":{"MAIL_ACCOUNT_NAME":"myTwinbox","MAIL_DISPLAY_NAME":"{MAIL_ACCOUNT_NAME}","IMAP_ENCRYPTION":"tls","SMTP_ENCRYPTION":"tls"},"stages":["unconfigured","validated","mailbox-connected"],"preflightCommand":"twinbox mailbox preflight --json"}}}
 ---
 
