@@ -44,6 +44,11 @@ OPENCLAW_OPTIONAL_MAIL_KEYS = (
 OPENCLAW_ENV_KEYS = OPENCLAW_REQUIRED_MAIL_KEYS + OPENCLAW_OPTIONAL_MAIL_KEYS
 
 
+def _skill_canonical_path(state_root: Path) -> Path:
+    """Deploy writes repo ``SKILL.md`` here; OpenClaw entry symlinks or copies from this file."""
+    return (state_root / "SKILL.md").resolve()
+
+
 @dataclass
 class DeployStepResult:
     id: str
@@ -408,7 +413,7 @@ def _sync_skill_md_step(
     if not runtime.file_ops.is_file(ctx.skill_src):
         return _fail_step(report, "sync_skill_md", f"Missing {ctx.skill_src}")
 
-    canonical = (ctx.state_root / "skills" / "twinbox" / "SKILL.md").resolve()
+    canonical = _skill_canonical_path(ctx.state_root)
 
     if ctx.dry_run:
         _append_step(
@@ -648,7 +653,7 @@ def run_openclaw_deploy(
     """Wire Twinbox into OpenClaw on the current host.
 
     Steps: roots init script → resolve state root → optional env merge into
-    ~/.openclaw/openclaw.json → copy SKILL.md → gateway restart.
+    ~/.openclaw/openclaw.json → copy SKILL.md to state root → gateway restart.
     """
     report = OpenClawDeployReport(ok=True, steps=[])
     runtime = runtime or build_runtime(run_subprocess)
@@ -718,9 +723,7 @@ def run_openclaw_deploy(
         openclaw_bin=openclaw_bin,
     )
     report.state_root = str(ctx.state_root)
-    report.skill_canonical_dest = str(
-        (ctx.state_root / "skills" / "twinbox" / "SKILL.md").resolve()
-    )
+    report.skill_canonical_dest = str(_skill_canonical_path(ctx.state_root))
 
     dotenv = load_env_file(ctx.state_root / ".env") if ctx.sync_env_from_dotenv else {}
     missing_required = (

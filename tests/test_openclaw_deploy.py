@@ -430,7 +430,7 @@ def test_run_openclaw_deploy_skill_sync_fallback_when_symlink_fails(
     assert report.ok
     step = next(s for s in report.steps if s.id == "sync_skill_md")
     assert step.detail.get("mode") == "copy_fallback"
-    canonical = (state_root / "skills" / "twinbox" / "SKILL.md").resolve()
+    canonical = (state_root / "SKILL.md").resolve()
     oc_skill = openclaw_home / "skills" / "twinbox" / "SKILL.md"
     assert fo.copy_calls[0] == (code_root / "SKILL.md", canonical)
     assert fo.copy_calls[1] == (canonical, oc_skill)
@@ -464,7 +464,7 @@ def test_run_openclaw_deploy_runtime_restart_failure_keeps_prior_steps(
         "gateway_restart",
     ]
     assert runtime.file_ops.write_json_calls
-    canonical = (state_root / "skills" / "twinbox" / "SKILL.md").resolve()
+    canonical = (state_root / "SKILL.md").resolve()
     assert runtime.file_ops.copy_calls == [(code_root / "SKILL.md", canonical)]
     assert runtime.file_ops.symlink_calls == [
         (canonical, openclaw_home / "skills" / "twinbox" / "SKILL.md")
