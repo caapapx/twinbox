@@ -123,6 +123,53 @@ def test_vendor_status_detects_file_count_mismatch(
     assert "file_count_mismatch" in st.get("integrity_issues", [])
 
 
+def test_install_vendor_explicit_src_skips_src_twinbox_layout(tmp_path: Path) -> None:
+    state = tmp_path / "state"
+    state.mkdir()
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("#\n", encoding="utf-8")
+    (pkg / "task_cli.py").write_text("#\n", encoding="utf-8")
+    code_root = tmp_path / "cr"
+    code_root.mkdir()
+    result = install_vendor(
+        state_root=state,
+        code_root=code_root,
+        twinbox_core_src=pkg,
+        dry_run=False,
+    )
+    assert result["installed"] is True
+    assert (vendor_twinbox_core_path(state) / "__init__.py").is_file()
+
+
+def test_install_vendor_injected_git_rev(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    state = tmp_path / "state"
+    state.mkdir()
+    repo = _fake_repo(tmp_path)
+    monkeypatch.chdir(repo)
+    result = install_vendor(
+        state_root=state,
+        code_root=repo,
+        dry_run=False,
+        git_rev_resolver=lambda _cwd: "abc123deadbeef",
+    )
+    assert result["manifest"]["git_rev"] == "abc123deadbeef"
+
+
+def test_install_vendor_git_rev_resolver_can_omit_field(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    state = tmp_path / "state"
+    state.mkdir()
+    repo = _fake_repo(tmp_path)
+    monkeypatch.chdir(repo)
+    result = install_vendor(
+        state_root=state,
+        code_root=repo,
+        dry_run=False,
+        git_rev_resolver=lambda _cwd: None,
+    )
+    assert "git_rev" not in result["manifest"]
+
+
 def test_cli_vendor_install_and_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     state = tmp_path / "state"
     state.mkdir()

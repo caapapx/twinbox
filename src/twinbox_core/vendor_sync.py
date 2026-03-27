@@ -7,6 +7,7 @@ import shutil
 import subprocess
 from datetime import datetime, timezone
 from importlib import metadata
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -54,9 +55,20 @@ def install_vendor(
     state_root: Path,
     code_root: Path,
     dry_run: bool = False,
+    twinbox_core_src: Path | None = None,
+    git_rev_resolver: Callable[[Path], str | None] | None = None,
 ) -> dict[str, Any]:
-    """Sync ``code_root/src/twinbox_core`` into ``state_root/vendor/twinbox_core`` and write MANIFEST."""
-    src = (code_root / "src" / "twinbox_core").resolve()
+    """Sync ``twinbox_core`` into ``state_root/vendor/twinbox_core`` and write MANIFEST.
+
+    ``twinbox_core_src`` defaults to ``code_root / "src" / "twinbox_core"``.
+
+    ``git_rev_resolver`` defaults to running ``git rev-parse HEAD`` in *code_root*.
+    """
+    src = (
+        twinbox_core_src
+        if twinbox_core_src is not None
+        else (code_root / "src" / "twinbox_core")
+    ).resolve()
     if not src.is_dir():
         raise FileNotFoundError(f"source package not found: {src}")
 
@@ -82,7 +94,8 @@ def install_vendor(
         shutil.rmtree(dest_pkg)
     shutil.copytree(src, dest_pkg, ignore=_ignore_copy)
 
-    git_rev = _git_rev(code_root)
+    rev_fn = git_rev_resolver if git_rev_resolver is not None else _git_rev
+    git_rev = rev_fn(code_root)
     try:
         twinbox_ver = metadata.version("twinbox-core")
     except metadata.PackageNotFoundError:
