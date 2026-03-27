@@ -30,6 +30,7 @@ from .schedule_override import disable_schedule, enable_schedule, load_schedule_
 from .user_queue_state import complete_thread, dismiss_thread, restore_thread
 
 from .task_cli_daemon import dispatch_daemon, register_daemon_parser
+from .task_cli_vendor import dispatch_vendor, register_vendor_parser
 
 @dataclass(frozen=True)
 class ThreadCard:
@@ -2481,6 +2482,7 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     register_daemon_parser(subparsers)
+    register_vendor_parser(subparsers)
 
     # context commands
     context_parser = subparsers.add_parser("context", help="Context management")
@@ -2810,6 +2812,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "daemon":
             return dispatch_daemon(args)
+        if args.command == "vendor":
+            return dispatch_vendor(args)
         if args.command == "context":
             if args.context_command == "import-material":
                 return cmd_context_import_material(args)
