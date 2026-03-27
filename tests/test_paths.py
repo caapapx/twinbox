@@ -11,6 +11,7 @@ from twinbox_core.paths import (
     init_roots,
     resolve_canonical_root,
     resolve_code_root,
+    resolve_daemon_state_root,
     resolve_existing_dir,
     resolve_state_root,
     state_root_file,
@@ -110,6 +111,38 @@ class PathsTest(unittest.TestCase):
             )
 
             self.assertEqual(resolved, state.resolve())
+
+    def test_resolve_daemon_state_root_explicit_env_no_exist(self) -> None:
+        """Explicit TWINBOX_STATE_ROOT is not strict; daemon validates is_dir()."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            default = root / "default"
+            default.mkdir()
+            ghost = root / "nope"
+            resolved = resolve_daemon_state_root(
+                default,
+                env={"TWINBOX_STATE_ROOT": str(ghost)},
+            )
+            self.assertEqual(resolved, ghost.resolve())
+            self.assertFalse(resolved.is_dir())
+
+    def test_resolve_daemon_state_root_falls_back_like_resolve_state_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            default = root / "default"
+            state = root / "state"
+            config_home = root / "config"
+            default.mkdir()
+            state.mkdir()
+            (config_home / "twinbox").mkdir(parents=True)
+            (config_home / "twinbox" / "state-root").write_text(str(state), encoding="utf-8")
+            env = {"XDG_CONFIG_HOME": str(config_home)}
+
+            r1 = resolve_state_root(default, env=env)
+            r2 = resolve_daemon_state_root(default, env=env)
+
+            self.assertEqual(r1, r2)
+            self.assertEqual(r2, state.resolve())
 
     def test_resolve_canonical_root_uses_config_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

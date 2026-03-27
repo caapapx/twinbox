@@ -14,14 +14,7 @@ from typing import Any
 
 from twinbox_core.daemon import TWINBOX_PROTOCOL_VERSION
 from twinbox_core.daemon.layout import pid_path, socket_path
-from twinbox_core.paths import resolve_state_root
-
-
-def _state_root_from_env_or_cwd() -> Path:
-    env = os.environ.get("TWINBOX_STATE_ROOT", "").strip()
-    if env:
-        return Path(env).expanduser().resolve()
-    return resolve_state_root(Path.cwd())
+from twinbox_core.paths import resolve_daemon_state_root
 
 
 def _is_pid_alive(pid: int) -> bool:
@@ -234,7 +227,7 @@ def cmd_status(state_root: Path, *, json_output: bool) -> int:
 
 
 def main_daemon_subcommand(sub: str, *, json_output: bool = False) -> int:
-    state_root = _state_root_from_env_or_cwd()
+    state_root = resolve_daemon_state_root()
     if sub == "start":
         return cmd_start(state_root)
     if sub == "stop":

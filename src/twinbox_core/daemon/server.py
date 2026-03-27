@@ -25,7 +25,7 @@ from twinbox_core.daemon.handlers import (
     set_daemon_state_root,
 )
 from twinbox_core.daemon.layout import ensure_daemon_dirs, log_path, pid_path, socket_path
-from twinbox_core.paths import resolve_state_root
+from twinbox_core.paths import resolve_daemon_state_root
 
 logger = logging.getLogger(__name__)
 
@@ -239,11 +239,7 @@ def run_daemon_forever() -> int:
         print("twinbox daemon requires POSIX (Unix socket)", file=sys.stderr)
         return 2
 
-    state_env = os.environ.get("TWINBOX_STATE_ROOT", "").strip()
-    if state_env:
-        state_root = Path(state_env).expanduser().resolve()
-    else:
-        state_root = resolve_state_root(Path.cwd())
+    state_root = resolve_daemon_state_root()
 
     if not state_root.is_dir():
         print(f"state root does not exist: {state_root}", file=sys.stderr)

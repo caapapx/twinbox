@@ -124,6 +124,28 @@ def resolve_state_root(
         raise PathResolutionError(f"Configured state root does not exist: {candidate}") from exc
 
 
+def resolve_daemon_state_root(
+    default_state_root: str | os.PathLike[str] | None = None,
+    *,
+    env: dict[str, str] | None = None,
+) -> Path:
+    """State root for daemon lifecycle and ``python -m twinbox_core.daemon``.
+
+    If ``TWINBOX_STATE_ROOT`` is set, returns that path expanded and resolved
+    without requiring it to exist (the daemon validates ``is_dir()`` before
+    binding). Otherwise uses :func:`resolve_state_root`, which honors
+    ``TWINBOX_CANONICAL_ROOT``, config files, and strict existence for configured
+    candidates — same as the rest of the CLI.
+    """
+    if env is None:
+        env = os.environ
+    base = Path.cwd() if default_state_root is None else Path(default_state_root)
+    raw = env.get("TWINBOX_STATE_ROOT", "").strip()
+    if raw:
+        return Path(raw).expanduser().resolve()
+    return resolve_state_root(base, env=env)
+
+
 def twinbox_home_for_vendor(
     state_root: str | os.PathLike[str],
     env: dict[str, str] | None = None,
