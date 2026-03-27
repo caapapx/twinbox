@@ -9,8 +9,14 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-CODE_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd -P)"
-STATE_ROOT="${CODE_ROOT}"
+
+# Read state root from config file (defaults to ~/.twinbox)
+_STATE_ROOT_FILE="${XDG_CONFIG_HOME:-${HOME}/.config}/twinbox/state-root"
+if [[ -f "${_STATE_ROOT_FILE}" ]]; then
+  STATE_ROOT="$(tr -d '\n' < "${_STATE_ROOT_FILE}")"
+else
+  STATE_ROOT="${HOME}/.twinbox"
+fi
 OPENCLAW_SESSIONS_DIR="${HOME}/.openclaw/agents/twinbox/sessions"
 
 DRY_RUN=0

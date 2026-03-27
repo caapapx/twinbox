@@ -15,7 +15,14 @@ SYSTEMD_USER_DIR="${XDG_CONFIG_HOME:-${HOME}/.config}/systemd/user"
 OPENCLAW_SKILLS_DIR="${HOME}/.openclaw/skills/twinbox"
 OPENCLAW_SESSIONS_DIR="${HOME}/.openclaw/agents/twinbox/sessions"
 OPENCLAW_JSON="${HOME}/.openclaw/openclaw.json"
-STATE_ROOT="${CODE_ROOT}"
+
+# Read state root from config file (defaults to ~/.twinbox)
+_STATE_ROOT_FILE="${XDG_CONFIG_HOME:-${HOME}/.config}/twinbox/state-root"
+if [[ -f "${_STATE_ROOT_FILE}" ]]; then
+  STATE_ROOT="$(tr -d '\n' < "${_STATE_ROOT_FILE}")"
+else
+  STATE_ROOT="${HOME}/.twinbox"
+fi
 
 DRY_RUN=0
 WITH_PIP=0
@@ -158,15 +165,20 @@ else
   echo "Config directory not found."
 fi
 
-# 8. Remove runtime state
+# 8. Remove state root (~/.twinbox) and config dir (~/.config/twinbox/)
 echo ""
-echo "--- [8/8] runtime state ---"
-RUNTIME_DIR="${STATE_ROOT}/runtime"
-if [[ -d "${RUNTIME_DIR}" ]]; then
-  echo "Removing ${RUNTIME_DIR}"
-  run rm -rf "${RUNTIME_DIR}"
+echo "--- [8/8] state root and config ---"
+if [[ -d "${STATE_ROOT}" ]]; then
+  echo "Removing state root: ${STATE_ROOT}"
+  run rm -rf "${STATE_ROOT}"
 else
-  echo "Runtime directory not found."
+  echo "State root not found: ${STATE_ROOT}"
+fi
+if [[ -d "${CONFIG_DIR}" ]]; then
+  echo "Removing config: ${CONFIG_DIR}"
+  run rm -rf "${CONFIG_DIR}"
+else
+  echo "Config directory not found."
 fi
 
 # Optional: uninstall Python package
