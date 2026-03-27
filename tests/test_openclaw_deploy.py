@@ -283,6 +283,7 @@ def test_run_openclaw_deploy_runtime_strict_avoids_write_side_effects(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     code_root, state_root, openclaw_home, runtime = _make_runtime_layout(tmp_path)
+    monkeypatch.setenv("TWINBOX_CODE_ROOT", str(code_root.resolve()))
     monkeypatch.setenv("TWINBOX_STATE_ROOT", str(state_root))
 
     report = run_openclaw_deploy(
@@ -330,6 +331,7 @@ def test_run_openclaw_deploy_runtime_dry_run_keeps_side_effects_zero(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     code_root, state_root, openclaw_home, runtime = _make_runtime_layout(tmp_path)
+    monkeypatch.setenv("TWINBOX_CODE_ROOT", str(code_root.resolve()))
     monkeypatch.setenv("TWINBOX_STATE_ROOT", str(state_root))
 
     report = run_openclaw_deploy(
@@ -391,6 +393,7 @@ def test_run_openclaw_deploy_runtime_restart_failure_keeps_prior_steps(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     code_root, state_root, openclaw_home, runtime = _make_runtime_layout(tmp_path)
+    monkeypatch.setenv("TWINBOX_CODE_ROOT", str(code_root.resolve()))
     monkeypatch.setenv("TWINBOX_STATE_ROOT", str(state_root))
     runtime.command_runner.results[("openclaw", "gateway", "restart")] = subprocess.CompletedProcess(
         ["openclaw", "gateway", "restart"], 1, stdout="", stderr="boom\n"
@@ -498,6 +501,7 @@ def test_run_openclaw_rollback_runtime_only_unwires_twinbox(
         },
     )
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("TWINBOX_CODE_ROOT", str(code_root.resolve()))
     monkeypatch.setenv("TWINBOX_STATE_ROOT", str(state_root))
 
     report = run_openclaw_rollback(
