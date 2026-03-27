@@ -111,6 +111,12 @@ class _MemFileOpsRemoveTreeFails(_MemFileOps):
         raise OSError("simulated rmtree failure")
 
 
+class _MemFileOpsWriteJsonFails(_MemFileOps):
+    def write_json_atomic(self, path: Path, data: dict[str, Any]) -> None:
+        del path, data
+        raise OSError("simulated write failure")
+
+
 class _RecordingCommandRunner:
     def __init__(self, returncode: int = 0, stderr: str = "") -> None:
         self.returncode = returncode
@@ -157,6 +163,7 @@ def _deploy_ctx(
     dry_run: bool = False,
     fragment_path: Path | None = None,
     no_fragment: bool = False,
+    sync_env_from_dotenv: bool = False,
 ) -> DeployContext:
     code_root = tmp_path / "repo"
     state_root = tmp_path / "state"
@@ -171,7 +178,7 @@ def _deploy_ctx(
         init_script=code_root / "scripts" / "install_openclaw_twinbox_init.sh",
         dry_run=dry_run,
         restart_gateway=False,
-        sync_env_from_dotenv=False,
+        sync_env_from_dotenv=sync_env_from_dotenv,
         strict=False,
         fragment_path=fragment_path,
         no_fragment=no_fragment,
@@ -415,6 +422,87 @@ def test_merge_openclaw_json_step_dry_run_merges_fragment_but_skips_write(
     json_step = next(s for s in report.steps if s.id == "merge_openclaw_json")
     assert json_step.status == "dry_run"
     assert ops.write_json_calls == []
+
+
+def test_merge_openclaw_json_step_host_json_invalid_fails(tmp_path: Path) -> None:
+    oc = tmp_path / ".openclaw"
+    host = oc / "openclaw.json"
+    ops = _MemFileOps({host: "not-json"})
+    rt = OpenClawDeployRuntime(file_ops=ops, command_runner=SubprocessCommandRunner())
+    report = OpenClawDeployReport(ok=True)
+    ctx = _deploy_ctx(tmp_path, no_fragment=True)
+
+    ok = merge_openclaw_json_step(
+        ctx, report, rt, dotenv={}, missing_required=[]
+    )
+    assert ok is False
+    assert report.steps[-1].id == "merge_openclaw_json"
+    assert report.steps[-1].status == "failed"
+
+
+def test_merge_openclaw_json_step_sync_env_from_dotenv_merges_keys(
+    tmp_path: Path,
+) -> None:
+    oc = tmp_path / ".openclaw"
+    host = oc / "openclaw.json"
+    ops = _MemFileOps({host: "{}"})
+    rt = OpenClawDeployRuntime(file_ops=ops, command_runner=SubprocessCommandRunner())
+    report = OpenClawDeployReport(ok=True)
+    ctx = _deploy_ctx(tmp_path, no_fragment=True, sync_env_from_dotenv=True)
+    dotenv = {
+        "IMAP_HOST": "imap.example",
+        "MAIL_ADDRESS": "u@example.com",
+        "MAIL_DISPLAY_NAME": "User",
+    }
+
+    ok = merge_openclaw_json_step(
+        ctx, report, rt, dotenv=dotenv, missing_required=[]
+    )
+    assert ok is True
+    written = ops.write_json_calls[0][1]
+    env = written["skills"]["entries"]["twinbox"]["env"]
+    assert env["IMAP_HOST"] == "imap.example"
+    assert env["MAIL_ADDRESS"] == "u@example.com"
+    assert env["MAIL_DISPLAY_NAME"] == "User"
+
+
+def test_merge_openclaw_json_step_missing_required_warning_in_message(
+    tmp_path: Path,
+) -> None:
+    oc = tmp_path / ".openclaw"
+    host = oc / "openclaw.json"
+    ops = _MemFileOps({host: "{}"})
+    rt = OpenClawDeployRuntime(file_ops=ops, command_runner=SubprocessCommandRunner())
+    report = OpenClawDeployReport(ok=True)
+    ctx = _deploy_ctx(tmp_path, no_fragment=True, sync_env_from_dotenv=True)
+    missing = ["IMAP_HOST", "SMTP_PASS"]
+
+    ok = merge_openclaw_json_step(
+        ctx, report, rt, dotenv={}, missing_required=missing
+    )
+    assert ok is True
+    step = next(s for s in report.steps if s.id == "merge_openclaw_json")
+    assert step.status == "ok"
+    assert "warning" in step.message
+    assert "IMAP_HOST" in step.message
+    assert step.detail.get("missing_required_env_in_dotenv") == missing
+
+
+def test_merge_openclaw_json_step_write_json_raises_fails(tmp_path: Path) -> None:
+    oc = tmp_path / ".openclaw"
+    host = oc / "openclaw.json"
+    ops = _MemFileOpsWriteJsonFails({host: "{}"})
+    rt = OpenClawDeployRuntime(file_ops=ops, command_runner=SubprocessCommandRunner())
+    report = OpenClawDeployReport(ok=True)
+    ctx = _deploy_ctx(tmp_path, no_fragment=True)
+
+    ok = merge_openclaw_json_step(
+        ctx, report, rt, dotenv={}, missing_required=[]
+    )
+    assert ok is False
+    assert report.steps[-1].id == "merge_openclaw_json"
+    assert report.steps[-1].status == "failed"
+    assert "simulated" in report.steps[-1].message
 
 
 def test_sync_skill_md_step_missing_skill_fails(tmp_path: Path) -> None:
