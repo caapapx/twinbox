@@ -7,7 +7,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from twinbox_core.daemon import TWINBOX_PROTOCOL_VERSION
 from twinbox_core.daemon import invoke_cache
@@ -15,6 +15,43 @@ from twinbox_core.daemon import metrics
 
 _START_MONO = time.monotonic()
 _DAEMON_STATE_ROOT: Path | None = None
+
+
+class TaskCliRunner(Protocol):
+    """Runs ``task_cli`` with the given argv; used by :func:`handle_cli_invoke` (overridable in tests)."""
+
+    def __call__(
+        self,
+        argv: list[str],
+        *,
+        timeout: float,
+        env: dict[str, str],
+    ) -> subprocess.CompletedProcess[str]:
+        ...
+
+
+def _default_task_cli_runner(
+    argv: list[str],
+    *,
+    timeout: float,
+    env: dict[str, str],
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "-m", "twinbox_core.task_cli", *argv],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        env=env,
+    )
+
+
+_task_cli_runner: TaskCliRunner = _default_task_cli_runner
+
+
+def set_task_cli_runner(runner: TaskCliRunner | None) -> None:
+    """Replace subprocess used for ``cli_invoke`` (pass ``None`` to restore default)."""
+    global _task_cli_runner
+    _task_cli_runner = _default_task_cli_runner if runner is None else runner
 
 
 def set_daemon_state_root(root: Path) -> None:
@@ -96,13 +133,7 @@ def handle_cli_invoke(params: dict[str, Any]) -> dict[str, Any]:
         metrics.record_cache_miss()
 
     try:
-        proc = subprocess.run(
-            [sys.executable, "-m", "twinbox_core.task_cli", *argv],
-            capture_output=True,
-            text=True,
-            timeout=timeout_sec,
-            env=os.environ.copy(),
-        )
+        proc = _task_cli_runner(argv, timeout=timeout_sec, env=os.environ.copy())
     except subprocess.TimeoutExpired:
         return {
             "exit_code": 124,
