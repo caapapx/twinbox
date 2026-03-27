@@ -177,6 +177,40 @@ def test_stop_not_running(state_root: Path) -> None:
     assert r.returncode == 0
 
 
+def test_cli_invoke_cache_only_miss_without_warm_cache(state_root: Path) -> None:
+    (state_root / "runtime" / "context").mkdir(parents=True)
+    assert _run_cli(["daemon", "start"], state_root).returncode == 0
+    try:
+        resp = rpc_call(
+            state_root,
+            "cli_invoke",
+            {"argv": ["--help"], "cache_policy": "cache_only"},
+            connect_timeout_sec=5.0,
+            io_timeout_sec=60.0,
+        )
+        assert resp["result"]["exit_code"] == 124
+        assert "cache_only" in resp["result"]["stderr"].lower()
+        assert resp["result"].get("cache") == "miss"
+    finally:
+        _run_cli(["daemon", "stop"], state_root, check=False)
+
+
+def test_unknown_rpc_method_returns_error(state_root: Path) -> None:
+    assert _run_cli(["daemon", "start"], state_root).returncode == 0
+    try:
+        resp = rpc_call(
+            state_root,
+            "no_such_method",
+            {},
+            connect_timeout_sec=5.0,
+            io_timeout_sec=5.0,
+        )
+        assert "error" in resp
+        assert resp["error"]["code"] == -32603
+    finally:
+        _run_cli(["daemon", "stop"], state_root, check=False)
+
+
 def test_cli_invoke_prefer_cache_hit(state_root: Path) -> None:
     (state_root / "runtime" / "context").mkdir(parents=True)
     assert _run_cli(["daemon", "start"], state_root).returncode == 0

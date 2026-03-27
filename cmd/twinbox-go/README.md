@@ -46,8 +46,10 @@ Override socket path:
 | `TWINBOX_STATE_ROOT` | State root; default socket is `$TWINBOX_STATE_ROOT/run/daemon.sock` |
 | `TWINBOX_PYTHON` | Python executable for fallback (default `python3`) |
 | `TWINBOX_CODE_ROOT` | Working directory for the fallback Python process (optional) |
+| `TWINBOX_RPC_CACHE_POLICY` | Passed to daemon `cli_invoke` as `cache_policy` (e.g. `prefer_cache`, `cache_only`) |
+| `TWINBOX_RPC_TIMEOUT_MS` | Subprocess timeout for `cli_invoke` (daemon); also extends socket read deadline if larger than the default |
 
 ## Timeouts
 
 - Connect to socket: 3s
-- Full RPC round-trip: 30s
+- Full RPC round-trip: 30s minimum; grows with `TWINBOX_RPC_TIMEOUT_MS` when set

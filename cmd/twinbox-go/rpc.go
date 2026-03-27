@@ -7,6 +7,8 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -32,6 +34,7 @@ type invokeResult struct {
 	ExitCode int    `json:"exit_code"`
 	Stdout   string `json:"stdout"`
 	Stderr   string `json:"stderr"`
+	Cache    string `json:"cache,omitempty"`
 }
 
 type rpcErrorObj struct {
@@ -63,18 +66,33 @@ func defaultSocketPath() string {
 }
 
 func cliInvokeRPC(socketPath string, argv []string, connectTimeout, rpcTimeout time.Duration) (*invokeResult, error) {
+	params := map[string]any{"argv": argv}
+	deadline := rpcTimeout
+	if p := strings.TrimSpace(os.Getenv("TWINBOX_RPC_CACHE_POLICY")); p != "" {
+		params["cache_policy"] = p
+	}
+	if s := strings.TrimSpace(os.Getenv("TWINBOX_RPC_TIMEOUT_MS")); s != "" {
+		if ms, err := strconv.Atoi(s); err == nil && ms > 0 {
+			params["timeout_ms"] = ms
+			d := time.Duration(ms)*time.Millisecond + 10*time.Second
+			if d > deadline {
+				deadline = d
+			}
+		}
+	}
+
 	d := net.Dialer{Timeout: connectTimeout}
 	conn, err := d.Dial("unix", socketPath)
 	if err != nil {
 		return nil, err
 	}
 	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(rpcTimeout))
+	_ = conn.SetDeadline(time.Now().Add(deadline))
 
 	req := rpcRequest{
 		JSONRPC:        "2.0",
 		Method:         "cli_invoke",
-		Params:         map[string]any{"argv": argv},
+		Params:         params,
 		ID:             1,
 		TwinboxVersion: twinboxProtocolVersion,
 	}

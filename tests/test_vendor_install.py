@@ -90,6 +90,39 @@ def test_install_missing_source_raises(tmp_path: Path) -> None:
         install_vendor(state_root=state, code_root=repo, dry_run=False)
 
 
+def test_vendor_status_integrity_fails_when_key_file_removed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = tmp_path / "state"
+    state.mkdir()
+    repo = _fake_repo(tmp_path)
+    monkeypatch.chdir(repo)
+    install_vendor(state_root=state, code_root=repo, dry_run=False)
+    pkg = vendor_twinbox_core_path(state)
+    (pkg / "task_cli.py").unlink()
+    st = vendor_status(state)
+    assert st["package_present"] is True
+    assert st.get("integrity_ok") is False
+    assert "missing_key_files" in st.get("integrity_issues", [])
+
+
+def test_vendor_status_detects_file_count_mismatch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = tmp_path / "state"
+    state.mkdir()
+    repo = _fake_repo(tmp_path)
+    monkeypatch.chdir(repo)
+    install_vendor(state_root=state, code_root=repo, dry_run=False)
+    pkg = vendor_twinbox_core_path(state)
+    (pkg / "stub.py").unlink()
+    st = vendor_status(state)
+    assert st.get("integrity_ok") is False
+    assert "file_count_mismatch" in st.get("integrity_issues", [])
+
+
 def test_cli_vendor_install_and_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     state = tmp_path / "state"
     state.mkdir()
