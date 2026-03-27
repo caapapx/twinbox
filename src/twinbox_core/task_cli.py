@@ -22,6 +22,7 @@ from .daytime_slice import (
 from .env_writer import mask_secret, merge_env_file, write_env_file
 from .mailbox import format_preflight_text, run_preflight
 from .material_extract import MaterialExtractError, write_extract_for_import
+from .openclaw_deploy import run_openclaw_deploy
 from .paths import resolve_state_root
 from .routing_rules import evaluate_rule, load_rules, load_rules_raw, save_rules_raw, RoutingRule
 from .schedule_override import disable_schedule, enable_schedule, load_schedule_config, reset_schedule_override, update_schedule_override
@@ -1185,6 +1186,28 @@ def cmd_config_set_llm(args: argparse.Namespace) -> int:
         print(f"  Model: {resolved_model}")
         print(f"  API Key: {mask_secret(api_key)}")
     return 0 if backend_ok else 1
+
+
+def cmd_deploy_openclaw(args: argparse.Namespace) -> int:
+    """Host-side OpenClaw wiring (SKILL sync, openclaw.json, roots, gateway)."""
+    code_root = Path(args.repo_root).expanduser() if args.repo_root else None
+    openclaw_home = Path(args.openclaw_home).expanduser() if args.openclaw_home else None
+    report = run_openclaw_deploy(
+        code_root=code_root,
+        openclaw_home=openclaw_home,
+        dry_run=args.dry_run,
+        restart_gateway=not args.no_restart,
+        sync_env_from_dotenv=not args.no_env_sync,
+        openclaw_bin=args.openclaw_bin,
+    )
+    if args.json:
+        print(json.dumps(report.to_json_dict(), ensure_ascii=False, indent=2))
+    else:
+        for step in report.steps:
+            print(f"[{step.status}] {step.id}: {step.message}")
+        if not report.ok:
+            print("Deploy finished with errors.", file=sys.stderr)
+    return 0 if report.ok else 1
 
 
 def cmd_onboarding_status(args: argparse.Namespace) -> int:
@@ -2502,6 +2525,48 @@ def _build_parser() -> argparse.ArgumentParser:
     config_set_llm.add_argument("--api-url", default="", help="API URL override")
     config_set_llm.add_argument("--json", action="store_true", help="Output as JSON")
 
+    deploy_parser = subparsers.add_parser(
+        "deploy",
+        help="Host-side deployment helpers (OpenClaw wiring)",
+    )
+    deploy_sub = deploy_parser.add_subparsers(dest="deploy_command", required=True)
+
+    dep_oc = deploy_sub.add_parser(
+        "openclaw",
+        help="Init Twinbox roots, merge openclaw.json, copy SKILL.md, restart gateway",
+    )
+    dep_oc.add_argument(
+        "--repo-root",
+        default="",
+        help="Twinbox git checkout (default: resolve from cwd via ~/.config/twinbox/code-root)",
+    )
+    dep_oc.add_argument(
+        "--openclaw-home",
+        default="",
+        help="OpenClaw config dir (default: ~/.openclaw)",
+    )
+    dep_oc.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print planned steps without mutating files or restarting gateway",
+    )
+    dep_oc.add_argument(
+        "--no-restart",
+        action="store_true",
+        help="Skip `openclaw gateway restart`",
+    )
+    dep_oc.add_argument(
+        "--no-env-sync",
+        action="store_true",
+        help="Only set skills.entries.twinbox.enabled; do not copy mailbox keys from state .env",
+    )
+    dep_oc.add_argument(
+        "--openclaw-bin",
+        default="openclaw",
+        help="openclaw executable for gateway restart",
+    )
+    dep_oc.add_argument("--json", action="store_true", help="Output as JSON")
+
     # onboarding commands
     onboarding_parser = subparsers.add_parser("onboarding", help="Conversational onboarding flow")
     onboarding_sub = onboarding_parser.add_subparsers(dest="onboarding_command", required=True)
@@ -2721,6 +2786,9 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "config":
             if args.config_command == "set-llm":
                 return cmd_config_set_llm(args)
+        elif args.command == "deploy":
+            if args.deploy_command == "openclaw":
+                return cmd_deploy_openclaw(args)
         elif args.command == "onboarding":
             if args.onboarding_command == "start":
                 return cmd_onboarding_start(args)
