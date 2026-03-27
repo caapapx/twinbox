@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from twinbox_core.openclaw_deploy import (
+    deep_merge_openclaw,
     load_openclaw_json,
     merge_twinbox_openclaw_entry,
     remove_twinbox_skill_entry_from_openclaw,
@@ -35,6 +36,45 @@ def test_merge_preserves_other_skill_entries() -> None:
     assert tb["enabled"] is True
     assert tb["env"]["IMAP_HOST"] == "imap.example.com"
     assert tb["env"]["IMAP_PORT"] == "993"
+
+
+def test_deep_merge_openclaw_recurses_dicts_replaces_lists() -> None:
+    dst = {"skills": {"entries": {"a": 1}}, "x": [1, 2]}
+    src = {"skills": {"entries": {"b": 2}}, "x": [3]}
+    out = deep_merge_openclaw(dst, src)
+    assert out["skills"]["entries"] == {"a": 1, "b": 2}
+    assert out["x"] == [3]
+
+
+def test_merge_order_fragment_then_twinbox() -> None:
+    existing = {"skills": {"entries": {"keep": {"enabled": True}}}}
+    frag = {"plugins": {"allow": ["twinbox-task-tools"]}}
+    base = deep_merge_openclaw(existing, frag)
+    merged = merge_twinbox_openclaw_entry(
+        base, dotenv={}, sync_env_from_dotenv=False
+    )
+    assert merged["plugins"]["allow"] == ["twinbox-task-tools"]
+    assert "twinbox" in merged["skills"]["entries"]
+    assert "keep" in merged["skills"]["entries"]
+
+
+def test_explicit_fragment_missing_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    report = run_openclaw_deploy(
+        code_root=REPO_ROOT,
+        openclaw_home=tmp_path / ".openclaw",
+        dry_run=True,
+        restart_gateway=False,
+        sync_env_from_dotenv=False,
+        fragment_path=tmp_path / "missing-fragment.json",
+        no_fragment=False,
+    )
+    assert not report.ok
+    assert any(
+        s.id == "merge_openclaw_fragment" and s.status == "failed" for s in report.steps
+    )
 
 
 def test_remove_twinbox_skill_entry_preserves_other_entries() -> None:

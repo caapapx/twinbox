@@ -1203,6 +1203,7 @@ def cmd_deploy_openclaw(args: argparse.Namespace) -> int:
         )
         label = "Rollback"
     else:
+        frag = Path(args.fragment).expanduser() if args.fragment.strip() else None
         report = run_openclaw_deploy(
             code_root=code_root,
             openclaw_home=openclaw_home,
@@ -1210,6 +1211,8 @@ def cmd_deploy_openclaw(args: argparse.Namespace) -> int:
             restart_gateway=not args.no_restart,
             sync_env_from_dotenv=not args.no_env_sync,
             strict=args.strict,
+            fragment_path=frag,
+            no_fragment=args.no_fragment,
             openclaw_bin=args.openclaw_bin,
         )
         label = "Deploy"
@@ -2589,6 +2592,18 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="With env sync (default): fail if state .env lacks any OpenClaw-required mail key "
         "(SKILL.md requires.env); skips writing openclaw.json / later steps",
+    )
+    dep_oc.add_argument(
+        "--fragment",
+        default="",
+        metavar="PATH",
+        help="JSON file to deep-merge into openclaw.json before skills.entries.twinbox "
+        "(default: use openclaw-skill/openclaw.fragment.json if that file exists)",
+    )
+    dep_oc.add_argument(
+        "--no-fragment",
+        action="store_true",
+        help="Do not load openclaw-skill/openclaw.fragment.json",
     )
     dep_oc.add_argument(
         "--openclaw-bin",

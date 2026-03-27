@@ -83,6 +83,28 @@ def _deep_copy_json(obj: dict[str, Any]) -> dict[str, Any]:
     return json.loads(json.dumps(obj))
 
 
+def deep_merge_openclaw(dst: dict[str, Any], src: dict[str, Any]) -> dict[str, Any]:
+    """Deep-merge *src* into a copy of *dst*.
+
+    Nested dicts are merged recursively; lists and scalars from *src* replace.
+    """
+    out = _deep_copy_json(dst)
+    for key, val in src.items():
+        if key in out and isinstance(out[key], dict) and isinstance(val, dict):
+            out[key] = deep_merge_openclaw(out[key], val)
+        elif isinstance(val, dict):
+            out[key] = _deep_copy_json(val)
+        elif isinstance(val, list):
+            out[key] = list(val)
+        else:
+            out[key] = val
+    return out
+
+
+def default_openclaw_fragment_path(code_root: Path) -> Path:
+    return code_root / "openclaw-skill" / "openclaw.fragment.json"
+
+
 def load_openclaw_json(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {}
@@ -181,6 +203,8 @@ def run_openclaw_deploy(
     restart_gateway: bool = True,
     sync_env_from_dotenv: bool = True,
     strict: bool = False,
+    fragment_path: Path | None = None,
+    no_fragment: bool = False,
     openclaw_bin: str = "openclaw",
     run_subprocess: Callable[..., subprocess.CompletedProcess[str]] | None = None,
 ) -> OpenClawDeployReport:
@@ -318,8 +342,73 @@ def run_openclaw_deploy(
         )
         return report
 
+    base = existing
+    frag_resolved: Path | None = None
+    frag_explicit = fragment_path is not None
+    if no_fragment:
+        report.steps.append(
+            DeployStepResult(
+                "merge_openclaw_fragment",
+                "skipped",
+                "--no-fragment",
+            )
+        )
+    elif fragment_path is not None:
+        frag_resolved = fragment_path.expanduser()
+        if not frag_resolved.is_file():
+            report.ok = False
+            report.steps.append(
+                DeployStepResult(
+                    "merge_openclaw_fragment",
+                    "failed",
+                    f"Fragment file not found: {frag_resolved}",
+                )
+            )
+            return report
+    else:
+        candidate = default_openclaw_fragment_path(cr)
+        frag_resolved = candidate if candidate.is_file() else None
+
+    if frag_resolved is not None:
+        try:
+            fragment_data = load_openclaw_json(frag_resolved)
+        except ValueError as exc:
+            report.ok = False
+            report.steps.append(
+                DeployStepResult("merge_openclaw_fragment", "failed", str(exc))
+            )
+            return report
+        base = deep_merge_openclaw(existing, fragment_data)
+        frag_msg = f"Deep-merged fragment from {frag_resolved}"
+        if dry_run:
+            report.steps.append(
+                DeployStepResult(
+                    "merge_openclaw_fragment",
+                    "dry_run",
+                    frag_msg,
+                    {"path": str(frag_resolved), "explicit": frag_explicit},
+                )
+            )
+        else:
+            report.steps.append(
+                DeployStepResult(
+                    "merge_openclaw_fragment",
+                    "ok",
+                    frag_msg,
+                    {"path": str(frag_resolved), "explicit": frag_explicit},
+                )
+            )
+    elif not no_fragment:
+        report.steps.append(
+            DeployStepResult(
+                "merge_openclaw_fragment",
+                "skipped",
+                f"No {default_openclaw_fragment_path(cr)} (optional)",
+            )
+        )
+
     merged = merge_twinbox_openclaw_entry(
-        existing,
+        base,
         dotenv=dotenv,
         sync_env_from_dotenv=sync_env_from_dotenv,
     )
