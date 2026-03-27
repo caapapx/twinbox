@@ -198,6 +198,55 @@ class _FakePrompter:
         return _Progress()
 
 
+def test_run_openclaw_onboard_v2_console_prompter_prints_english_shell(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    _write_ready_env(state_root)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
+    (repo / "openclaw-skill").mkdir()
+    (repo / "openclaw-skill" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    openclaw_home = tmp_path / ".openclaw"
+    openclaw_home.mkdir()
+
+    monkeypatch.setenv("TWINBOX_STATE_ROOT", str(state_root))
+    monkeypatch.setenv("TWINBOX_CODE_ROOT", str(repo))
+    monkeypatch.setattr("twinbox_core.openclaw_onboard.shutil.which", lambda _bin: "/usr/bin/openclaw")
+    answers = iter([""])
+    monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
+
+    def fake_run_openclaw_onboard(**kwargs: object):
+        report = run_openclaw_onboard(
+            code_root=repo,
+            openclaw_home=openclaw_home,
+            fragment_decision=kwargs.get("fragment_decision"),
+            input_fn=lambda _prompt="": (_ for _ in ()).throw(AssertionError("input should not be called")),
+            secret_input_fn=lambda _prompt="": (_ for _ in ()).throw(AssertionError("secret should not be called")),
+            deploy_runner=lambda **deploy_kwargs: OpenClawDeployReport(ok=True, steps=[]),
+        )
+        report.next_action = "Continue in the twinbox agent with profile setup."
+        return report
+
+    _ = run_openclaw_onboard_v2(
+        code_root=repo,
+        openclaw_home=openclaw_home,
+        run_onboard=fake_run_openclaw_onboard,
+    )
+    out = capsys.readouterr().out
+
+    assert "Twinbox OpenClaw onboarding" in out
+    assert "Phase 1 of 2" in out
+    assert "1. Quickstart [Recommended]" in out
+    assert "2. Advanced" in out
+    assert "Running Twinbox host onboarding" in out
+    assert "Phase 2 of 2" in out
+
+
 def test_run_openclaw_onboard_v2_quickstart_defaults_fragment_and_handoffs(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
