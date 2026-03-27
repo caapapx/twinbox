@@ -7,12 +7,16 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from twinbox_core.openclaw_deploy_runtime import OpenClawDeployRuntime, SubprocessCommandRunner
 from twinbox_core.openclaw_json_io import default_openclaw_fragment_path
 from twinbox_core.openclaw_deploy_steps import (
     DeployContext,
     RollbackContext,
     append_step,
+    bootstrap_roots_step,
+    ensure_himalaya_step,
     fail_step,
     gateway_restart_step,
     merge_openclaw_json_step,
@@ -109,6 +113,12 @@ class _RecordingCommandRunner:
         return subprocess.CompletedProcess(
             argv, self.returncode, stdout="", stderr=self.stderr
         )
+
+
+class _OSErrorCommandRunner:
+    def run(self, argv: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
+        del argv, cwd
+        raise OSError("simulated spawn failure")
 
 
 def test_skill_canonical_path(tmp_path: Path) -> None:
@@ -541,6 +551,162 @@ def test_gateway_restart_step_nonzero_fails() -> None:
     step = next(s for s in report.steps if s.id == "gateway_restart")
     assert step.status == "failed"
     assert "err" in (step.detail.get("stderr") or "")
+
+
+def test_bootstrap_roots_step_missing_init_fails(tmp_path: Path) -> None:
+    ctx = _deploy_ctx(tmp_path, dry_run=False)
+    ops = _MemFileOps()
+    rt = OpenClawDeployRuntime(
+        file_ops=ops, command_runner=_RecordingCommandRunner()
+    )
+    report = OpenClawDeployReport(ok=True)
+
+    ok = bootstrap_roots_step(ctx, report, rt)
+    assert ok is False
+    assert report.steps[-1].id == "bootstrap_init_script"
+
+
+def test_bootstrap_roots_step_dry_run(tmp_path: Path) -> None:
+    ctx = _deploy_ctx(tmp_path, dry_run=True)
+    init = ctx.init_script
+    ops = _MemFileOps({init: "#!/bin/bash\n"})
+    runner = _RecordingCommandRunner()
+    rt = OpenClawDeployRuntime(file_ops=ops, command_runner=runner)
+    report = OpenClawDeployReport(ok=True)
+
+    ok = bootstrap_roots_step(ctx, report, rt)
+    assert ok is True
+    assert runner.calls == []
+    step = next(s for s in report.steps if s.id == "bootstrap_roots")
+    assert step.status == "dry_run"
+    assert str(init) in step.message
+
+
+def test_bootstrap_roots_step_ok(tmp_path: Path) -> None:
+    ctx = _deploy_ctx(tmp_path, dry_run=False)
+    init = ctx.init_script
+    ops = _MemFileOps({init: "#!/bin/bash\n"})
+    runner = _RecordingCommandRunner()
+    rt = OpenClawDeployRuntime(file_ops=ops, command_runner=runner)
+    report = OpenClawDeployReport(ok=True)
+
+    ok = bootstrap_roots_step(ctx, report, rt)
+    assert ok is True
+    assert runner.calls == [(["bash", str(init)], ctx.code_root)]
+    assert next(s for s in report.steps if s.id == "bootstrap_roots").status == "ok"
+
+
+def test_bootstrap_roots_step_nonzero_fails(tmp_path: Path) -> None:
+    ctx = _deploy_ctx(tmp_path, dry_run=False)
+    init = ctx.init_script
+    ops = _MemFileOps({init: "#"})
+    runner = _RecordingCommandRunner(returncode=2, stderr="bad")
+    rt = OpenClawDeployRuntime(file_ops=ops, command_runner=runner)
+    report = OpenClawDeployReport(ok=True)
+
+    ok = bootstrap_roots_step(ctx, report, rt)
+    assert ok is False
+    step = next(s for s in report.steps if s.id == "bootstrap_roots")
+    assert step.status == "failed"
+    assert step.detail.get("returncode") == 2
+
+
+def test_bootstrap_roots_step_run_raises_oserror(tmp_path: Path) -> None:
+    ctx = _deploy_ctx(tmp_path, dry_run=False)
+    init = ctx.init_script
+    ops = _MemFileOps({init: "#"})
+    rt = OpenClawDeployRuntime(file_ops=ops, command_runner=_OSErrorCommandRunner())
+    report = OpenClawDeployReport(ok=True)
+
+    ok = bootstrap_roots_step(ctx, report, rt)
+    assert ok is False
+    assert report.steps[-1].id == "bootstrap_roots"
+    assert "simulated" in report.steps[-1].message
+
+
+def test_ensure_himalaya_path_hit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "twinbox_core.openclaw_deploy_steps.shutil.which",
+        lambda _cmd: "/usr/bin/himalaya",
+    )
+    ctx = _deploy_ctx(tmp_path)
+    report = OpenClawDeployReport(ok=True)
+
+    ok = ensure_himalaya_step(ctx, report)
+    assert ok is True
+    step = next(s for s in report.steps if s.id == "ensure_himalaya")
+    assert step.status == "ok"
+    assert step.detail.get("mode") == "path"
+    assert step.detail.get("himalaya") == "/usr/bin/himalaya"
+
+
+def test_ensure_himalaya_state_runtime_bin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "twinbox_core.openclaw_deploy_steps.shutil.which",
+        lambda _cmd: None,
+    )
+    ctx = _deploy_ctx(tmp_path)
+    bin_path = ctx.state_root / "runtime" / "bin" / "himalaya"
+    bin_path.parent.mkdir(parents=True)
+    bin_path.write_bytes(b"#!\n")
+    bin_path.chmod(0o755)
+    report = OpenClawDeployReport(ok=True)
+
+    ok = ensure_himalaya_step(ctx, report)
+    assert ok is True
+    step = next(s for s in report.steps if s.id == "ensure_himalaya")
+    assert step.status == "ok"
+    assert step.detail.get("mode") == "state_runtime_bin"
+    assert step.detail.get("himalaya") == str(bin_path)
+
+
+def test_ensure_himalaya_skipped_when_no_bundle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "twinbox_core.openclaw_deploy_steps.shutil.which",
+        lambda _cmd: None,
+    )
+    monkeypatch.setattr(
+        "twinbox_core.openclaw_deploy_steps.bundled_linux_himalaya_tgz",
+        lambda: None,
+    )
+    ctx = _deploy_ctx(tmp_path)
+    report = OpenClawDeployReport(ok=True)
+
+    ok = ensure_himalaya_step(ctx, report)
+    assert ok is True
+    step = next(s for s in report.steps if s.id == "ensure_himalaya")
+    assert step.status == "skipped"
+    assert step.detail.get("mode") == "skipped"
+
+
+def test_ensure_himalaya_dry_run_when_bundle_available(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "twinbox_core.openclaw_deploy_steps.shutil.which",
+        lambda _cmd: None,
+    )
+    fake_tgz = tmp_path / "himalaya.tgz"
+    fake_tgz.write_bytes(b"x")
+    monkeypatch.setattr(
+        "twinbox_core.openclaw_deploy_steps.bundled_linux_himalaya_tgz",
+        lambda: fake_tgz,
+    )
+    ctx = _deploy_ctx(tmp_path, dry_run=True)
+    report = OpenClawDeployReport(ok=True)
+
+    ok = ensure_himalaya_step(ctx, report)
+    assert ok is True
+    step = next(s for s in report.steps if s.id == "ensure_himalaya")
+    assert step.status == "dry_run"
+    assert step.detail.get("mode") == "would_extract_bundled"
+    assert step.detail.get("bundle") == str(fake_tgz)
 
 
 def test_remove_skill_dir_step_dry_run_no_remove(tmp_path: Path) -> None:
