@@ -1269,6 +1269,23 @@ def cmd_onboard_openclaw(args: argparse.Namespace) -> int:
     return 0 if report.ok else 1
 
 
+def cmd_onboard_openclaw_v2(args: argparse.Namespace) -> int:
+    """Journey-style OpenClaw host onboarding shell with stronger handoff."""
+    from twinbox_core.openclaw_onboard import run_openclaw_onboard_v2
+
+    code_root = Path(args.repo_root).expanduser() if args.repo_root else None
+    openclaw_home = Path(args.openclaw_home).expanduser() if args.openclaw_home else None
+    report = run_openclaw_onboard_v2(
+        code_root=code_root,
+        openclaw_home=openclaw_home,
+        dry_run=args.dry_run,
+        openclaw_bin=args.openclaw_bin,
+    )
+    if args.json:
+        print(json.dumps(report.to_json_dict(), ensure_ascii=False, indent=2))
+    return 0 if report.ok else 1
+
+
 def cmd_onboarding_status(args: argparse.Namespace) -> int:
     """Show onboarding progress."""
     from .onboarding import load_state, get_stage_prompt
@@ -1278,7 +1295,8 @@ def cmd_onboarding_status(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(state.to_dict(), ensure_ascii=False, indent=2))
     else:
-        print(f"📋 Onboarding Progress")
+        print("Twinbox Onboarding Journey")
+        print("Phase 2 of 2: Continue inside the twinbox agent")
         print(f"  Current Stage: {state.current_stage}")
         print(f"  Completed: {', '.join(state.completed_stages) if state.completed_stages else 'None'}")
         if state.current_stage not in ["not_started", "completed"]:
@@ -1303,7 +1321,8 @@ def cmd_onboarding_start(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps({"stage": state.current_stage, "prompt": get_stage_prompt(state.current_stage)}, ensure_ascii=False))
     else:
-        print(f"🚀 Starting Twinbox Onboarding\n")
+        print("Twinbox Onboarding Journey")
+        print("Phase 2 of 2: Continue inside the twinbox agent\n")
         print(get_stage_prompt(state.current_stage))
 
     return 0
@@ -1348,6 +1367,8 @@ def cmd_onboarding_next(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(output, ensure_ascii=False, indent=2))
     else:
+        print("Twinbox Onboarding Journey")
+        print("Phase 2 of 2: Continue inside the twinbox agent")
         print(f"✅ 已完成阶段: {completed_stage}")
         print(f"➡️ 当前阶段: {state.current_stage}")
         if state.current_stage != "completed":
@@ -2713,6 +2734,32 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     onboard_oc.add_argument("--json", action="store_true", help="Output as JSON")
 
+    onboard_oc_v2 = onboard_sub.add_parser(
+        "openclaw-v2",
+        help="Journey-style OpenClaw onboarding shell with quickstart/advanced flows and stronger handoff",
+    )
+    onboard_oc_v2.add_argument(
+        "--repo-root",
+        default="",
+        help="Twinbox git checkout (default: resolve from cwd via ~/.config/twinbox/code-root)",
+    )
+    onboard_oc_v2.add_argument(
+        "--openclaw-home",
+        default="",
+        help="OpenClaw config dir (default: ~/.openclaw)",
+    )
+    onboard_oc_v2.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Plan the onboarding flow without mutating files or restarting gateway",
+    )
+    onboard_oc_v2.add_argument(
+        "--openclaw-bin",
+        default="openclaw",
+        help="openclaw executable for validation and gateway restart",
+    )
+    onboard_oc_v2.add_argument("--json", action="store_true", help="Output as JSON")
+
     # onboarding commands
     onboarding_parser = subparsers.add_parser("onboarding", help="Conversational onboarding flow")
     onboarding_sub = onboarding_parser.add_subparsers(dest="onboarding_command", required=True)
@@ -2972,6 +3019,8 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "onboard":
             if args.onboard_command == "openclaw":
                 return cmd_onboard_openclaw(args)
+            elif args.onboard_command == "openclaw-v2":
+                return cmd_onboard_openclaw_v2(args)
         elif args.command == "onboarding":
             if args.onboarding_command == "start":
                 return cmd_onboarding_start(args)
