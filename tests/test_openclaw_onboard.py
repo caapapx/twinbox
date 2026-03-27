@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import io
 from pathlib import Path
 
 import pytest
 
 from twinbox_core.onboarding import OnboardingState, load_state, save_state
 from twinbox_core.openclaw_deploy_types import OpenClawDeployReport
-from twinbox_core.openclaw_onboard import run_openclaw_onboard, run_openclaw_onboard_v2
+from twinbox_core.openclaw_onboard import (
+    ConsoleJourneyPrompter,
+    run_openclaw_onboard,
+    run_openclaw_onboard_v2,
+)
 
 
 def _fake_detect_to_env(email: str, *, verbose: bool) -> dict[str, str]:
@@ -198,6 +203,11 @@ class _FakePrompter:
         return _Progress()
 
 
+class _TTYBuffer(io.StringIO):
+    def isatty(self) -> bool:
+        return True
+
+
 def test_run_openclaw_onboard_v2_console_prompter_prints_english_shell(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -245,6 +255,42 @@ def test_run_openclaw_onboard_v2_console_prompter_prints_english_shell(
     assert "2. Advanced" in out
     assert "Running Twinbox host onboarding" in out
     assert "Phase 2 of 2" in out
+
+
+def test_console_journey_prompter_select_shows_descriptions_and_reprompts() -> None:
+    stream = _TTYBuffer()
+    answers = iter(["9", ""])
+    prompter = ConsoleJourneyPrompter(stream=stream, input_fn=lambda _prompt="": next(answers))
+
+    choice = prompter.select(
+        "Choose onboarding flow",
+        options=[
+            {"value": "quickstart", "label": "Quickstart", "description": "Use the recommended path with fewer decisions."},
+            {"value": "advanced", "label": "Advanced", "description": "Review fragment and host wiring details first."},
+        ],
+        default="quickstart",
+    )
+
+    out = stream.getvalue()
+    assert choice == "quickstart"
+    assert "Use the recommended path with fewer decisions." in out
+    assert "Review fragment and host wiring details first." in out
+    assert "Enter choice" in out
+    assert "Invalid choice" in out
+
+
+def test_console_journey_prompter_progress_renders_tty_spinner_frames() -> None:
+    stream = _TTYBuffer()
+    prompter = ConsoleJourneyPrompter(stream=stream)
+
+    progress = prompter.progress("Running Twinbox host onboarding")
+    progress.update("Checking mailbox, LLM, and OpenClaw wiring prerequisites")
+    progress.finish("Host wiring verified and onboarding handoff prepared")
+
+    out = stream.getvalue()
+    assert "⠋" in out or "⠙" in out or "⠹" in out
+    assert "\r" in out
+    assert "OK: Host wiring verified and onboarding handoff prepared" in out
 
 
 def test_run_openclaw_onboard_v2_quickstart_defaults_fragment_and_handoffs(
