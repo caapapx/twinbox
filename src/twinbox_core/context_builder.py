@@ -430,6 +430,7 @@ def _build_human_context(state_root: Path) -> dict[str, object]:
         "habits_items": habits_items,
         "has_facts": len(facts_items) > 0,
         "has_habits": len(habits_items) > 0,
+        "has_calibration": False,
     }
 
 
