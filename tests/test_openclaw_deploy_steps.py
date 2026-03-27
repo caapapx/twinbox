@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -13,10 +14,12 @@ from twinbox_core.openclaw_deploy_steps import (
     RollbackContext,
     append_step,
     fail_step,
+    gateway_restart_step,
     merge_openclaw_json_step,
     remove_skill_dir_step,
     skill_canonical_path,
     strip_openclaw_json_step,
+    sync_skill_md_step,
 )
 from twinbox_core.openclaw_deploy_types import OpenClawDeployReport
 
@@ -28,6 +31,10 @@ class _MemFileOps:
         self.files = {Path(k): v for k, v in (files or {}).items()}
         self.write_json_calls: list[tuple[Path, dict[str, Any]]] = []
         self.dirs: set[Path] = set()
+        self.mkdir_calls: list[Path] = []
+        self.copy_calls: list[tuple[Path, Path]] = []
+        self.unlink_calls: list[Path] = []
+        self.symlink_calls: list[tuple[Path, Path]] = []
 
     def is_file(self, path: Path) -> bool:
         return Path(path) in self.files
@@ -46,6 +53,62 @@ class _MemFileOps:
         p = Path(path)
         self.write_json_calls.append((p, data))
         self.files[p] = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+
+    def mkdir(self, path: Path, *, parents: bool = True, exist_ok: bool = True) -> None:
+        del parents, exist_ok
+        p = Path(path)
+        cur = p
+        while cur != cur.parent:
+            self.dirs.add(cur)
+            cur = cur.parent
+        self.mkdir_calls.append(p)
+
+    def copy_file(self, src: Path, dst: Path) -> None:
+        sp, dp = Path(src), Path(dst)
+        if sp not in self.files:
+            raise FileNotFoundError(sp)
+        self.mkdir(dp.parent)
+        self.files[dp] = self.files[sp]
+        self.copy_calls.append((sp, dp))
+
+    def unlink(self, path: Path) -> None:
+        p = Path(path)
+        self.unlink_calls.append(p)
+        self.files.pop(p, None)
+
+    def symlink(self, target: Path, link_path: Path) -> None:
+        tp, lp = Path(target), Path(link_path)
+        if tp not in self.files:
+            raise FileNotFoundError(tp)
+        self.mkdir(lp.parent)
+        self.files[lp] = self.files[tp]
+        self.symlink_calls.append((tp, lp))
+
+    def remove_tree(self, path: Path) -> None:
+        raise NotImplementedError
+
+
+class _MemFileOpsSymlinkFails(_MemFileOps):
+    """First symlink raises; used to assert copy_fallback path."""
+
+    def symlink(self, target: Path, link_path: Path) -> None:
+        del target, link_path
+        raise OSError("simulated symlink unsupported")
+
+
+class _RecordingCommandRunner:
+    def __init__(self, returncode: int = 0, stderr: str = "") -> None:
+        self.returncode = returncode
+        self.stderr = stderr
+        self.calls: list[tuple[list[str], Path]] = []
+
+    def run(
+        self, argv: list[str], *, cwd: Path
+    ) -> subprocess.CompletedProcess[str]:
+        self.calls.append((list(argv), Path(cwd)))
+        return subprocess.CompletedProcess(
+            argv, self.returncode, stdout="", stderr=self.stderr
+        )
 
 
 def test_skill_canonical_path(tmp_path: Path) -> None:
@@ -326,6 +389,158 @@ def test_merge_openclaw_json_step_dry_run_merges_fragment_but_skips_write(
     json_step = next(s for s in report.steps if s.id == "merge_openclaw_json")
     assert json_step.status == "dry_run"
     assert ops.write_json_calls == []
+
+
+def test_sync_skill_md_step_missing_skill_fails(tmp_path: Path) -> None:
+    ctx = _deploy_ctx(tmp_path, dry_run=False)
+    ops = _MemFileOps()
+    rt = OpenClawDeployRuntime(
+        file_ops=ops, command_runner=SubprocessCommandRunner()
+    )
+    report = OpenClawDeployReport(ok=True)
+
+    ok = sync_skill_md_step(ctx, report, rt)
+    assert ok is False
+    assert report.steps[-1].id == "sync_skill_md"
+    assert report.steps[-1].status == "failed"
+
+
+def test_sync_skill_md_step_dry_run(tmp_path: Path) -> None:
+    ctx = _deploy_ctx(tmp_path, dry_run=True)
+    skill = ctx.skill_src
+    ops = _MemFileOps({skill: "---\nname: twinbox\n---\n"})
+    rt = OpenClawDeployRuntime(
+        file_ops=ops, command_runner=SubprocessCommandRunner()
+    )
+    report = OpenClawDeployReport(ok=True)
+
+    ok = sync_skill_md_step(ctx, report, rt)
+    assert ok is True
+    assert ops.copy_calls == []
+    step = next(s for s in report.steps if s.id == "sync_skill_md")
+    assert step.status == "dry_run"
+    assert str(skill_canonical_path(ctx.state_root)) in step.message
+
+
+def test_sync_skill_md_step_symlink_ok(tmp_path: Path) -> None:
+    ctx = _deploy_ctx(tmp_path, dry_run=False)
+    skill = ctx.skill_src
+    body = "---\nname: twinbox\n---\nbody"
+    ops = _MemFileOps({skill: body})
+    rt = OpenClawDeployRuntime(
+        file_ops=ops, command_runner=SubprocessCommandRunner()
+    )
+    report = OpenClawDeployReport(ok=True)
+
+    ok = sync_skill_md_step(ctx, report, rt)
+    assert ok is True
+    canon = skill_canonical_path(ctx.state_root)
+    assert ops.files.get(canon) == body
+    assert ops.files.get(ctx.skill_dest) == body
+    assert ops.symlink_calls and ops.symlink_calls[0][0] == canon
+    step = next(s for s in report.steps if s.id == "sync_skill_md")
+    assert step.detail.get("mode") == "symlink"
+
+
+def test_sync_skill_md_step_copy_fallback_when_symlink_fails(tmp_path: Path) -> None:
+    ctx = _deploy_ctx(tmp_path, dry_run=False)
+    skill = ctx.skill_src
+    body = "x"
+    ops = _MemFileOpsSymlinkFails({skill: body})
+    rt = OpenClawDeployRuntime(
+        file_ops=ops, command_runner=SubprocessCommandRunner()
+    )
+    report = OpenClawDeployReport(ok=True)
+
+    ok = sync_skill_md_step(ctx, report, rt)
+    assert ok is True
+    canon = skill_canonical_path(ctx.state_root)
+    assert ops.files.get(ctx.skill_dest) == body
+    assert ops.symlink_calls == []
+    assert len([c for c in ops.copy_calls if c[1] == ctx.skill_dest]) == 1
+    step = next(s for s in report.steps if s.id == "sync_skill_md")
+    assert step.detail.get("mode") == "copy_fallback"
+    assert "symlink_error" in step.detail
+
+
+def test_gateway_restart_step_skipped_when_disabled() -> None:
+    runner = _RecordingCommandRunner()
+    rt = OpenClawDeployRuntime(file_ops=_MemFileOps(), command_runner=runner)
+    report = OpenClawDeployReport(ok=True)
+    cwd = Path("/tmp/x")
+
+    ok = gateway_restart_step(
+        restart_gateway=False,
+        dry_run=False,
+        openclaw_bin="openclaw",
+        cwd=cwd,
+        report=report,
+        runtime=rt,
+    )
+    assert ok is True
+    assert runner.calls == []
+    step = next(s for s in report.steps if s.id == "gateway_restart")
+    assert step.status == "skipped"
+
+
+def test_gateway_restart_step_dry_run() -> None:
+    runner = _RecordingCommandRunner()
+    rt = OpenClawDeployRuntime(file_ops=_MemFileOps(), command_runner=runner)
+    report = OpenClawDeployReport(ok=True)
+    cwd = Path("/tmp/x")
+
+    ok = gateway_restart_step(
+        restart_gateway=True,
+        dry_run=True,
+        openclaw_bin="oc",
+        cwd=cwd,
+        report=report,
+        runtime=rt,
+    )
+    assert ok is True
+    assert runner.calls == []
+    step = next(s for s in report.steps if s.id == "gateway_restart")
+    assert step.status == "dry_run"
+
+
+def test_gateway_restart_step_ok() -> None:
+    runner = _RecordingCommandRunner()
+    rt = OpenClawDeployRuntime(file_ops=_MemFileOps(), command_runner=runner)
+    report = OpenClawDeployReport(ok=True)
+    cwd = Path("/tmp/x")
+
+    ok = gateway_restart_step(
+        restart_gateway=True,
+        dry_run=False,
+        openclaw_bin="oc",
+        cwd=cwd,
+        report=report,
+        runtime=rt,
+    )
+    assert ok is True
+    assert runner.calls == [(["oc", "gateway", "restart"], cwd)]
+    assert next(s for s in report.steps if s.id == "gateway_restart").status == "ok"
+
+
+def test_gateway_restart_step_nonzero_fails() -> None:
+    runner = _RecordingCommandRunner(returncode=1, stderr="err")
+    rt = OpenClawDeployRuntime(file_ops=_MemFileOps(), command_runner=runner)
+    report = OpenClawDeployReport(ok=True)
+    cwd = Path("/tmp/x")
+
+    ok = gateway_restart_step(
+        restart_gateway=True,
+        dry_run=False,
+        openclaw_bin="oc",
+        cwd=cwd,
+        report=report,
+        runtime=rt,
+    )
+    assert ok is False
+    assert report.ok is False
+    step = next(s for s in report.steps if s.id == "gateway_restart")
+    assert step.status == "failed"
+    assert "err" in (step.detail.get("stderr") or "")
 
 
 def test_remove_skill_dir_step_dry_run_no_remove(tmp_path: Path) -> None:
