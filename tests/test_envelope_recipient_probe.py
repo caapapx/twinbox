@@ -2,19 +2,35 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 import unittest
+from typing import Any
 
 from twinbox_core.envelope_recipient_probe import (
-    load_envelope_array,
     normalize_addr_field,
     summarize_envelope,
 )
 
+# Inline Himalaya-shaped samples (previously under tests/fixtures/*.json).
+_RICH_ENVELOPES: list[dict[str, Any]] = [
+    {
+        "id": "e0",
+        "to": {"name": "Owner", "addr": "owner@example.com"},
+        "cc": {"name": "Bob", "addr": "bob@example.com"},
+    },
+    {
+        "id": "e1",
+        "to": [
+            {"addr": "a@example.com"},
+            {"addr": "b@example.com"},
+        ],
+    },
+    {
+        "id": "e2",
+        "List-Id": "<list.example.com>",
+    },
+]
 
-FIXTURE = Path(__file__).resolve().parent / "fixtures" / "himalaya_envelope_rich_sample.json"
+_MINIMAL_NO_TO_CC: dict[str, Any] = {"id": "m1", "subject": "hello"}
 
 
 class EnvelopeRecipientProbeTest(unittest.TestCase):
@@ -33,8 +49,7 @@ class EnvelopeRecipientProbeTest(unittest.TestCase):
         self.assertEqual(got[0]["addr"], "a@x.com")
 
     def test_summarize_fixture_direct_and_cc(self) -> None:
-        envs = load_envelope_array(FIXTURE)
-        s0 = summarize_envelope(envs[0])
+        s0 = summarize_envelope(_RICH_ENVELOPES[0])
         self.assertEqual(s0["to_entry_count"], 1)
         self.assertEqual(s0["cc_entry_count"], 1)
         self.assertIn("owner@example.com", s0["to_addrs"])
@@ -42,23 +57,16 @@ class EnvelopeRecipientProbeTest(unittest.TestCase):
         self.assertFalse(s0["has_list_id_key"])
 
     def test_summarize_fixture_multi_to(self) -> None:
-        envs = load_envelope_array(FIXTURE)
-        s1 = summarize_envelope(envs[1])
+        s1 = summarize_envelope(_RICH_ENVELOPES[1])
         self.assertEqual(s1["to_entry_count"], 2)
         self.assertEqual(s1["cc_entry_count"], 0)
 
     def test_summarize_fixture_list_id(self) -> None:
-        envs = load_envelope_array(FIXTURE)
-        s2 = summarize_envelope(envs[2])
+        s2 = summarize_envelope(_RICH_ENVELOPES[2])
         self.assertTrue(s2["has_list_id_key"])
 
     def test_delivery_fixture_minimal_has_no_to_cc(self) -> None:
-        minimal = Path(__file__).resolve().parent / "fixtures" / "delivery_director_ops" / "envelopes.json"
-        raw = json.loads(minimal.read_text(encoding="utf-8"))
-        self.assertIsInstance(raw, list)
-        first = raw[0]
-        assert isinstance(first, dict)
-        s = summarize_envelope(first)
+        s = summarize_envelope(_MINIMAL_NO_TO_CC)
         self.assertEqual(s["to_entry_count"], 0)
         self.assertEqual(s["cc_entry_count"], 0)
 

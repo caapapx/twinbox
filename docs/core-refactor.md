@@ -40,7 +40,7 @@
 - [ ] 将 `SKILL.md` 的 Suggested Tooling 从 `scripts/*.sh` 升级为 task-facing CLI（`twinbox queue list`、`twinbox digest daily` 等）
 - [ ] 梳理 skill 调用路径，确保 skill 文档不再需要解释 phase 细节
 - [ ] 补 CI/CD（`.github/workflows/`）：至少覆盖 Python 单测与 evaluation 回归门禁
-  - [x] **Python 单测**：`.github/workflows/ci.yml` 在 `ubuntu-latest` + Python 3.11 上跑全量 `pytest tests/`
+  - [ ] **Python 单测**：恢复 workflow（例如在 `ubuntu-latest` + Python 3.11 上跑全量 `pytest tests/`）
   - [ ] **evaluation 门禁**：`twinbox-eval-phase4` 等（与 TODO-4 可合并推进）
 
 完成标准：skill 文档只需引用 task-facing 命令；task-facing CLI 覆盖至少一条完整只读用户路径。
