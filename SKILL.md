@@ -79,7 +79,7 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 | Start onboarding flow | `twinbox onboarding start --json` |
 | Check onboarding progress | `twinbox onboarding status --json` |
 | Advance onboarding to next stage | `twinbox onboarding next --json` |
-| 后台 JSON-RPC daemon（省 Python 冷启动；可选） | `twinbox daemon start` / `stop` / `restart`；`twinbox daemon status --json`（含 `cache_stats`）。Socket：`$TWINBOX_STATE_ROOT/run/daemon.sock`。Go：`cmd/twinbox-go`（RPC 失败则 `exec` Python）；`twinbox-go install --archive …` 解压 vendor tarball |
+| 后台 JSON-RPC daemon（省 Python 冷启动；可选） | `twinbox daemon start` / `stop` / `restart`；`twinbox daemon status --json`（含 `cache_stats`）。Socket：`$TWINBOX_STATE_ROOT/run/daemon.sock`。Go：`cmd/twinbox-go`（RPC 失败则 `exec` Python）；`twinbox-go install --archive …` 可从本地路径或 HTTP URL 解压 vendor tarball |
 | 多邮箱 profile（共享 vendor、独立 state） | `twinbox --profile NAME …`（`TWINBOX_STATE_ROOT=~/.twinbox/profiles/NAME/state`，`TWINBOX_HOME=~/.twinbox`） |
 | Phase loading（bash 脚本入口） | `twinbox loading phase1` … `phase4`（参数原样转给 `scripts/phaseN_loading.sh`） |
 | 把 `twinbox_core` 同步到 vendor（宿主 PYTHONPATH） | `twinbox vendor install`；`twinbox vendor status --json`（`integrity_ok` / `file_count`）。装好后：`PYTHONPATH="$TWINBOX_HOME/vendor"` 或 `…/state/vendor`（无 profile 时二者常相同）+ `python3 -m twinbox_core.task_cli …` |

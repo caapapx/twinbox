@@ -6,9 +6,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 func runInstall(args []string) int {
@@ -47,12 +49,12 @@ func runInstall(args []string) int {
 }
 
 func extractTwinboxCoreTarball(path string, vendorDir string) error {
-	f, err := os.Open(path)
+	src, err := openArchiveSource(path)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	gz, err := gzip.NewReader(f)
+	defer src.Close()
+	gz, err := gzip.NewReader(src)
 	if err != nil {
 		return err
 	}
@@ -100,4 +102,20 @@ func extractTwinboxCoreTarball(path string, vendorDir string) error {
 		return fmt.Errorf("archive has no twinbox_core/ entries")
 	}
 	return nil
+}
+
+func openArchiveSource(path string) (io.ReadCloser, error) {
+	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
+		client := &http.Client{Timeout: 60 * time.Second}
+		resp, err := client.Get(path)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return nil, fmt.Errorf("download archive: unexpected HTTP %s", resp.Status)
+		}
+		return resp.Body, nil
+	}
+	return os.Open(path)
 }

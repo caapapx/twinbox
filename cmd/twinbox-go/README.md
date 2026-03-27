@@ -16,12 +16,13 @@ export TWINBOX_STATE_ROOT=/path/to/state   # or rely on ~/.config/twinbox/state-
 ./twinbox-go task todo --json
 ```
 
-### Offline vendor install (tarball)
+### Vendor install (local tarball or HTTP URL)
 
 Build a tarball from the repo (`scripts/package_vendor_tarball.sh`), then:
 
 ```bash
 ./twinbox-go install --archive /path/to/twinbox_core-0.1.0.tar.gz
+./twinbox-go install --archive https://example.com/twinbox_core-0.1.0.tar.gz
 # optional: --state-root /path/to/state  (default: $TWINBOX_STATE_ROOT or ~/.twinbox)
 ```
 
