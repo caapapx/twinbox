@@ -917,6 +917,30 @@ class TestOnboardingCli:
         assert "started_at" in payload
         assert "updated_at" in payload
 
+    def test_onboard_openclaw_routes_to_wizard(self, monkeypatch, tmp_path, capsys):
+        monkeypatch.setenv("TWINBOX_STATE_ROOT", str(tmp_path))
+        monkeypatch.setenv("TWINBOX_CANONICAL_ROOT", str(tmp_path))
+
+        class _FakeReport:
+            ok = True
+
+            def to_json_dict(self):
+                return {"ok": True, "next_action": "continue in OpenClaw"}
+
+        def fake_run_openclaw_onboard(**kwargs):
+            assert kwargs["dry_run"] is False
+            return _FakeReport()
+
+        monkeypatch.setattr(
+            "twinbox_core.openclaw_onboard.run_openclaw_onboard",
+            fake_run_openclaw_onboard,
+        )
+
+        assert main(["onboard", "openclaw", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["ok"] is True
+        assert payload["next_action"] == "continue in OpenClaw"
+
 
 class TestMailboxCli:
     """Mailbox preflight routing and JSON passthrough."""

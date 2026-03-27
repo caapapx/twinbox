@@ -71,7 +71,8 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 | Auto-detect email server config | `twinbox mailbox detect EMAIL --json` |
 | 配置邮箱凭据（自动探测 + 写入 .env）| `twinbox mailbox setup --email EMAIL --json`（密码从 `TWINBOX_SETUP_IMAP_PASS` 注入）或 OpenClaw 工具 `twinbox_mailbox_setup` |
 | 配置 LLM API（写入 .env）| `twinbox config set-llm --provider openai|anthropic --json`（key 从 `TWINBOX_SETUP_API_KEY` 注入）或 OpenClaw 工具 `twinbox_config_set_llm` |
-| OpenClaw 宿主接线（roots + `openclaw.json` + 按 OS/CPU 的 `himalaya` 检查/内置 Linux 解压 + SKILL 真源在 state root + 对 `~/.openclaw/.../SKILL.md` 软链或复制 + 可选重启 Gateway）| `twinbox deploy openclaw --json`（`--dry-run`；`--no-restart`；`--no-env-sync`；`--strict`；可选 `--fragment` / `--no-fragment` 合并 `openclaw-skill/openclaw.fragment.json`） |
+| OpenClaw 安装总向导（宿主接线 + 邮箱/LLM 门槛检查 + 交接到对话 onboarding） | `twinbox onboard openclaw --json`（主路径；默认交互式） |
+| OpenClaw 宿主接线高级入口（roots + `openclaw.json` + 按 OS/CPU 的 `himalaya` 检查/内置 Linux 解压 + SKILL 真源在 state root + 对 `~/.openclaw/.../SKILL.md` 软链或复制 + 可选重启 Gateway）| `twinbox deploy openclaw --json`（高级/脚本化入口；`--dry-run`；`--no-restart`；`--no-env-sync`；`--strict`；可选 `--fragment` / `--no-fragment` 合并 `openclaw-skill/openclaw.fragment.json`） |
 | 撤销上述宿主接线（不删 `~/.twinbox`；非全量卸载）| `twinbox deploy openclaw --rollback --json`（可选 `--remove-config` 删 `~/.config/twinbox`） |
 | Weekly brief lookup | `twinbox task weekly --json` |
 | Manage semantic routing rules / "以后别把这类邮件派给我" | `twinbox rule list --json` / `twinbox rule add --rule-json ...` |
