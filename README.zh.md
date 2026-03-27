@@ -33,6 +33,8 @@ twinbox task todo --json
 
 **你将获得**：`daily-urgent.yaml`、`pending-replies.yaml`、`sla-risks.yaml`、`weekly-brief.md` — 写入 `runtime/validation/`，供脚本、Agent 或人工审阅。
 
+**可选（大重构 / feature 分支）**：后台 JSON-RPC daemon（`twinbox daemon …`）、可选 Go 薄入口 `cmd/twinbox-go/`、模组化模拟邮箱种子脚本 — 见 [docs/ref/daemon-and-runtime-slice.md](docs/ref/daemon-and-runtime-slice.md)。重构进行期间请以该页与代码为准，旧文档未同步处不作反证。
+
 ---
 
 ## 选择安装路径

@@ -4,9 +4,9 @@
 
 | 目录 | 用途 | 命名规则 |
 |------|------|----------|
-| src/twinbox_core/ | Python 核心库（Phase 1-4、CLI、LLM）| 按模块命名 |
+| src/twinbox_core/ | Python 核心库（Phase 1-4、CLI、LLM、daemon、测试种子）| 按模块命名 |
 | tests/ | Python 单元测试 | `test_<module>.py` |
-| scripts/ | Shell 流水线脚本（phase 加载/思考/合并） | `phase<N>_<step>.sh` |
+| scripts/ | Shell 流水线脚本（phase 加载/思考/合并）、宿主辅助脚本 | `phase<N>_<step>.sh`、`seed_modular_mail_sim.sh` 等 |
 | config/ | 运行时配置（用户画像、策略、行动模板） | `<name>.yaml` / `<name>.toml` |
 | agent/ | TypeScript 扩展契约骨架（spec-first，尚未完整实现） | `*.ts` |
 | docs/ref/ | 架构、契约、CLI、运行时参考 | 短名优先，如 `cli.md` |
@@ -24,6 +24,7 @@
 - OpenClaw 排障与回滚：`openclaw-skill/TROUBLESHOOT.md`
 - OpenClaw 部署附录：`openclaw-skill/DEPLOY-APPENDIX.md`
 - 核心重构计划：`docs/core-refactor.md`
+- Daemon / Go 薄壳 / 模组化测试（**当前事实，优先于旧「暂缓 Go」表述**）：`docs/ref/daemon-and-runtime-slice.md`
 - 验证工件契约：`docs/ref/validation.md`
 - 编排契约：`docs/ref/orchestration.md`
 - 运行时规范：`docs/ref/runtime.md`

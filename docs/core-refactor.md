@@ -3,6 +3,11 @@
 日期：2026-03-20  
 项目：twinbox
 
+## 文档阅读约束（大重构 / feature 分支期间）
+
+- **中断继续开发前**：以 **`docs/ref/daemon-and-runtime-slice.md`** + **`src/`** + **`tests/`** 为「当前事实」；`archive/`、旧 near-term 列表、未改日期的段落若与代码冲突，**不作为否定实现的依据**。
+- 本文下方 **「Go 暂缓」** 指：**不要全量用 Go 重写 Phase 1–4 / LLM 核心**；**不排斥** Go 作为可选 **CLI 入口 / RPC 转发薄壳**（与已实现 `cmd/twinbox-go` 一致）。
+
 ## 执行摘要
 
 这轮优化不应被理解为“换语言”，而应被理解为“先把实现层的边界拉直”。
@@ -18,7 +23,7 @@
 
 - `bash` 保留在入口、环境装配、薄编排、向后兼容层
 - `Python` 接管可测试的核心实现层
-- `Go` 暂缓到常驻 runtime / worker service / listener manager 真的出现时再评估
+- **全量 Go 重写核心管线** 暂缓；**可选 Go 薄 CLI**（连 Python daemon 或 fallback exec）可与 Python 核心并行演进，见 `docs/ref/daemon-and-runtime-slice.md`
 
 但执行顺序需要更保守，也更清晰。
 
@@ -178,14 +183,16 @@
 
 ### 阶段 7：再评估 Go
 
-只在以下条件成立时启动：
+本节原意是 **全量 Go 化核心** 或 **重型 worker 服务** 的门槛。与 **已实现** 的 `cmd/twinbox-go` 薄壳（RPC 转发 + exec fallback）不矛盾；后者见 `docs/ref/daemon-and-runtime-slice.md`。
+
+只在以下条件成立时，才值得启动 **更大面** 的 Go 运行时：
 
 - listener / action runtime 要常驻运行
 - 需要更强的 worker 隔离
 - 需要长期稳定的并发任务执行层
 - Python core 已经把 phase contract 稳定下来
 
-如果这些前提未满足，上 Go 只会放大迁移面。
+如果这些前提未满足，**全量**上 Go 只会放大迁移面。
 
 ## 第一阶段现在就该做什么
 

@@ -10,6 +10,7 @@ twinbox 是一个以线程为中心的邮件 Copilot 基础设施。
 - 文档入口：docs/README.md
 - 架构：docs/ref/architecture.md
 - 核心重构计划：docs/core-refactor.md
+- **当前实现切片（daemon / Go 薄壳 / 模拟邮箱种子）**：docs/ref/daemon-and-runtime-slice.md
 - 任务命令规范：docs/ref/cli.md
 - 参考文档：docs/ref/
 - 指南：docs/guide/
@@ -25,9 +26,9 @@ twinbox 是一个以线程为中心的邮件 Copilot 基础设施。
 6. 约定验证（如相关 pytest / 指定 smoke）高置信度通过后：应 `git commit`；环境允许且未要求仅本地时应 `git push`；禁止对共享分支 `push --force`；细则见 AGENTS.md
 7. **Skill 同步约束**：新增或修改 CLI 命令、核心功能或 Tool 时，必须同步更新 `SKILL.md` 并部署到 OpenClaw（详见 AGENTS.md 协作约束）。
 
-## 开发约束（dev-go 分支）
+## 开发约束（dev-go 或大重构 feature 分支）
 
-本分支为 feature 分支，用于开发 Python daemon + Go 客户端。合并回 `master` 后删除；合并前可在此分支上提交与推送。
+用于 Python daemon + Go 薄客户端等运行时切片时：合并回 `master` 后删除 feature 分支；合并前可提交与推送。文档以 `docs/ref/daemon-and-runtime-slice.md` 与代码为准，勿被未更新的历史段落否定已合并行为。
 
 ## 文档索引与协作规则
 

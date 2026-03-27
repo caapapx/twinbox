@@ -33,6 +33,8 @@ twinbox task todo --json
 
 **What you get**: `daily-urgent.yaml`, `pending-replies.yaml`, `sla-risks.yaml`, `weekly-brief.md` — written to `runtime/validation/` for scripts, agents, or your review.
 
+**Optional (feature branch / larger refactors)**: background JSON-RPC daemon (`twinbox daemon …`), optional Go shim `cmd/twinbox-go/`, and seed scripts for modular testing — see [docs/ref/daemon-and-runtime-slice.md](docs/ref/daemon-and-runtime-slice.md). During active refactors, treat that page + code as the source of truth over older docs.
+
 ---
 
 ## Choose your setup path
