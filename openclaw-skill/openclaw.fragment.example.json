@@ -1,9 +1,13 @@
 {
-  "_comment": "Copy to openclaw.fragment.json (same directory) and replace REPLACE_ME with your absolute Twinbox repo path. Merged before skills.entries.twinbox on deploy; see openclaw-skill/DEPLOY.md.",
   "plugins": {
+    "load": {
+      "paths": [
+        "REPLACE_ME/openclaw-skill/plugin-twinbox-task"
+      ]
+    },
     "entries": {
       "twinbox-task-tools": {
-        "path": "REPLACE_ME/openclaw-skill/plugin-twinbox-task",
+        "enabled": true,
         "config": {
           "cwd": "REPLACE_ME",
           "twinboxBin": "REPLACE_ME/scripts/twinbox"

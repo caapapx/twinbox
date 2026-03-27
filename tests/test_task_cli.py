@@ -641,6 +641,36 @@ class TestQueueDigestThreadCli:
 
         assert main(["schedule", "update", "daily-refresh", "--cron", "30 9 * *", "--json"]) == 1
 
+    def test_mailbox_setup_json_writes_env_and_runs_preflight(
+        self, monkeypatch, tmp_path, capsys
+    ):
+        monkeypatch.setenv("TWINBOX_STATE_ROOT", str(tmp_path))
+        monkeypatch.setenv("TWINBOX_SETUP_IMAP_PASS", "secret-pass")
+        monkeypatch.setattr(
+            "twinbox_core.mailbox_detect.detect_to_env",
+            lambda email, verbose=False: {
+                "IMAP_HOST": "imap.example.com",
+                "IMAP_PORT": "993",
+                "IMAP_ENCRYPTION": "tls",
+                "SMTP_HOST": "smtp.example.com",
+                "SMTP_PORT": "465",
+                "SMTP_ENCRYPTION": "tls",
+            },
+        )
+        monkeypatch.setattr(
+            "twinbox_core.task_cli.run_preflight",
+            lambda state_root=None: (0, {"status": "ok"}),
+        )
+
+        assert main(["mailbox", "setup", "--email", "user@example.com", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+
+        assert payload["status"] == "ok"
+        assert payload["mailbox_config"]["IMAP_HOST"] == "imap.example.com"
+        env_text = (tmp_path / ".env").read_text(encoding="utf-8")
+        assert "IMAP_HOST=imap.example.com" in env_text
+        assert "IMAP_PASS=secret-pass" in env_text
+
     def test_digest_daily_json_schema(self, phase4_root, capsys):
         """Daily digest JSON must include digest_type, sections, generated_at, stale."""
         assert main(["digest", "daily", "--json"]) == 0

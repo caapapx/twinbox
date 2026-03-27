@@ -7,6 +7,9 @@ name = "twinbox-core"
 version = "0.1.0"
 description = "Shared Python core for twinbox phase builders and runtime contracts."
 requires-python = ">=3.11"
+dependencies = [
+    "PyYAML>=6",
+]
 
 [project.scripts]
 twinbox = "twinbox_core.task_cli:main"

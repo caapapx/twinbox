@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -548,3 +550,60 @@ def test_run_openclaw_deploy_missing_skill_md_fails(
     )
     assert not report.ok
     assert any(s.id == "sync_skill_md" and s.status == "failed" for s in report.steps)
+
+
+def test_uninstall_script_success_path_exits_zero(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    systemctl = bin_dir / "systemctl"
+    systemctl.write_text(
+        "#!/usr/bin/env bash\n"
+        "if [[ \"$1\" == \"--user\" && ( \"$2\" == \"is-active\" || \"$2\" == \"is-enabled\" ) ]]; then\n"
+        "  exit 1\n"
+        "fi\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    systemctl.chmod(0o755)
+
+    openclaw = bin_dir / "openclaw"
+    openclaw.write_text(
+        "#!/usr/bin/env bash\n"
+        "if [[ \"$1\" == \"cron\" && \"$2\" == \"list\" ]]; then\n"
+        "  printf '%s\\n' '{\"jobs\": []}'\n"
+        "  exit 0\n"
+        "fi\n"
+        "if [[ \"$1\" == \"gateway\" && \"$2\" == \"restart\" ]]; then\n"
+        "  printf '%s\\n' 'Restarted systemd service: openclaw-gateway.service'\n"
+        "  exit 0\n"
+        "fi\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    openclaw.chmod(0o755)
+
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+
+    result = subprocess.run(
+        ["bash", str(REPO_ROOT / "scripts" / "uninstall_openclaw_twinbox.sh")],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+
+
+def test_pyproject_declares_runtime_dependencies_for_cli() -> None:
+    pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    dependencies = pyproject["project"].get("dependencies", [])
+
+    assert any(dep.lower().startswith("pyyaml") for dep in dependencies)

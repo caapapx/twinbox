@@ -199,4 +199,8 @@ fi
 
 echo ""
 echo "=== Uninstall complete ==="
-[[ "${DRY_RUN}" -eq 1 ]] && echo "(dry-run — no changes were made)"
+if [[ "${DRY_RUN}" -eq 1 ]]; then
+  echo "(dry-run — no changes were made)"
+fi
+
+exit 0
