@@ -21,6 +21,7 @@ from twinbox_core.openclaw_deploy_steps import (
     gateway_restart_step,
     merge_openclaw_json_step,
     remove_skill_dir_step,
+    remove_twinbox_config_step,
     skill_canonical_path,
     strip_openclaw_json_step,
     sync_skill_md_step,
@@ -39,6 +40,7 @@ class _MemFileOps:
         self.copy_calls: list[tuple[Path, Path]] = []
         self.unlink_calls: list[Path] = []
         self.symlink_calls: list[tuple[Path, Path]] = []
+        self.remove_tree_calls: list[Path] = []
 
     def is_file(self, path: Path) -> bool:
         return Path(path) in self.files
@@ -89,7 +91,10 @@ class _MemFileOps:
         self.symlink_calls.append((tp, lp))
 
     def remove_tree(self, path: Path) -> None:
-        raise NotImplementedError
+        p = Path(path)
+        self.remove_tree_calls.append(p)
+        self.files = {k: v for k, v in self.files.items() if k != p and p not in k.parents}
+        self.dirs = {d for d in self.dirs if d != p and p not in d.parents}
 
 
 class _MemFileOpsSymlinkFails(_MemFileOps):
@@ -98,6 +103,12 @@ class _MemFileOpsSymlinkFails(_MemFileOps):
     def symlink(self, target: Path, link_path: Path) -> None:
         del target, link_path
         raise OSError("simulated symlink unsupported")
+
+
+class _MemFileOpsRemoveTreeFails(_MemFileOps):
+    def remove_tree(self, path: Path) -> None:
+        del path
+        raise OSError("simulated rmtree failure")
 
 
 class _RecordingCommandRunner:
@@ -168,7 +179,12 @@ def _deploy_ctx(
     )
 
 
-def _rollback_ctx(tmp_path: Path, *, dry_run: bool) -> RollbackContext:
+def _rollback_ctx(
+    tmp_path: Path,
+    *,
+    dry_run: bool,
+    remove_config: bool = False,
+) -> RollbackContext:
     oc = tmp_path / ".openclaw"
     return RollbackContext(
         openclaw_home=oc,
@@ -177,7 +193,7 @@ def _rollback_ctx(tmp_path: Path, *, dry_run: bool) -> RollbackContext:
         config_path=tmp_path / ".config" / "twinbox",
         dry_run=dry_run,
         restart_gateway=False,
-        remove_config=False,
+        remove_config=remove_config,
         openclaw_bin="openclaw",
     )
 
@@ -723,3 +739,134 @@ def test_remove_skill_dir_step_dry_run_no_remove(tmp_path: Path) -> None:
     step = next(s for s in report.steps if s.id == "remove_skill_dir")
     assert step.status == "dry_run"
     assert step.detail.get("exists") is True
+
+
+def test_remove_skill_dir_step_skipped_when_absent(tmp_path: Path) -> None:
+    ops = _MemFileOps()
+    rt = OpenClawDeployRuntime(file_ops=ops, command_runner=SubprocessCommandRunner())
+    report = OpenClawDeployReport(ok=True)
+    ctx = _rollback_ctx(tmp_path, dry_run=False)
+
+    ok = remove_skill_dir_step(ctx, report, rt)
+    assert ok is True
+    assert ops.remove_tree_calls == []
+    step = next(s for s in report.steps if s.id == "remove_skill_dir")
+    assert step.status == "skipped"
+
+
+def test_remove_skill_dir_step_ok(tmp_path: Path) -> None:
+    oc = tmp_path / ".openclaw"
+    skill_dir = oc / "skills" / "twinbox"
+    ops = _MemFileOps()
+    ops.dirs.add(skill_dir)
+    rt = OpenClawDeployRuntime(file_ops=ops, command_runner=SubprocessCommandRunner())
+    report = OpenClawDeployReport(ok=True)
+    ctx = _rollback_ctx(tmp_path, dry_run=False)
+
+    ok = remove_skill_dir_step(ctx, report, rt)
+    assert ok is True
+    assert ops.remove_tree_calls == [skill_dir]
+    assert skill_dir not in ops.dirs
+    assert next(s for s in report.steps if s.id == "remove_skill_dir").status == "ok"
+
+
+def test_remove_skill_dir_step_rmtree_fails(tmp_path: Path) -> None:
+    oc = tmp_path / ".openclaw"
+    skill_dir = oc / "skills" / "twinbox"
+    ops = _MemFileOpsRemoveTreeFails()
+    ops.dirs.add(skill_dir)
+    rt = OpenClawDeployRuntime(file_ops=ops, command_runner=SubprocessCommandRunner())
+    report = OpenClawDeployReport(ok=True)
+    ctx = _rollback_ctx(tmp_path, dry_run=False)
+
+    ok = remove_skill_dir_step(ctx, report, rt)
+    assert ok is False
+    assert report.steps[-1].status == "failed"
+
+
+def test_remove_twinbox_config_step_dry_run_with_remove_flag(tmp_path: Path) -> None:
+    cfg = tmp_path / ".config" / "twinbox"
+    ops = _MemFileOps()
+    ops.dirs.add(cfg)
+    rt = OpenClawDeployRuntime(file_ops=ops, command_runner=SubprocessCommandRunner())
+    report = OpenClawDeployReport(ok=True)
+    ctx = _rollback_ctx(tmp_path, dry_run=True, remove_config=True)
+
+    ok = remove_twinbox_config_step(ctx, report, rt)
+    assert ok is True
+    step = next(s for s in report.steps if s.id == "remove_twinbox_config")
+    assert step.status == "dry_run"
+    assert step.detail.get("remove_config") is True
+    assert step.detail.get("exists") is True
+
+
+def test_remove_twinbox_config_step_dry_run_without_remove_flag(tmp_path: Path) -> None:
+    cfg = tmp_path / ".config" / "twinbox"
+    ops = _MemFileOps()
+    ops.dirs.add(cfg)
+    rt = OpenClawDeployRuntime(file_ops=ops, command_runner=SubprocessCommandRunner())
+    report = OpenClawDeployReport(ok=True)
+    ctx = _rollback_ctx(tmp_path, dry_run=True, remove_config=False)
+
+    ok = remove_twinbox_config_step(ctx, report, rt)
+    assert ok is True
+    step = next(s for s in report.steps if s.id == "remove_twinbox_config")
+    assert step.status == "dry_run"
+    assert "remove-config not set" in step.message
+
+
+def test_remove_twinbox_config_step_skipped_when_remove_config_false(tmp_path: Path) -> None:
+    cfg = tmp_path / ".config" / "twinbox"
+    ops = _MemFileOps()
+    ops.dirs.add(cfg)
+    rt = OpenClawDeployRuntime(file_ops=ops, command_runner=SubprocessCommandRunner())
+    report = OpenClawDeployReport(ok=True)
+    ctx = _rollback_ctx(tmp_path, dry_run=False, remove_config=False)
+
+    ok = remove_twinbox_config_step(ctx, report, rt)
+    assert ok is True
+    assert ops.remove_tree_calls == []
+    assert next(s for s in report.steps if s.id == "remove_twinbox_config").status == "skipped"
+
+
+def test_remove_twinbox_config_step_skipped_when_dir_missing(tmp_path: Path) -> None:
+    ops = _MemFileOps()
+    rt = OpenClawDeployRuntime(file_ops=ops, command_runner=SubprocessCommandRunner())
+    report = OpenClawDeployReport(ok=True)
+    ctx = _rollback_ctx(tmp_path, dry_run=False, remove_config=True)
+
+    ok = remove_twinbox_config_step(ctx, report, rt)
+    assert ok is True
+    assert ops.remove_tree_calls == []
+    step = next(s for s in report.steps if s.id == "remove_twinbox_config")
+    assert step.status == "skipped"
+    assert "not present" in step.message
+
+
+def test_remove_twinbox_config_step_ok(tmp_path: Path) -> None:
+    cfg = tmp_path / ".config" / "twinbox"
+    ops = _MemFileOps()
+    ops.dirs.add(cfg)
+    rt = OpenClawDeployRuntime(file_ops=ops, command_runner=SubprocessCommandRunner())
+    report = OpenClawDeployReport(ok=True)
+    ctx = _rollback_ctx(tmp_path, dry_run=False, remove_config=True)
+
+    ok = remove_twinbox_config_step(ctx, report, rt)
+    assert ok is True
+    assert ops.remove_tree_calls == [cfg]
+    assert cfg not in ops.dirs
+    assert next(s for s in report.steps if s.id == "remove_twinbox_config").status == "ok"
+
+
+def test_remove_twinbox_config_step_rmtree_fails(tmp_path: Path) -> None:
+    cfg = tmp_path / ".config" / "twinbox"
+    ops = _MemFileOpsRemoveTreeFails()
+    ops.dirs.add(cfg)
+    rt = OpenClawDeployRuntime(file_ops=ops, command_runner=SubprocessCommandRunner())
+    report = OpenClawDeployReport(ok=True)
+    ctx = _rollback_ctx(tmp_path, dry_run=False, remove_config=True)
+
+    ok = remove_twinbox_config_step(ctx, report, rt)
+    assert ok is False
+    assert report.steps[-1].id == "remove_twinbox_config"
+    assert report.steps[-1].status == "failed"
