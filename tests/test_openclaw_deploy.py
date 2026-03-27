@@ -590,7 +590,7 @@ def test_run_openclaw_deploy_ensure_himalaya_skipped_on_non_linux(
     monkeypatch.setattr(platform, "system", lambda: "Darwin")
     monkeypatch.setattr(platform, "machine", lambda: "arm64")
     monkeypatch.setattr(
-        "twinbox_core.openclaw_deploy.shutil.which",
+        "twinbox_core.openclaw_deploy_steps.shutil.which",
         lambda _cmd: None,
     )
 
