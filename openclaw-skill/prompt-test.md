@@ -300,3 +300,41 @@ pending_count
 
 - 必须给出真实 JSON
 - 如果只给口头总结、没有 JSON，视为失败
+
+## P8 模组化模拟邮箱（30 封，无 IMAP / 无 LLM）
+
+在 **Twinbox state root**（默认 `~/.twinbox`）生成 30 封合成邮件、`phase1-context.json`、`intent-classification.json`、Phase 4 队列 YAML，并重建 `activity-pulse.json`。用于 **OpenClaw 对话为主** 的验收：先种子数据，再在对话里用自然话术或探针调用 `twinbox task …`。
+
+**宿主机一次性种子（仓库根）：**
+
+```bash
+bash scripts/seed_modular_mail_sim.sh
+# 或指定数量：bash scripts/seed_modular_mail_sim.sh 30
+```
+
+**OpenClaw 里优先用自然话术：**
+
+```text
+我邮箱里最近有什么需要我优先处理的？请基于 twinbox 的真实数据回答，不要猜。
+```
+
+**若空转，用探针（同轮必须执行命令）：**
+
+```text
+不要搜索 workspace。请在本轮内执行：
+twinbox task latest-mail --json
+然后列出 generated_at、summary、urgent_top_k 里的 thread_key。接着执行 twinbox task todo --json，说明 urgent / pending 各有多少条。
+```
+
+**可选 CLI 自检（与 OpenClaw 同机）：**
+
+```bash
+twinbox task latest-mail --json
+twinbox task todo --json
+twinbox task progress "北辰" --json --limit 3
+```
+
+通过标准：
+
+- `latest-mail` / `todo` 的 JSON 里能看到非空线程或队列项（种子含固定主题如「北辰项目资源申请」「SLA 告警」等）
+- OpenClaw 回答与 JSON 字段一致，而非臆造
