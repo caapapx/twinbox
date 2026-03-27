@@ -34,6 +34,8 @@ class _FakeFileOps:
         self.dirs = {Path(path) for path in (dirs or set())}
         self.write_json_calls: list[tuple[Path, dict[str, Any]]] = []
         self.copy_calls: list[tuple[Path, Path]] = []
+        self.symlink_calls: list[tuple[Path, Path]] = []
+        self.unlink_calls: list[Path] = []
         self.remove_tree_calls: list[Path] = []
         self.mkdir_calls: list[Path] = []
 
@@ -76,6 +78,20 @@ class _FakeFileOps:
         self.mkdir(dst_path.parent)
         self.files[dst_path] = self.files[src_path]
         self.copy_calls.append((src_path, dst_path))
+
+    def unlink(self, path: Path) -> None:
+        candidate = Path(path)
+        self.unlink_calls.append(candidate)
+        self.files.pop(candidate, None)
+
+    def symlink(self, target: Path, link_path: Path) -> None:
+        tp = Path(target)
+        lp = Path(link_path)
+        self.symlink_calls.append((tp, lp))
+        self.mkdir(lp.parent)
+        if tp not in self.files:
+            raise FileNotFoundError(tp)
+        self.files[lp] = self.files[tp]
 
     def remove_tree(self, path: Path) -> None:
         candidate = Path(path)
@@ -389,6 +405,37 @@ def test_run_openclaw_deploy_applies_files_no_gateway_restart_call(
     assert cfg["skills"]["entries"]["twinbox"]["enabled"] is True
 
 
+def test_run_openclaw_deploy_skill_sync_fallback_when_symlink_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    code_root, state_root, openclaw_home, runtime_ok = _make_runtime_layout(tmp_path)
+    monkeypatch.setenv("TWINBOX_CODE_ROOT", str(code_root.resolve()))
+    monkeypatch.setenv("TWINBOX_STATE_ROOT", str(state_root))
+
+    class _Ops(_FakeFileOps):
+        def symlink(self, target: Path, link_path: Path) -> None:
+            raise OSError("symlink unsupported")
+
+    fo = _Ops(files=dict(runtime_ok.file_ops.files), dirs=set(runtime_ok.file_ops.dirs))
+    runtime = _FakeRuntime(file_ops=fo, command_runner=runtime_ok.command_runner)
+
+    report = run_openclaw_deploy(
+        code_root=code_root,
+        openclaw_home=openclaw_home,
+        dry_run=False,
+        restart_gateway=False,
+        sync_env_from_dotenv=False,
+        runtime=runtime,
+    )
+    assert report.ok
+    step = next(s for s in report.steps if s.id == "sync_skill_md")
+    assert step.detail.get("mode") == "copy_fallback"
+    canonical = (state_root / "skills" / "twinbox" / "SKILL.md").resolve()
+    oc_skill = openclaw_home / "skills" / "twinbox" / "SKILL.md"
+    assert fo.copy_calls[0] == (code_root / "SKILL.md", canonical)
+    assert fo.copy_calls[1] == (canonical, oc_skill)
+
+
 def test_run_openclaw_deploy_runtime_restart_failure_keeps_prior_steps(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -417,11 +464,10 @@ def test_run_openclaw_deploy_runtime_restart_failure_keeps_prior_steps(
         "gateway_restart",
     ]
     assert runtime.file_ops.write_json_calls
-    assert runtime.file_ops.copy_calls == [
-        (
-            code_root / "SKILL.md",
-            openclaw_home / "skills" / "twinbox" / "SKILL.md",
-        )
+    canonical = (state_root / "skills" / "twinbox" / "SKILL.md").resolve()
+    assert runtime.file_ops.copy_calls == [(code_root / "SKILL.md", canonical)]
+    assert runtime.file_ops.symlink_calls == [
+        (canonical, openclaw_home / "skills" / "twinbox" / "SKILL.md")
     ]
     cfg = runtime.file_ops.write_json_calls[0][1]
     assert cfg["skills"]["entries"]["twinbox"]["enabled"] is True

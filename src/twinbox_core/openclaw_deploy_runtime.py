@@ -36,6 +36,12 @@ class FileOpsPort(Protocol):
     def copy_file(self, src: Path, dst: Path) -> None:
         """Copy one file to another location."""
 
+    def unlink(self, path: Path) -> None:
+        """Remove a file or symlink if present (ignore missing)."""
+
+    def symlink(self, target: Path, link_path: Path) -> None:
+        """Create symlink at link_path pointing to target (POSIX)."""
+
     def remove_tree(self, path: Path) -> None:
         """Remove a directory tree."""
 
@@ -78,6 +84,17 @@ class LocalFileOps:
     def copy_file(self, src: Path, dst: Path) -> None:
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
+
+    def unlink(self, path: Path) -> None:
+        try:
+            path.unlink(missing_ok=True)
+        except TypeError:
+            if path.exists() or path.is_symlink():
+                path.unlink()
+
+    def symlink(self, target: Path, link_path: Path) -> None:
+        link_path.parent.mkdir(parents=True, exist_ok=True)
+        os.symlink(str(target.resolve()), str(link_path), target_is_directory=False)
 
     def remove_tree(self, path: Path) -> None:
         shutil.rmtree(path)

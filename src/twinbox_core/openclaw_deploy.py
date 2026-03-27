@@ -60,6 +60,7 @@ class OpenClawDeployReport:
     openclaw_home: str = ""
     state_root: str = ""
     skill_dest: str = ""
+    skill_canonical_dest: str = ""
     openclaw_json: str = ""
 
     def to_json_dict(self) -> dict[str, Any]:
@@ -69,6 +70,7 @@ class OpenClawDeployReport:
             "openclaw_home": self.openclaw_home,
             "state_root": self.state_root,
             "skill_dest": self.skill_dest,
+            "skill_canonical_dest": self.skill_canonical_dest,
             "openclaw_json": self.openclaw_json,
             "steps": [
                 {
@@ -406,21 +408,43 @@ def _sync_skill_md_step(
     if not runtime.file_ops.is_file(ctx.skill_src):
         return _fail_step(report, "sync_skill_md", f"Missing {ctx.skill_src}")
 
+    canonical = (ctx.state_root / "skills" / "twinbox" / "SKILL.md").resolve()
+
     if ctx.dry_run:
         _append_step(
             report,
             "sync_skill_md",
             "dry_run",
-            f"Would copy {ctx.skill_src} -> {ctx.skill_dest}",
+            f"Would copy {ctx.skill_src} -> {canonical}; then symlink {ctx.skill_dest} -> "
+            f"{canonical} (or copy if symlink unsupported)",
+            {"canonical": str(canonical), "openclaw_skill": str(ctx.skill_dest)},
         )
         return True
 
     try:
-        runtime.file_ops.copy_file(ctx.skill_src, ctx.skill_dest)
+        runtime.file_ops.mkdir(canonical.parent, parents=True, exist_ok=True)
+        runtime.file_ops.copy_file(ctx.skill_src, canonical)
+        runtime.file_ops.unlink(ctx.skill_dest)
+        try:
+            runtime.file_ops.symlink(canonical, ctx.skill_dest)
+            mode = "symlink"
+            extra = ""
+        except OSError as exc:
+            runtime.file_ops.copy_file(canonical, ctx.skill_dest)
+            mode = "copy_fallback"
+            extra = str(exc)
     except OSError as exc:
         return _fail_step(report, "sync_skill_md", str(exc))
 
-    _append_step(report, "sync_skill_md", "ok", f"Copied to {ctx.skill_dest}")
+    msg = f"Canonical {canonical}; OpenClaw skill {mode}"
+    detail: dict[str, Any] = {
+        "mode": mode,
+        "canonical": str(canonical),
+        "openclaw_skill": str(ctx.skill_dest),
+    }
+    if extra:
+        detail["symlink_error"] = extra
+    _append_step(report, "sync_skill_md", "ok", msg, detail)
     return True
 
 
@@ -694,6 +718,9 @@ def run_openclaw_deploy(
         openclaw_bin=openclaw_bin,
     )
     report.state_root = str(ctx.state_root)
+    report.skill_canonical_dest = str(
+        (ctx.state_root / "skills" / "twinbox" / "SKILL.md").resolve()
+    )
 
     dotenv = load_env_file(ctx.state_root / ".env") if ctx.sync_env_from_dotenv else {}
     missing_required = (
