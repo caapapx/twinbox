@@ -658,7 +658,7 @@ class TestQueueDigestThreadCli:
             },
         )
         monkeypatch.setattr(
-            "twinbox_core.task_cli.run_preflight",
+            "twinbox_core.mailbox.run_preflight",
             lambda state_root=None: (0, {"status": "ok"}),
         )
 
@@ -938,7 +938,7 @@ class TestMailboxCli:
                 "next_action": "Run phase1.",
             }
 
-        monkeypatch.setattr("twinbox_core.task_cli.run_preflight", fake_run_preflight)
+        monkeypatch.setattr("twinbox_core.mailbox.run_preflight", fake_run_preflight)
 
         assert main(["mailbox", "preflight", "--json"]) == 0
         body = json.loads(capsys.readouterr().out)
@@ -962,7 +962,7 @@ class TestMailboxCli:
                 "next_action": "Set env and rerun.",
             }
 
-        monkeypatch.setattr("twinbox_core.task_cli.run_preflight", fake_run_preflight)
+        monkeypatch.setattr("twinbox_core.mailbox.run_preflight", fake_run_preflight)
 
         assert main(["mailbox", "preflight"]) == 2
         out = capsys.readouterr().out
@@ -1259,9 +1259,39 @@ class TestTaskRoutes:
                 "next_action": "Run phase1.",
             }
 
-        monkeypatch.setattr("twinbox_core.task_cli.run_preflight", fake_run_preflight)
+        monkeypatch.setattr("twinbox_core.mailbox.run_preflight", fake_run_preflight)
         assert main(["task", "mailbox-status", "--json"]) == 0
         payload = json.loads(capsys.readouterr().out)
         assert payload["task"] == "mailbox-status"
         assert payload["login_stage"] == "mailbox-connected"
         assert seen_kwargs["account_override"] == ""
+
+
+def test_task_cli_fresh_import_avoids_heavy_submodules() -> None:
+    """Fresh interpreter: loading task_cli must not import mailbox / deploy / daytime_slice."""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parents[1]
+    src = str(repo_root / "src")
+    env = os.environ.copy()
+    extra = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = src if not extra else src + os.pathsep + extra
+    code = (
+        "import sys\n"
+        "import twinbox_core.task_cli\n"
+        "heavy = ('twinbox_core.mailbox', 'twinbox_core.openclaw_deploy', 'twinbox_core.daytime_slice')\n"
+        "loaded = [n for n in heavy if n in sys.modules]\n"
+        "assert not loaded, loaded\n"
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=str(repo_root),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr

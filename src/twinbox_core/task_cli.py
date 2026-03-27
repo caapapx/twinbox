@@ -14,19 +14,7 @@ from typing import Any
 
 import yaml
 
-from .daytime_slice import (
-    DaytimeSliceError,
-    _normalize_thread as _normalize_activity_thread,
-    load_activity_pulse,
-    search_activity_pulse,
-)
-from .env_writer import mask_secret, merge_env_file, write_env_file
-from .mailbox import format_preflight_text, run_preflight
-from .material_extract import MaterialExtractError, write_extract_for_import
 from .paths import resolve_state_root
-from .routing_rules import evaluate_rule, load_rules, load_rules_raw, save_rules_raw, RoutingRule
-from .schedule_override import disable_schedule, enable_schedule, load_schedule_config, reset_schedule_override, update_schedule_override
-from .user_queue_state import complete_thread, dismiss_thread, restore_thread
 
 from .task_cli_daemon import dispatch_daemon, register_daemon_parser
 from .task_cli_loading import dispatch_loading, register_loading_parser
@@ -190,6 +178,8 @@ def _strip_thread_display_prefix(thread_id: str) -> str:
 
 
 def _thread_lookup_key(thread_id: str) -> str:
+    from .daytime_slice import _normalize_thread as _normalize_activity_thread
+
     return _normalize_activity_thread(_strip_thread_display_prefix(thread_id))
 
 
@@ -221,6 +211,8 @@ def _find_thread_in_phase3_context(thread_id: str) -> dict[str, Any] | None:
 
 
 def _find_thread_in_activity_pulse(thread_id: str) -> dict[str, Any] | None:
+    from .daytime_slice import DaytimeSliceError, load_activity_pulse
+
     try:
         payload = load_activity_pulse(_state_root())
     except DaytimeSliceError:
@@ -546,6 +538,8 @@ twinbox 的队列视图从 Phase 4 artifacts 投影而来，不是独立的数�
 
 def cmd_queue_dismiss(args: argparse.Namespace) -> int:
     """Dismiss a thread from queue-facing pulse views."""
+    from .user_queue_state import dismiss_thread
+
     snapshot = _pulse_snapshot_for_thread(args.thread_id)
     if not snapshot:
         print(f"错误: 未找到线程 '{args.thread_id}'", file=sys.stderr)
@@ -573,6 +567,8 @@ def cmd_queue_dismiss(args: argparse.Namespace) -> int:
 
 def cmd_queue_complete(args: argparse.Namespace) -> int:
     """Mark a thread as completed so it stays hidden until restored."""
+    from .user_queue_state import complete_thread
+
     snapshot = _pulse_snapshot_for_thread(args.thread_id)
     if not snapshot:
         print(f"错误: 未找到线程 '{args.thread_id}'", file=sys.stderr)
@@ -597,6 +593,8 @@ def cmd_queue_complete(args: argparse.Namespace) -> int:
 
 def cmd_queue_restore(args: argparse.Namespace) -> int:
     """Restore a thread back to visible queue state."""
+    from .user_queue_state import restore_thread
+
     restore_thread(state_root=_state_root(), thread_key=args.thread_id)
     output = {
         "thread_key": args.thread_id,
@@ -611,6 +609,8 @@ def cmd_queue_restore(args: argparse.Namespace) -> int:
 
 def cmd_schedule_list(args: argparse.Namespace) -> int:
     """List effective schedule config merged from defaults and runtime overrides."""
+    from .schedule_override import load_schedule_config
+
     payload = load_schedule_config(_state_root())
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -633,6 +633,8 @@ def cmd_schedule_list(args: argparse.Namespace) -> int:
 
 def cmd_schedule_update(args: argparse.Namespace) -> int:
     """Update one runtime schedule override."""
+    from .schedule_override import update_schedule_override
+
     try:
         payload = update_schedule_override(
             state_root=_state_root(),
@@ -654,6 +656,8 @@ def cmd_schedule_update(args: argparse.Namespace) -> int:
 
 def cmd_schedule_reset(args: argparse.Namespace) -> int:
     """Reset one runtime schedule override back to default."""
+    from .schedule_override import reset_schedule_override
+
     try:
         payload = reset_schedule_override(
             state_root=_state_root(),
@@ -674,6 +678,8 @@ def cmd_schedule_reset(args: argparse.Namespace) -> int:
 
 def cmd_schedule_enable(args: argparse.Namespace) -> int:
     """Enable a schedule and create the OpenClaw cron job."""
+    from .schedule_override import enable_schedule
+
     try:
         payload = enable_schedule(
             state_root=_state_root(),
@@ -694,6 +700,8 @@ def cmd_schedule_enable(args: argparse.Namespace) -> int:
 
 def cmd_schedule_disable(args: argparse.Namespace) -> int:
     """Disable a schedule and delete the OpenClaw cron job."""
+    from .schedule_override import disable_schedule
+
     try:
         payload = disable_schedule(
             state_root=_state_root(),
@@ -759,6 +767,8 @@ def cmd_context_import_material(args: argparse.Namespace) -> int:
     print(f"更新清单: {manifest_path}")
 
     try:
+        from .material_extract import MaterialExtractError, write_extract_for_import
+
         extract_path = write_extract_for_import(source_path, materials_dir)
     except MaterialExtractError as exc:
         print(f"错误: {exc}", file=sys.stderr)
@@ -994,6 +1004,8 @@ def cmd_context_refresh(args: argparse.Namespace) -> int:
 
 def cmd_mailbox_preflight(args: argparse.Namespace) -> int:
     """Run read-only mailbox preflight for password-env mode."""
+    from .mailbox import format_preflight_text, run_preflight
+
     exit_code, result = run_preflight(
         state_root=args.state_root,
         account_override=args.account,
@@ -1037,6 +1049,7 @@ def cmd_mailbox_detect(args: argparse.Namespace) -> int:
 
 def cmd_mailbox_setup(args: argparse.Namespace) -> int:
     """Configure mailbox credentials via env var injection and write .env."""
+    from .env_writer import mask_secret, merge_env_file, write_env_file
     from .mailbox_detect import detect_to_env
 
     imap_pass = os.environ.get("TWINBOX_SETUP_IMAP_PASS", "").strip()
@@ -1083,7 +1096,8 @@ def cmd_mailbox_setup(args: argparse.Namespace) -> int:
         "SMTP_PASS": smtp_pass,
     }
 
-    from .mailbox import resolve_mailbox_paths
+    from .mailbox import resolve_mailbox_paths, run_preflight
+
     paths = resolve_mailbox_paths(state_root=args.state_root)
     merged = merge_env_file(paths.env_file, updates)
     write_env_file(paths.env_file, merged)
@@ -1123,6 +1137,7 @@ def cmd_mailbox_setup(args: argparse.Namespace) -> int:
 
 def cmd_config_set_llm(args: argparse.Namespace) -> int:
     """Configure LLM API key and write .env."""
+    from .env_writer import mask_secret, merge_env_file, write_env_file
     from .llm import resolve_backend, LLMError
 
     api_key = os.environ.get("TWINBOX_SETUP_API_KEY", "").strip()
@@ -1604,6 +1619,8 @@ def cmd_thread_explain(args: argparse.Namespace) -> int:
 
 def cmd_thread_progress(args: argparse.Namespace) -> int:
     """Search current thread progress by thread key, subject, or business keyword."""
+    from .daytime_slice import search_activity_pulse
+
     matches = search_activity_pulse(args.query, limit=args.limit)
 
     if args.json:
@@ -1706,6 +1723,8 @@ def cmd_digest_daily(args: argparse.Namespace) -> int:
 
 def cmd_digest_pulse(args: argparse.Namespace) -> int:
     """Show the latest daytime activity pulse."""
+    from .daytime_slice import DaytimeSliceError, load_activity_pulse
+
     try:
         pulse = load_activity_pulse()
     except DaytimeSliceError as exc:
@@ -1802,6 +1821,8 @@ def cmd_digest_weekly(args: argparse.Namespace) -> int:
 
 
 def _build_latest_mail_task_view() -> dict[str, Any]:
+    from .daytime_slice import load_activity_pulse
+
     pulse = load_activity_pulse()
     stale = _is_stale(pulse.get("generated_at", ""))
     notify = pulse.get("notify_payload", {})
@@ -1858,6 +1879,8 @@ def _build_weekly_task_view() -> dict[str, Any]:
 
 def cmd_task_latest_mail(args: argparse.Namespace) -> int:
     """Deterministic task entrypoint for latest-mail / today summary questions."""
+    from .daytime_slice import DaytimeSliceError
+
     try:
         payload = _build_latest_mail_task_view()
     except DaytimeSliceError as exc:
@@ -1946,6 +1969,8 @@ def cmd_task_todo(args: argparse.Namespace) -> int:
 
 def cmd_task_progress(args: argparse.Namespace) -> int:
     """Deterministic task entrypoint for progress lookup."""
+    from .daytime_slice import search_activity_pulse
+
     matches = search_activity_pulse(args.query, limit=args.limit)
     role_map = _recipient_role_map()
     enriched_matches = []
@@ -2016,6 +2041,8 @@ def cmd_task_weekly(args: argparse.Namespace) -> int:
 
 def cmd_task_mailbox_status(args: argparse.Namespace) -> int:
     """Deterministic task entrypoint for mailbox status diagnosis."""
+    from .mailbox import format_preflight_text, run_preflight
+
     exit_code, payload = run_preflight(
         state_root=args.state_root,
         account_override=args.account,
@@ -2286,6 +2313,8 @@ def _get_rules_path() -> Path:
 
 def cmd_rule_list(args: argparse.Namespace) -> int:
     """List all semantic routing rules."""
+    from .routing_rules import load_rules_raw
+
     rules_path = _get_rules_path()
     raw_data = load_rules_raw(rules_path)
     rules = raw_data.get("rules", [])
@@ -2318,6 +2347,8 @@ def cmd_rule_list(args: argparse.Namespace) -> int:
 
 def cmd_rule_add(args: argparse.Namespace) -> int:
     """Add a new semantic routing rule."""
+    from .routing_rules import load_rules_raw, save_rules_raw
+
     rules_path = _get_rules_path()
     raw_data = load_rules_raw(rules_path)
     rules = raw_data.setdefault("rules", [])
@@ -2350,6 +2381,8 @@ def cmd_rule_add(args: argparse.Namespace) -> int:
 
 def cmd_rule_remove(args: argparse.Namespace) -> int:
     """Remove a semantic routing rule."""
+    from .routing_rules import load_rules_raw, save_rules_raw
+
     rules_path = _get_rules_path()
     raw_data = load_rules_raw(rules_path)
     rules = raw_data.get("rules", [])
@@ -2371,13 +2404,20 @@ def cmd_rule_remove(args: argparse.Namespace) -> int:
 
 def cmd_rule_test(args: argparse.Namespace) -> int:
     """Test a routing rule against recent threads (dry run)."""
+    from .routing_rules import (
+        RuleAction,
+        RuleCondition,
+        RoutingRule,
+        evaluate_rule,
+        load_rules,
+    )
+
     target_rule = None
-    
+
     if args.rule_json:
         try:
             r = json.loads(args.rule_json)
-            from .routing_rules import RuleCondition, RuleAction
-            
+
             cond_data = r.get("conditions", {})
             conditions = RuleCondition(
                 match_all=cond_data.get("match_all"),
