@@ -7,10 +7,13 @@ from pathlib import Path
 from typing import Any
 
 from twinbox_core.openclaw_deploy_runtime import OpenClawDeployRuntime, SubprocessCommandRunner
+from twinbox_core.openclaw_json_io import default_openclaw_fragment_path
 from twinbox_core.openclaw_deploy_steps import (
+    DeployContext,
     RollbackContext,
     append_step,
     fail_step,
+    merge_openclaw_json_step,
     remove_skill_dir_step,
     skill_canonical_path,
     strip_openclaw_json_step,
@@ -62,6 +65,34 @@ def test_append_step_and_fail_step() -> None:
     assert report.ok is False
     assert len(report.steps) == 2
     assert report.steps[1].id == "b" and report.steps[1].status == "failed"
+
+
+def _deploy_ctx(
+    tmp_path: Path,
+    *,
+    dry_run: bool = False,
+    fragment_path: Path | None = None,
+    no_fragment: bool = False,
+) -> DeployContext:
+    code_root = tmp_path / "repo"
+    state_root = tmp_path / "state"
+    oc = tmp_path / ".openclaw"
+    return DeployContext(
+        code_root=code_root,
+        openclaw_home=oc,
+        openclaw_json=oc / "openclaw.json",
+        state_root=state_root,
+        skill_src=code_root / "SKILL.md",
+        skill_dest=oc / "skills" / "twinbox" / "SKILL.md",
+        init_script=code_root / "scripts" / "install_openclaw_twinbox_init.sh",
+        dry_run=dry_run,
+        restart_gateway=False,
+        sync_env_from_dotenv=False,
+        strict=False,
+        fragment_path=fragment_path,
+        no_fragment=no_fragment,
+        openclaw_bin="openclaw",
+    )
 
 
 def _rollback_ctx(tmp_path: Path, *, dry_run: bool) -> RollbackContext:
@@ -130,6 +161,171 @@ def test_strip_openclaw_json_step_removes_twinbox_entry(tmp_path: Path) -> None:
     assert "twinbox" not in written.get("skills", {}).get("entries", {})
     assert written["skills"]["entries"]["keep"]["y"] == 2
     assert written["meta"] == 3
+
+
+def test_merge_openclaw_json_step_no_fragment_skips_merge_fragment(tmp_path: Path) -> None:
+    oc = tmp_path / ".openclaw"
+    host = oc / "openclaw.json"
+    ops = _MemFileOps({host: "{}"})
+    rt = OpenClawDeployRuntime(file_ops=ops, command_runner=SubprocessCommandRunner())
+    report = OpenClawDeployReport(ok=True)
+    ctx = _deploy_ctx(tmp_path, dry_run=False, no_fragment=True)
+
+    ok = merge_openclaw_json_step(
+        ctx, report, rt, dotenv={}, missing_required=[]
+    )
+    assert ok is True
+    frag_step = next(s for s in report.steps if s.id == "merge_openclaw_fragment")
+    assert frag_step.status == "skipped"
+    assert "--no-fragment" in frag_step.message
+    assert ops.write_json_calls
+    assert "skills" in ops.write_json_calls[0][1]
+
+
+def test_merge_openclaw_json_step_explicit_fragment_missing_fails(tmp_path: Path) -> None:
+    oc = tmp_path / ".openclaw"
+    host = oc / "openclaw.json"
+    missing = tmp_path / "nowhere.fragment.json"
+    ops = _MemFileOps({host: "{}"})
+    rt = OpenClawDeployRuntime(file_ops=ops, command_runner=SubprocessCommandRunner())
+    report = OpenClawDeployReport(ok=True)
+    ctx = _deploy_ctx(tmp_path, fragment_path=missing)
+
+    ok = merge_openclaw_json_step(
+        ctx, report, rt, dotenv={}, missing_required=[]
+    )
+    assert ok is False
+    assert report.steps[-1].id == "merge_openclaw_fragment"
+    assert report.steps[-1].status == "failed"
+    assert ops.write_json_calls == []
+
+
+def test_merge_openclaw_json_step_explicit_fragment_deep_merges(tmp_path: Path) -> None:
+    oc = tmp_path / ".openclaw"
+    host = oc / "openclaw.json"
+    frag = tmp_path / "extra.fragment.json"
+    existing = {"top": {"keep": 1}, "skills": {"entries": {"keep_skill": {"a": 1}}}}
+    fragment = {"top": {"from_frag": 2}, "only_in_frag": True}
+    ops = _MemFileOps(
+        {
+            host: json.dumps(existing),
+            frag: json.dumps(fragment),
+        }
+    )
+    rt = OpenClawDeployRuntime(file_ops=ops, command_runner=SubprocessCommandRunner())
+    report = OpenClawDeployReport(ok=True)
+    ctx = _deploy_ctx(tmp_path, fragment_path=frag)
+
+    ok = merge_openclaw_json_step(
+        ctx, report, rt, dotenv={}, missing_required=[]
+    )
+    assert ok is True
+    frag_step = next(s for s in report.steps if s.id == "merge_openclaw_fragment")
+    assert frag_step.status == "ok"
+    assert frag_step.detail.get("explicit") is True
+    written = ops.write_json_calls[0][1]
+    assert written["top"]["keep"] == 1
+    assert written["top"]["from_frag"] == 2
+    assert written["only_in_frag"] is True
+    assert written["skills"]["entries"]["keep_skill"]["a"] == 1
+    assert written["skills"]["entries"]["twinbox"]["enabled"] is True
+
+
+def test_merge_openclaw_json_step_optional_default_fragment_skipped_when_absent(
+    tmp_path: Path,
+) -> None:
+    oc = tmp_path / ".openclaw"
+    host = oc / "openclaw.json"
+    ops = _MemFileOps({host: "{}"})
+    rt = OpenClawDeployRuntime(file_ops=ops, command_runner=SubprocessCommandRunner())
+    report = OpenClawDeployReport(ok=True)
+    ctx = _deploy_ctx(tmp_path)
+
+    ok = merge_openclaw_json_step(
+        ctx, report, rt, dotenv={}, missing_required=[]
+    )
+    assert ok is True
+    frag_step = next(s for s in report.steps if s.id == "merge_openclaw_fragment")
+    assert frag_step.status == "skipped"
+    assert "optional" in frag_step.message
+    expected = default_openclaw_fragment_path(ctx.code_root)
+    assert str(expected) in frag_step.message
+
+
+def test_merge_openclaw_json_step_default_fragment_from_code_root(tmp_path: Path) -> None:
+    oc = tmp_path / ".openclaw"
+    host = oc / "openclaw.json"
+    ctx = _deploy_ctx(tmp_path)
+    default_frag = default_openclaw_fragment_path(ctx.code_root)
+    ops = _MemFileOps(
+        {
+            host: json.dumps({"base_only": True}),
+            default_frag: json.dumps({"from_default_fragment": 1}),
+        }
+    )
+    rt = OpenClawDeployRuntime(file_ops=ops, command_runner=SubprocessCommandRunner())
+    report = OpenClawDeployReport(ok=True)
+
+    ok = merge_openclaw_json_step(
+        ctx, report, rt, dotenv={}, missing_required=[]
+    )
+    assert ok is True
+    frag_step = next(s for s in report.steps if s.id == "merge_openclaw_fragment")
+    assert frag_step.status == "ok"
+    assert frag_step.detail.get("explicit") is False
+    written = ops.write_json_calls[0][1]
+    assert written["base_only"] is True
+    assert written["from_default_fragment"] == 1
+
+
+def test_merge_openclaw_json_step_fragment_invalid_json_fails(tmp_path: Path) -> None:
+    oc = tmp_path / ".openclaw"
+    host = oc / "openclaw.json"
+    frag = tmp_path / "bad.json"
+    ops = _MemFileOps(
+        {
+            host: "{}",
+            frag: "{",
+        }
+    )
+    rt = OpenClawDeployRuntime(file_ops=ops, command_runner=SubprocessCommandRunner())
+    report = OpenClawDeployReport(ok=True)
+    ctx = _deploy_ctx(tmp_path, fragment_path=frag)
+
+    ok = merge_openclaw_json_step(
+        ctx, report, rt, dotenv={}, missing_required=[]
+    )
+    assert ok is False
+    assert report.steps[-1].id == "merge_openclaw_fragment"
+    assert report.steps[-1].status == "failed"
+    assert ops.write_json_calls == []
+
+
+def test_merge_openclaw_json_step_dry_run_merges_fragment_but_skips_write(
+    tmp_path: Path,
+) -> None:
+    oc = tmp_path / ".openclaw"
+    host = oc / "openclaw.json"
+    frag = tmp_path / "f.json"
+    ops = _MemFileOps(
+        {
+            host: "{}",
+            frag: json.dumps({"x": 1}),
+        }
+    )
+    rt = OpenClawDeployRuntime(file_ops=ops, command_runner=SubprocessCommandRunner())
+    report = OpenClawDeployReport(ok=True)
+    ctx = _deploy_ctx(tmp_path, dry_run=True, fragment_path=frag)
+
+    ok = merge_openclaw_json_step(
+        ctx, report, rt, dotenv={}, missing_required=[]
+    )
+    assert ok is True
+    frag_step = next(s for s in report.steps if s.id == "merge_openclaw_fragment")
+    assert frag_step.status == "dry_run"
+    json_step = next(s for s in report.steps if s.id == "merge_openclaw_json")
+    assert json_step.status == "dry_run"
+    assert ops.write_json_calls == []
 
 
 def test_remove_skill_dir_step_dry_run_no_remove(tmp_path: Path) -> None:
