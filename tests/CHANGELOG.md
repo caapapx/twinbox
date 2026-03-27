@@ -183,4 +183,4 @@
 | `test_task_cli.py` | 修改：重构（见 [Unreleased] 区块） |
 | `test_llm.py` | 修改：重构（见 [Unreleased] 区块） |
 | `test_evaluation.py` | 修改：重构（见 [Unreleased] 区块） |
-| `fixtures/delivery_director_ops/` 等 | 已移除；信封探针测试改为内联样本 |
+| `tests/fixtures/` | 已移除（目录删除）；信封探针测试为内联样本 |

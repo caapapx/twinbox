@@ -64,7 +64,7 @@
 #### TODO-4：评测框架 CI 集成（阶段 2 启动门槛）
 
 - [ ] 将 `twinbox-eval-phase4` 接入 CI，确保每次提交自动运行
-- [ ] 固化 baseline 报告，使其可版本化复用（存入 `tests/fixtures/baseline/`）
+- [ ] 固化 baseline 报告，使其可版本化复用（例如存入 `tests/baseline/` 或 `docs/validation/`）
 - [ ] 验证 `contract_pass_rate` 持续保持 100%，并设为 CI 硬性门禁
 
 完成标准：阶段 1 评测稳定接入 CI；baseline 可复用；准备好启动阶段 2 提分工作。
@@ -425,7 +425,6 @@ src/twinbox_core/
       dependencies.py
       state_root.py
 tests/
-  fixtures/
   contract/
   integration/
 ```
