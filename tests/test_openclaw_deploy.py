@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -18,6 +19,138 @@ from twinbox_core.openclaw_deploy import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+class _FakeFileOps:
+    def __init__(
+        self,
+        *,
+        files: dict[Path, str] | None = None,
+        dirs: set[Path] | None = None,
+    ) -> None:
+        self.files = {Path(path): text for path, text in (files or {}).items()}
+        self.dirs = {Path(path) for path in (dirs or set())}
+        self.write_json_calls: list[tuple[Path, dict[str, Any]]] = []
+        self.copy_calls: list[tuple[Path, Path]] = []
+        self.remove_tree_calls: list[Path] = []
+        self.mkdir_calls: list[Path] = []
+
+    def is_file(self, path: Path) -> bool:
+        return Path(path) in self.files
+
+    def is_dir(self, path: Path) -> bool:
+        candidate = Path(path)
+        return candidate in self.dirs
+
+    def read_text(self, path: Path, *, encoding: str = "utf-8") -> str:
+        del encoding
+        candidate = Path(path)
+        if candidate not in self.files:
+            raise FileNotFoundError(candidate)
+        return self.files[candidate]
+
+    def mkdir(self, path: Path, *, parents: bool = True, exist_ok: bool = True) -> None:
+        del parents, exist_ok
+        candidate = Path(path)
+        current = candidate
+        while current != current.parent:
+            self.dirs.add(current)
+            current = current.parent
+        self.dirs.add(current)
+        self.mkdir_calls.append(candidate)
+
+    def write_json_atomic(self, path: Path, data: dict[str, Any]) -> None:
+        candidate = Path(path)
+        self.mkdir(candidate.parent)
+        text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+        self.files[candidate] = text
+        self.write_json_calls.append((candidate, data))
+
+    def copy_file(self, src: Path, dst: Path) -> None:
+        src_path = Path(src)
+        dst_path = Path(dst)
+        if src_path not in self.files:
+            raise FileNotFoundError(src_path)
+        self.mkdir(dst_path.parent)
+        self.files[dst_path] = self.files[src_path]
+        self.copy_calls.append((src_path, dst_path))
+
+    def remove_tree(self, path: Path) -> None:
+        candidate = Path(path)
+        self.remove_tree_calls.append(candidate)
+        self.dirs = {existing for existing in self.dirs if existing != candidate}
+        self.files = {
+            existing: text
+            for existing, text in self.files.items()
+            if existing != candidate and candidate not in existing.parents
+        }
+
+
+class _FakeCommandRunner:
+    def __init__(
+        self,
+        *,
+        results: dict[tuple[str, ...], subprocess.CompletedProcess[str]] | None = None,
+    ) -> None:
+        self.results = results or {}
+        self.calls: list[tuple[list[str], Path]] = []
+
+    def run(self, argv: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
+        self.calls.append((list(argv), Path(cwd)))
+        key = tuple(argv)
+        if key in self.results:
+            return self.results[key]
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+
+class _FakeRuntime:
+    def __init__(self, *, file_ops: _FakeFileOps, command_runner: _FakeCommandRunner) -> None:
+        self.file_ops = file_ops
+        self.command_runner = command_runner
+
+
+def _make_runtime_layout(
+    tmp_path: Path,
+    *,
+    dotenv_lines: str = "",
+    openclaw_json: dict[str, Any] | None = None,
+) -> tuple[Path, Path, Path, _FakeRuntime]:
+    code_root = tmp_path / "repo"
+    code_root.mkdir()
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    (state_root / ".env").write_text(dotenv_lines, encoding="utf-8")
+    openclaw_home = tmp_path / ".openclaw"
+
+    init_script = code_root / "scripts" / "install_openclaw_twinbox_init.sh"
+    skill_src = code_root / "SKILL.md"
+    files = {
+        init_script: "#!/bin/bash\nexit 0\n",
+        skill_src: "---\nname: twinbox\n---\n",
+    }
+    if openclaw_json is not None:
+        files[openclaw_home / "openclaw.json"] = (
+            json.dumps(openclaw_json, ensure_ascii=False, indent=2) + "\n"
+        )
+    dirs = {
+        code_root / "scripts",
+        openclaw_home,
+        openclaw_home / "skills",
+        openclaw_home / "skills" / "twinbox",
+    }
+
+    file_ops = _FakeFileOps(files=files, dirs=dirs)
+    command_runner = _FakeCommandRunner(
+        results={
+            ("bash", str(init_script)): subprocess.CompletedProcess(
+                ["bash", str(init_script)], 0, stdout="ok\n", stderr=""
+            )
+        }
+    )
+    return code_root, state_root, openclaw_home, _FakeRuntime(
+        file_ops=file_ops,
+        command_runner=command_runner,
+    )
 
 
 def test_merge_preserves_other_skill_entries() -> None:
@@ -144,6 +277,34 @@ def test_run_openclaw_deploy_strict_fails_when_mail_env_missing(
     assert "IMAP_HOST" in failed[0].message
 
 
+def test_run_openclaw_deploy_runtime_strict_avoids_write_side_effects(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    code_root, state_root, openclaw_home, runtime = _make_runtime_layout(tmp_path)
+    monkeypatch.setenv("TWINBOX_STATE_ROOT", str(state_root))
+
+    report = run_openclaw_deploy(
+        code_root=code_root,
+        openclaw_home=openclaw_home,
+        dry_run=False,
+        restart_gateway=True,
+        sync_env_from_dotenv=True,
+        strict=True,
+        runtime=runtime,
+    )
+
+    assert not report.ok
+    assert [step.id for step in report.steps] == [
+        "bootstrap_roots",
+        "merge_openclaw_json",
+    ]
+    assert runtime.file_ops.write_json_calls == []
+    assert runtime.file_ops.copy_calls == []
+    assert runtime.command_runner.calls == [
+        (["bash", str(code_root / "scripts" / "install_openclaw_twinbox_init.sh")], code_root)
+    ]
+
+
 def test_run_openclaw_deploy_dry_run_ok(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
     oc = tmp_path / ".openclaw"
@@ -161,6 +322,34 @@ def test_run_openclaw_deploy_dry_run_ok(monkeypatch: pytest.MonkeyPatch, tmp_pat
     assert "sync_skill_md" in ids
     assert "gateway_restart" in ids
     assert not (oc / "openclaw.json").exists()
+
+
+def test_run_openclaw_deploy_runtime_dry_run_keeps_side_effects_zero(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    code_root, state_root, openclaw_home, runtime = _make_runtime_layout(tmp_path)
+    monkeypatch.setenv("TWINBOX_STATE_ROOT", str(state_root))
+
+    report = run_openclaw_deploy(
+        code_root=code_root,
+        openclaw_home=openclaw_home,
+        dry_run=True,
+        restart_gateway=True,
+        sync_env_from_dotenv=False,
+        runtime=runtime,
+    )
+
+    assert report.ok
+    assert [step.id for step in report.steps] == [
+        "bootstrap_roots",
+        "merge_openclaw_fragment",
+        "merge_openclaw_json",
+        "sync_skill_md",
+        "gateway_restart",
+    ]
+    assert runtime.file_ops.write_json_calls == []
+    assert runtime.file_ops.copy_calls == []
+    assert runtime.command_runner.calls == []
 
 
 def _fake_run_ok(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -194,6 +383,47 @@ def test_run_openclaw_deploy_applies_files_no_gateway_restart_call(
     assert skill.is_file()
     cfg = json.loads((oc / "openclaw.json").read_text(encoding="utf-8"))
     assert cfg["skills"]["entries"]["twinbox"]["enabled"] is True
+
+
+def test_run_openclaw_deploy_runtime_restart_failure_keeps_prior_steps(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    code_root, state_root, openclaw_home, runtime = _make_runtime_layout(tmp_path)
+    monkeypatch.setenv("TWINBOX_STATE_ROOT", str(state_root))
+    runtime.command_runner.results[("openclaw", "gateway", "restart")] = subprocess.CompletedProcess(
+        ["openclaw", "gateway", "restart"], 1, stdout="", stderr="boom\n"
+    )
+
+    report = run_openclaw_deploy(
+        code_root=code_root,
+        openclaw_home=openclaw_home,
+        dry_run=False,
+        restart_gateway=True,
+        sync_env_from_dotenv=False,
+        runtime=runtime,
+    )
+
+    assert not report.ok
+    assert [step.id for step in report.steps] == [
+        "bootstrap_roots",
+        "merge_openclaw_fragment",
+        "merge_openclaw_json",
+        "sync_skill_md",
+        "gateway_restart",
+    ]
+    assert runtime.file_ops.write_json_calls
+    assert runtime.file_ops.copy_calls == [
+        (
+            code_root / "SKILL.md",
+            openclaw_home / "skills" / "twinbox" / "SKILL.md",
+        )
+    ]
+    cfg = runtime.file_ops.write_json_calls[0][1]
+    assert cfg["skills"]["entries"]["twinbox"]["enabled"] is True
+    assert runtime.command_runner.calls[-1] == (
+        ["openclaw", "gateway", "restart"],
+        code_root,
+    )
 
 
 def test_run_openclaw_rollback_removes_json_and_skill_dir(
@@ -245,6 +475,53 @@ def test_run_openclaw_rollback_remove_config(
     )
     assert report.ok
     assert not cfg_dir.exists()
+
+
+def test_run_openclaw_rollback_runtime_only_unwires_twinbox(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    cfg_dir = tmp_path / ".config" / "twinbox"
+    cfg_dir.mkdir(parents=True)
+    (cfg_dir / "code-root").write_text("/tmp/x\n", encoding="utf-8")
+    code_root, state_root, openclaw_home, runtime = _make_runtime_layout(
+        tmp_path,
+        openclaw_json={
+            "skills": {
+                "entries": {
+                    "twinbox": {"enabled": True, "env": {}},
+                    "other": {"enabled": False},
+                }
+            },
+            "gateway": {"token": "keep"},
+        },
+    )
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("TWINBOX_STATE_ROOT", str(state_root))
+
+    report = run_openclaw_rollback(
+        code_root=code_root,
+        openclaw_home=openclaw_home,
+        dry_run=False,
+        restart_gateway=False,
+        remove_config=False,
+        runtime=runtime,
+    )
+
+    assert report.ok
+    assert [step.id for step in report.steps] == [
+        "strip_openclaw_json",
+        "remove_skill_dir",
+        "remove_twinbox_config",
+        "gateway_restart",
+    ]
+    written = runtime.file_ops.write_json_calls[0][1]
+    assert "twinbox" not in written["skills"]["entries"]
+    assert written["skills"]["entries"]["other"]["enabled"] is False
+    assert written["gateway"]["token"] == "keep"
+    assert runtime.file_ops.remove_tree_calls == [
+        openclaw_home / "skills" / "twinbox"
+    ]
+    assert cfg_dir.exists()
 
 
 def test_run_openclaw_deploy_missing_skill_md_fails(

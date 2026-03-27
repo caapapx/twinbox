@@ -8,14 +8,17 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
-import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
 from .env_writer import load_env_file
+from .openclaw_deploy_runtime import (
+    LocalFileOps,
+    OpenClawDeployRuntime,
+    build_runtime,
+)
 from .paths import PathResolutionError, config_dir, resolve_code_root, resolve_state_root
 
 # Matches SKILL.md metadata.openclaw.requires.env
@@ -79,6 +82,36 @@ class OpenClawDeployReport:
         }
 
 
+@dataclass(frozen=True)
+class _DeployContext:
+    code_root: Path
+    openclaw_home: Path
+    openclaw_json: Path
+    state_root: Path
+    skill_src: Path
+    skill_dest: Path
+    init_script: Path
+    dry_run: bool
+    restart_gateway: bool
+    sync_env_from_dotenv: bool
+    strict: bool
+    fragment_path: Path | None
+    no_fragment: bool
+    openclaw_bin: str
+
+
+@dataclass(frozen=True)
+class _RollbackContext:
+    openclaw_home: Path
+    openclaw_json: Path
+    skill_dir: Path
+    config_path: Path
+    dry_run: bool
+    restart_gateway: bool
+    remove_config: bool
+    openclaw_bin: str
+
+
 def _deep_copy_json(obj: dict[str, Any]) -> dict[str, Any]:
     return json.loads(json.dumps(obj))
 
@@ -105,13 +138,25 @@ def default_openclaw_fragment_path(code_root: Path) -> Path:
     return code_root / "openclaw-skill" / "openclaw.fragment.json"
 
 
-def load_openclaw_json(path: Path) -> dict[str, Any]:
-    if not path.is_file():
-        return {}
+def _parse_openclaw_json_text(path: Path, text: str) -> dict[str, Any]:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(text)
     except json.JSONDecodeError as exc:
         raise ValueError(f"Invalid JSON in {path}: {exc}") from exc
+    return data
+
+
+def _load_openclaw_json_with_file_ops(
+    file_ops: LocalFileOps | Any,
+    path: Path,
+) -> dict[str, Any]:
+    if not file_ops.is_file(path):
+        return {}
+    return _parse_openclaw_json_text(path, file_ops.read_text(path, encoding="utf-8"))
+
+
+def load_openclaw_json(path: Path) -> dict[str, Any]:
+    return _load_openclaw_json_with_file_ops(LocalFileOps(), path)
 
 
 def merge_twinbox_openclaw_entry(
@@ -176,23 +221,390 @@ def remove_twinbox_skill_entry_from_openclaw(
 
 
 def atomic_write_json(path: Path, data: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
-    fd, tmp_path = tempfile.mkstemp(
-        dir=path.parent, prefix=".openclaw-", suffix=".json.tmp", text=True
+    LocalFileOps().write_json_atomic(path, data)
+
+
+def _append_step(
+    report: OpenClawDeployReport,
+    step_id: str,
+    status: str,
+    message: str = "",
+    detail: dict[str, Any] | None = None,
+) -> None:
+    report.steps.append(
+        DeployStepResult(step_id, status, message, detail or {})
     )
+
+
+def _fail_step(
+    report: OpenClawDeployReport,
+    step_id: str,
+    message: str,
+    detail: dict[str, Any] | None = None,
+) -> bool:
+    report.ok = False
+    _append_step(report, step_id, "failed", message, detail)
+    return False
+
+
+def _missing_required_mail_keys(dotenv: dict[str, str]) -> list[str]:
+    missing: list[str] = []
+    for key in OPENCLAW_REQUIRED_MAIL_KEYS:
+        if not (dotenv.get(key) or "").strip():
+            missing.append(key)
+    return missing
+
+
+def _bootstrap_roots_step(
+    ctx: _DeployContext,
+    report: OpenClawDeployReport,
+    runtime: OpenClawDeployRuntime,
+) -> bool:
+    if not runtime.file_ops.is_file(ctx.init_script):
+        return _fail_step(
+            report,
+            "bootstrap_init_script",
+            f"Missing {ctx.init_script}",
+        )
+
+    if ctx.dry_run:
+        _append_step(
+            report,
+            "bootstrap_roots",
+            "dry_run",
+            f"Would run: bash {ctx.init_script}",
+            {"script": str(ctx.init_script)},
+        )
+        return True
+
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(text)
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.replace(tmp_path, path)
-    except BaseException:
+        proc = runtime.command_runner.run(
+            ["bash", str(ctx.init_script)],
+            cwd=ctx.code_root,
+        )
+    except OSError as exc:
+        return _fail_step(report, "bootstrap_roots", str(exc))
+
+    if proc.returncode != 0:
+        return _fail_step(
+            report,
+            "bootstrap_roots",
+            "install_openclaw_twinbox_init.sh exited non-zero",
+            {
+                "returncode": proc.returncode,
+                "stderr": (proc.stderr or "")[-4000:],
+            },
+        )
+
+    _append_step(
+        report,
+        "bootstrap_roots",
+        "ok",
+        "Wrote code-root / state-root",
+        {"stdout_tail": (proc.stdout or "")[-2000:]},
+    )
+    return True
+
+
+def _merge_openclaw_json_step(
+    ctx: _DeployContext,
+    report: OpenClawDeployReport,
+    runtime: OpenClawDeployRuntime,
+    *,
+    dotenv: dict[str, str],
+    missing_required: list[str],
+) -> bool:
+    try:
+        existing = _load_openclaw_json_with_file_ops(runtime.file_ops, ctx.openclaw_json)
+    except ValueError as exc:
+        return _fail_step(report, "merge_openclaw_json", str(exc))
+
+    base = existing
+    frag_resolved: Path | None = None
+    frag_explicit = ctx.fragment_path is not None
+
+    if ctx.no_fragment:
+        _append_step(report, "merge_openclaw_fragment", "skipped", "--no-fragment")
+    elif ctx.fragment_path is not None:
+        frag_resolved = ctx.fragment_path.expanduser()
+        if not runtime.file_ops.is_file(frag_resolved):
+            return _fail_step(
+                report,
+                "merge_openclaw_fragment",
+                f"Fragment file not found: {frag_resolved}",
+            )
+    else:
+        candidate = default_openclaw_fragment_path(ctx.code_root)
+        if runtime.file_ops.is_file(candidate):
+            frag_resolved = candidate
+
+    if frag_resolved is not None:
         try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-        raise
+            fragment_data = _load_openclaw_json_with_file_ops(runtime.file_ops, frag_resolved)
+        except ValueError as exc:
+            return _fail_step(report, "merge_openclaw_fragment", str(exc))
+        base = deep_merge_openclaw(existing, fragment_data)
+        _append_step(
+            report,
+            "merge_openclaw_fragment",
+            "dry_run" if ctx.dry_run else "ok",
+            f"Deep-merged fragment from {frag_resolved}",
+            {"path": str(frag_resolved), "explicit": frag_explicit},
+        )
+    elif not ctx.no_fragment:
+        _append_step(
+            report,
+            "merge_openclaw_fragment",
+            "skipped",
+            f"No {default_openclaw_fragment_path(ctx.code_root)} (optional)",
+        )
+
+    merged = merge_twinbox_openclaw_entry(
+        base,
+        dotenv=dotenv,
+        sync_env_from_dotenv=ctx.sync_env_from_dotenv,
+    )
+
+    if ctx.dry_run:
+        _append_step(
+            report,
+            "merge_openclaw_json",
+            "dry_run",
+            f"Would write {ctx.openclaw_json}",
+            {
+                "sync_env_from_dotenv": ctx.sync_env_from_dotenv,
+                "missing_required_env_in_dotenv": missing_required,
+            },
+        )
+        return True
+
+    try:
+        runtime.file_ops.write_json_atomic(ctx.openclaw_json, merged)
+    except OSError as exc:
+        return _fail_step(report, "merge_openclaw_json", str(exc))
+
+    message = "Merged skills.entries.twinbox"
+    if ctx.sync_env_from_dotenv and missing_required:
+        message += (
+            f"; warning: state .env missing keys: {', '.join(missing_required)}"
+        )
+    _append_step(
+        report,
+        "merge_openclaw_json",
+        "ok",
+        message,
+        {"missing_required_env_in_dotenv": missing_required},
+    )
+    return True
+
+
+def _sync_skill_md_step(
+    ctx: _DeployContext,
+    report: OpenClawDeployReport,
+    runtime: OpenClawDeployRuntime,
+) -> bool:
+    if not runtime.file_ops.is_file(ctx.skill_src):
+        return _fail_step(report, "sync_skill_md", f"Missing {ctx.skill_src}")
+
+    if ctx.dry_run:
+        _append_step(
+            report,
+            "sync_skill_md",
+            "dry_run",
+            f"Would copy {ctx.skill_src} -> {ctx.skill_dest}",
+        )
+        return True
+
+    try:
+        runtime.file_ops.copy_file(ctx.skill_src, ctx.skill_dest)
+    except OSError as exc:
+        return _fail_step(report, "sync_skill_md", str(exc))
+
+    _append_step(report, "sync_skill_md", "ok", f"Copied to {ctx.skill_dest}")
+    return True
+
+
+def _gateway_restart_step(
+    *,
+    restart_gateway: bool,
+    dry_run: bool,
+    openclaw_bin: str,
+    cwd: Path,
+    report: OpenClawDeployReport,
+    runtime: OpenClawDeployRuntime,
+) -> bool:
+    if not restart_gateway:
+        _append_step(report, "gateway_restart", "skipped", "--no-restart")
+        return True
+
+    if dry_run:
+        _append_step(
+            report,
+            "gateway_restart",
+            "dry_run",
+            f"Would run: {openclaw_bin} gateway restart",
+        )
+        return True
+
+    try:
+        proc = runtime.command_runner.run(
+            [openclaw_bin, "gateway", "restart"],
+            cwd=cwd,
+        )
+    except OSError as exc:
+        return _fail_step(report, "gateway_restart", str(exc))
+
+    if proc.returncode != 0:
+        return _fail_step(
+            report,
+            "gateway_restart",
+            f"{openclaw_bin} gateway restart failed",
+            {
+                "returncode": proc.returncode,
+                "stderr": (proc.stderr or "")[-4000:],
+            },
+        )
+
+    _append_step(
+        report,
+        "gateway_restart",
+        "ok",
+        "Gateway restart issued",
+        {"stdout_tail": (proc.stdout or "")[-2000:]},
+    )
+    return True
+
+
+def _strip_openclaw_json_step(
+    ctx: _RollbackContext,
+    report: OpenClawDeployReport,
+    runtime: OpenClawDeployRuntime,
+) -> bool:
+    try:
+        existing = _load_openclaw_json_with_file_ops(runtime.file_ops, ctx.openclaw_json)
+    except ValueError as exc:
+        return _fail_step(report, "strip_openclaw_json", str(exc))
+
+    stripped, had_entry = remove_twinbox_skill_entry_from_openclaw(existing)
+
+    if ctx.dry_run:
+        _append_step(
+            report,
+            "strip_openclaw_json",
+            "dry_run",
+            f"Would remove skills.entries.twinbox from {ctx.openclaw_json}",
+            {"had_twinbox_entry": had_entry},
+        )
+        return True
+
+    if not had_entry:
+        _append_step(
+            report,
+            "strip_openclaw_json",
+            "skipped",
+            "No skills.entries.twinbox present",
+        )
+        return True
+
+    try:
+        runtime.file_ops.write_json_atomic(ctx.openclaw_json, stripped)
+    except OSError as exc:
+        return _fail_step(report, "strip_openclaw_json", str(exc))
+
+    _append_step(
+        report,
+        "strip_openclaw_json",
+        "ok",
+        "Removed skills.entries.twinbox",
+    )
+    return True
+
+
+def _remove_skill_dir_step(
+    ctx: _RollbackContext,
+    report: OpenClawDeployReport,
+    runtime: OpenClawDeployRuntime,
+) -> bool:
+    if ctx.dry_run:
+        _append_step(
+            report,
+            "remove_skill_dir",
+            "dry_run",
+            f"Would remove directory {ctx.skill_dir} if present",
+            {"exists": runtime.file_ops.is_dir(ctx.skill_dir)},
+        )
+        return True
+
+    if not runtime.file_ops.is_dir(ctx.skill_dir):
+        _append_step(
+            report,
+            "remove_skill_dir",
+            "skipped",
+            "Skill directory not present",
+        )
+        return True
+
+    try:
+        runtime.file_ops.remove_tree(ctx.skill_dir)
+    except OSError as exc:
+        return _fail_step(report, "remove_skill_dir", str(exc))
+
+    _append_step(report, "remove_skill_dir", "ok", f"Removed {ctx.skill_dir}")
+    return True
+
+
+def _remove_twinbox_config_step(
+    ctx: _RollbackContext,
+    report: OpenClawDeployReport,
+    runtime: OpenClawDeployRuntime,
+) -> bool:
+    if ctx.dry_run:
+        _append_step(
+            report,
+            "remove_twinbox_config",
+            "dry_run",
+            (
+                f"Would remove {ctx.config_path}"
+                if ctx.remove_config
+                else "Skipped (--remove-config not set)"
+            ),
+            {
+                "remove_config": ctx.remove_config,
+                "exists": runtime.file_ops.is_dir(ctx.config_path),
+            },
+        )
+        return True
+
+    if not ctx.remove_config:
+        _append_step(
+            report,
+            "remove_twinbox_config",
+            "skipped",
+            "Preserved ~/.config/twinbox (pass --remove-config to delete)",
+        )
+        return True
+
+    if not runtime.file_ops.is_dir(ctx.config_path):
+        _append_step(
+            report,
+            "remove_twinbox_config",
+            "skipped",
+            "Config directory not present",
+        )
+        return True
+
+    try:
+        runtime.file_ops.remove_tree(ctx.config_path)
+    except OSError as exc:
+        return _fail_step(report, "remove_twinbox_config", str(exc))
+
+    _append_step(
+        report,
+        "remove_twinbox_config",
+        "ok",
+        f"Removed {ctx.config_path}",
+    )
+    return True
 
 
 def run_openclaw_deploy(
@@ -207,336 +619,114 @@ def run_openclaw_deploy(
     no_fragment: bool = False,
     openclaw_bin: str = "openclaw",
     run_subprocess: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+    runtime: OpenClawDeployRuntime | None = None,
 ) -> OpenClawDeployReport:
     """Wire Twinbox into OpenClaw on the current host.
 
     Steps: roots init script → resolve state root → optional env merge into
     ~/.openclaw/openclaw.json → copy SKILL.md → gateway restart.
     """
-    run = run_subprocess or subprocess.run
     report = OpenClawDeployReport(ok=True, steps=[])
+    runtime = runtime or build_runtime(run_subprocess)
 
     try:
-        cr = resolve_code_root(code_root or Path.cwd())
+        resolved_code_root = resolve_code_root(code_root or Path.cwd())
     except PathResolutionError as exc:
         report.ok = False
-        report.steps.append(
-            DeployStepResult("resolve_code_root", "failed", str(exc))
-        )
+        _append_step(report, "resolve_code_root", "failed", str(exc))
         return report
 
-    report.code_root = str(cr)
-    och = (openclaw_home or Path.home() / ".openclaw").expanduser()
-    report.openclaw_home = str(och)
-    report.openclaw_json = str(och / "openclaw.json")
-    skill_src = cr / "SKILL.md"
-    skill_dest = och / "skills" / "twinbox" / "SKILL.md"
-    report.skill_dest = str(skill_dest)
-
-    init_script = cr / "scripts" / "install_openclaw_twinbox_init.sh"
-    if not init_script.is_file():
-        report.ok = False
-        report.steps.append(
-            DeployStepResult(
-                "bootstrap_init_script",
-                "failed",
-                f"Missing {init_script}",
-            )
-        )
-        return report
-
-    # --- roots init ---
-    if dry_run:
-        report.steps.append(
-            DeployStepResult(
-                "bootstrap_roots",
-                "dry_run",
-                f"Would run: bash {init_script}",
-                {"script": str(init_script)},
-            )
-        )
-    else:
-        try:
-            proc = run(
-                ["bash", str(init_script)],
-                cwd=str(cr),
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if proc.returncode != 0:
-                report.ok = False
-                report.steps.append(
-                    DeployStepResult(
-                        "bootstrap_roots",
-                        "failed",
-                        "install_openclaw_twinbox_init.sh exited non-zero",
-                        {
-                            "returncode": proc.returncode,
-                            "stderr": (proc.stderr or "")[-4000:],
-                        },
-                    )
-                )
-                return report
-            report.steps.append(
-                DeployStepResult(
-                    "bootstrap_roots",
-                    "ok",
-                    "Wrote code-root / state-root",
-                    {"stdout_tail": (proc.stdout or "")[-2000:]},
-                )
-            )
-        except OSError as exc:
-            report.ok = False
-            report.steps.append(
-                DeployStepResult("bootstrap_roots", "failed", str(exc))
-            )
-            return report
-
-    # --- state root + .env ---
-    default_sr = Path(
-        os.environ.get("TWINBOX_STATE_ROOT", str(Path.home() / ".twinbox"))
-    ).expanduser()
-    try:
-        sr = resolve_state_root(default_sr)
-    except PathResolutionError as exc:
-        if dry_run:
-            sr = default_sr
-        else:
-            report.ok = False
-            report.steps.append(
-                DeployStepResult("resolve_state_root", "failed", str(exc))
-            )
-            return report
-
-    report.state_root = str(sr)
-    dotenv = load_env_file(sr / ".env") if sync_env_from_dotenv else {}
-
-    missing_required: list[str] = []
-    if sync_env_from_dotenv:
-        for key in OPENCLAW_REQUIRED_MAIL_KEYS:
-            if not (dotenv.get(key) or "").strip():
-                missing_required.append(key)
-
-    if strict and sync_env_from_dotenv and missing_required:
-        report.ok = False
-        report.steps.append(
-            DeployStepResult(
-                "merge_openclaw_json",
-                "failed",
-                "--strict: state root .env missing required keys for OpenClaw skill: "
-                + ", ".join(missing_required),
-                {"missing_required_env_in_dotenv": missing_required},
-            )
-        )
-        return report
-
-    # --- merge openclaw.json ---
-    json_path = och / "openclaw.json"
-    try:
-        existing = load_openclaw_json(json_path)
-    except ValueError as exc:
-        report.ok = False
-        report.steps.append(
-            DeployStepResult("merge_openclaw_json", "failed", str(exc))
-        )
-        return report
-
-    base = existing
-    frag_resolved: Path | None = None
-    frag_explicit = fragment_path is not None
-    if no_fragment:
-        report.steps.append(
-            DeployStepResult(
-                "merge_openclaw_fragment",
-                "skipped",
-                "--no-fragment",
-            )
-        )
-    elif fragment_path is not None:
-        frag_resolved = fragment_path.expanduser()
-        if not frag_resolved.is_file():
-            report.ok = False
-            report.steps.append(
-                DeployStepResult(
-                    "merge_openclaw_fragment",
-                    "failed",
-                    f"Fragment file not found: {frag_resolved}",
-                )
-            )
-            return report
-    else:
-        candidate = default_openclaw_fragment_path(cr)
-        frag_resolved = candidate if candidate.is_file() else None
-
-    if frag_resolved is not None:
-        try:
-            fragment_data = load_openclaw_json(frag_resolved)
-        except ValueError as exc:
-            report.ok = False
-            report.steps.append(
-                DeployStepResult("merge_openclaw_fragment", "failed", str(exc))
-            )
-            return report
-        base = deep_merge_openclaw(existing, fragment_data)
-        frag_msg = f"Deep-merged fragment from {frag_resolved}"
-        if dry_run:
-            report.steps.append(
-                DeployStepResult(
-                    "merge_openclaw_fragment",
-                    "dry_run",
-                    frag_msg,
-                    {"path": str(frag_resolved), "explicit": frag_explicit},
-                )
-            )
-        else:
-            report.steps.append(
-                DeployStepResult(
-                    "merge_openclaw_fragment",
-                    "ok",
-                    frag_msg,
-                    {"path": str(frag_resolved), "explicit": frag_explicit},
-                )
-            )
-    elif not no_fragment:
-        report.steps.append(
-            DeployStepResult(
-                "merge_openclaw_fragment",
-                "skipped",
-                f"No {default_openclaw_fragment_path(cr)} (optional)",
-            )
-        )
-
-    merged = merge_twinbox_openclaw_entry(
-        base,
-        dotenv=dotenv,
-        sync_env_from_dotenv=sync_env_from_dotenv,
+    resolved_openclaw_home = (openclaw_home or Path.home() / ".openclaw").expanduser()
+    report.code_root = str(resolved_code_root)
+    report.openclaw_home = str(resolved_openclaw_home)
+    report.openclaw_json = str(resolved_openclaw_home / "openclaw.json")
+    report.skill_dest = str(
+        resolved_openclaw_home / "skills" / "twinbox" / "SKILL.md"
     )
 
-    if dry_run:
-        report.steps.append(
-            DeployStepResult(
-                "merge_openclaw_json",
-                "dry_run",
-                f"Would write {json_path}",
-                {
-                    "sync_env_from_dotenv": sync_env_from_dotenv,
-                    "missing_required_env_in_dotenv": missing_required,
-                },
-            )
-        )
-    else:
-        try:
-            atomic_write_json(json_path, merged)
-            msg = "Merged skills.entries.twinbox"
-            if sync_env_from_dotenv and missing_required:
-                msg += (
-                    f"; warning: state .env missing keys: {', '.join(missing_required)}"
-                )
-            report.steps.append(
-                DeployStepResult(
-                    "merge_openclaw_json",
-                    "ok",
-                    msg,
-                    {
-                        "missing_required_env_in_dotenv": missing_required,
-                    },
-                )
-            )
-        except OSError as exc:
-            report.ok = False
-            report.steps.append(
-                DeployStepResult("merge_openclaw_json", "failed", str(exc))
-            )
-            return report
+    default_state_root = Path(
+        os.environ.get("TWINBOX_STATE_ROOT", str(Path.home() / ".twinbox"))
+    ).expanduser()
+    bootstrap_ctx = _DeployContext(
+        code_root=resolved_code_root,
+        openclaw_home=resolved_openclaw_home,
+        openclaw_json=resolved_openclaw_home / "openclaw.json",
+        state_root=default_state_root,
+        skill_src=resolved_code_root / "SKILL.md",
+        skill_dest=resolved_openclaw_home / "skills" / "twinbox" / "SKILL.md",
+        init_script=resolved_code_root / "scripts" / "install_openclaw_twinbox_init.sh",
+        dry_run=dry_run,
+        restart_gateway=restart_gateway,
+        sync_env_from_dotenv=sync_env_from_dotenv,
+        strict=strict,
+        fragment_path=fragment_path,
+        no_fragment=no_fragment,
+        openclaw_bin=openclaw_bin,
+    )
 
-    # --- SKILL.md ---
-    if not skill_src.is_file():
-        report.ok = False
-        report.steps.append(
-            DeployStepResult(
-                "sync_skill_md",
-                "failed",
-                f"Missing {skill_src}",
-            )
-        )
-        return report
-
-    if dry_run:
-        report.steps.append(
-            DeployStepResult(
-                "sync_skill_md",
-                "dry_run",
-                f"Would copy {skill_src} -> {skill_dest}",
-            )
-        )
-    else:
-        try:
-            skill_dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(skill_src, skill_dest)
-            report.steps.append(
-                DeployStepResult("sync_skill_md", "ok", f"Copied to {skill_dest}")
-            )
-        except OSError as exc:
-            report.ok = False
-            report.steps.append(
-                DeployStepResult("sync_skill_md", "failed", str(exc))
-            )
-            return report
-
-    # --- gateway restart ---
-    if not restart_gateway:
-        report.steps.append(
-            DeployStepResult("gateway_restart", "skipped", "--no-restart")
-        )
-        return report
-
-    if dry_run:
-        report.steps.append(
-            DeployStepResult(
-                "gateway_restart",
-                "dry_run",
-                f"Would run: {openclaw_bin} gateway restart",
-            )
-        )
+    if not _bootstrap_roots_step(bootstrap_ctx, report, runtime):
         return report
 
     try:
-        proc = run(
-            [openclaw_bin, "gateway", "restart"],
-            cwd=str(cr),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if proc.returncode != 0:
-            report.ok = False
-            report.steps.append(
-                DeployStepResult(
-                    "gateway_restart",
-                    "failed",
-                    f"{openclaw_bin} gateway restart failed",
-                    {
-                        "returncode": proc.returncode,
-                        "stderr": (proc.stderr or "")[-4000:],
-                    },
-                )
-            )
+        state_root = resolve_state_root(default_state_root)
+    except PathResolutionError as exc:
+        if dry_run:
+            state_root = default_state_root
         else:
-            report.steps.append(
-                DeployStepResult(
-                    "gateway_restart",
-                    "ok",
-                    "Gateway restart issued",
-                    {"stdout_tail": (proc.stdout or "")[-2000:]},
-                )
-            )
-    except OSError as exc:
-        report.ok = False
-        report.steps.append(
-            DeployStepResult("gateway_restart", "failed", str(exc))
-        )
+            report.ok = False
+            _append_step(report, "resolve_state_root", "failed", str(exc))
+            return report
 
+    ctx = _DeployContext(
+        code_root=resolved_code_root,
+        openclaw_home=resolved_openclaw_home,
+        openclaw_json=resolved_openclaw_home / "openclaw.json",
+        state_root=state_root,
+        skill_src=resolved_code_root / "SKILL.md",
+        skill_dest=resolved_openclaw_home / "skills" / "twinbox" / "SKILL.md",
+        init_script=resolved_code_root / "scripts" / "install_openclaw_twinbox_init.sh",
+        dry_run=dry_run,
+        restart_gateway=restart_gateway,
+        sync_env_from_dotenv=sync_env_from_dotenv,
+        strict=strict,
+        fragment_path=fragment_path,
+        no_fragment=no_fragment,
+        openclaw_bin=openclaw_bin,
+    )
+    report.state_root = str(ctx.state_root)
+
+    dotenv = load_env_file(ctx.state_root / ".env") if ctx.sync_env_from_dotenv else {}
+    missing_required = (
+        _missing_required_mail_keys(dotenv) if ctx.sync_env_from_dotenv else []
+    )
+    if ctx.strict and ctx.sync_env_from_dotenv and missing_required:
+        _fail_step(
+            report,
+            "merge_openclaw_json",
+            "--strict: state root .env missing required keys for OpenClaw skill: "
+            + ", ".join(missing_required),
+            {"missing_required_env_in_dotenv": missing_required},
+        )
+        return report
+
+    if not _merge_openclaw_json_step(
+        ctx,
+        report,
+        runtime,
+        dotenv=dotenv,
+        missing_required=missing_required,
+    ):
+        return report
+    if not _sync_skill_md_step(ctx, report, runtime):
+        return report
+    _gateway_restart_step(
+        restart_gateway=ctx.restart_gateway,
+        dry_run=ctx.dry_run,
+        openclaw_bin=ctx.openclaw_bin,
+        cwd=ctx.code_root,
+        report=report,
+        runtime=runtime,
+    )
     return report
 
 
@@ -549,6 +739,7 @@ def run_openclaw_rollback(
     remove_config: bool = False,
     openclaw_bin: str = "openclaw",
     run_subprocess: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+    runtime: OpenClawDeployRuntime | None = None,
 ) -> OpenClawDeployReport:
     """Undo host wiring done by :func:`run_openclaw_deploy` (narrow scope).
 
@@ -559,209 +750,51 @@ def run_openclaw_rollback(
     systemd bridge, or ``uninstall_openclaw_twinbox.sh`` scope — use that script
     for a full teardown.
     """
-    run = run_subprocess or subprocess.run
     report = OpenClawDeployReport(ok=True, steps=[])
+    runtime = runtime or build_runtime(run_subprocess)
 
     try:
-        cr = resolve_code_root(code_root or Path.cwd())
-        report.code_root = str(cr)
+        resolved_code_root = resolve_code_root(code_root or Path.cwd())
+        report.code_root = str(resolved_code_root)
     except PathResolutionError:
+        resolved_code_root = None
         report.code_root = ""
 
-    default_sr = Path(
+    default_state_root = Path(
         os.environ.get("TWINBOX_STATE_ROOT", str(Path.home() / ".twinbox"))
     ).expanduser()
     try:
-        sr = resolve_state_root(default_sr)
-        report.state_root = str(sr)
+        report.state_root = str(resolve_state_root(default_state_root))
     except PathResolutionError:
-        report.state_root = str(default_sr)
+        report.state_root = str(default_state_root)
 
-    och = (openclaw_home or Path.home() / ".openclaw").expanduser()
-    report.openclaw_home = str(och)
-    report.openclaw_json = str(och / "openclaw.json")
-    skill_dir = och / "skills" / "twinbox"
-    report.skill_dest = str(skill_dir / "SKILL.md")
+    resolved_openclaw_home = (openclaw_home or Path.home() / ".openclaw").expanduser()
+    ctx = _RollbackContext(
+        openclaw_home=resolved_openclaw_home,
+        openclaw_json=resolved_openclaw_home / "openclaw.json",
+        skill_dir=resolved_openclaw_home / "skills" / "twinbox",
+        config_path=config_dir(),
+        dry_run=dry_run,
+        restart_gateway=restart_gateway,
+        remove_config=remove_config,
+        openclaw_bin=openclaw_bin,
+    )
+    report.openclaw_home = str(ctx.openclaw_home)
+    report.openclaw_json = str(ctx.openclaw_json)
+    report.skill_dest = str(ctx.skill_dir / "SKILL.md")
 
-    json_path = och / "openclaw.json"
-    try:
-        existing = load_openclaw_json(json_path)
-    except ValueError as exc:
-        report.ok = False
-        report.steps.append(
-            DeployStepResult("strip_openclaw_json", "failed", str(exc))
-        )
+    if not _strip_openclaw_json_step(ctx, report, runtime):
         return report
-
-    stripped, had_entry = remove_twinbox_skill_entry_from_openclaw(existing)
-
-    if dry_run:
-        report.steps.append(
-            DeployStepResult(
-                "strip_openclaw_json",
-                "dry_run",
-                f"Would remove skills.entries.twinbox from {json_path}",
-                {"had_twinbox_entry": had_entry},
-            )
-        )
-    else:
-        if had_entry:
-            try:
-                atomic_write_json(json_path, stripped)
-                report.steps.append(
-                    DeployStepResult(
-                        "strip_openclaw_json",
-                        "ok",
-                        "Removed skills.entries.twinbox",
-                    )
-                )
-            except OSError as exc:
-                report.ok = False
-                report.steps.append(
-                    DeployStepResult("strip_openclaw_json", "failed", str(exc))
-                )
-                return report
-        else:
-            report.steps.append(
-                DeployStepResult(
-                    "strip_openclaw_json",
-                    "skipped",
-                    "No skills.entries.twinbox present",
-                )
-            )
-
-    # --- skill directory ---
-    if dry_run:
-        report.steps.append(
-            DeployStepResult(
-                "remove_skill_dir",
-                "dry_run",
-                f"Would remove directory {skill_dir} if present",
-                {"exists": skill_dir.is_dir()},
-            )
-        )
-    else:
-        if skill_dir.is_dir():
-            try:
-                shutil.rmtree(skill_dir)
-                report.steps.append(
-                    DeployStepResult(
-                        "remove_skill_dir",
-                        "ok",
-                        f"Removed {skill_dir}",
-                    )
-                )
-            except OSError as exc:
-                report.ok = False
-                report.steps.append(
-                    DeployStepResult("remove_skill_dir", "failed", str(exc))
-                )
-                return report
-        else:
-            report.steps.append(
-                DeployStepResult(
-                    "remove_skill_dir",
-                    "skipped",
-                    "Skill directory not present",
-                )
-            )
-
-    # --- ~/.config/twinbox ---
-    cfg = config_dir()
-    if dry_run:
-        report.steps.append(
-            DeployStepResult(
-                "remove_twinbox_config",
-                "dry_run",
-                f"Would remove {cfg}" if remove_config else "Skipped (--remove-config not set)",
-                {"remove_config": remove_config, "exists": cfg.is_dir()},
-            )
-        )
-    elif remove_config:
-        if cfg.is_dir():
-            try:
-                shutil.rmtree(cfg)
-                report.steps.append(
-                    DeployStepResult(
-                        "remove_twinbox_config",
-                        "ok",
-                        f"Removed {cfg}",
-                    )
-                )
-            except OSError as exc:
-                report.ok = False
-                report.steps.append(
-                    DeployStepResult("remove_twinbox_config", "failed", str(exc))
-                )
-                return report
-        else:
-            report.steps.append(
-                DeployStepResult(
-                    "remove_twinbox_config",
-                    "skipped",
-                    "Config directory not present",
-                )
-            )
-    else:
-        report.steps.append(
-            DeployStepResult(
-                "remove_twinbox_config",
-                "skipped",
-                "Preserved ~/.config/twinbox (pass --remove-config to delete)",
-            )
-        )
-
-    # --- gateway restart ---
-    if not restart_gateway:
-        report.steps.append(
-            DeployStepResult("gateway_restart", "skipped", "--no-restart")
-        )
+    if not _remove_skill_dir_step(ctx, report, runtime):
         return report
-
-    if dry_run:
-        report.steps.append(
-            DeployStepResult(
-                "gateway_restart",
-                "dry_run",
-                f"Would run: {openclaw_bin} gateway restart",
-            )
-        )
+    if not _remove_twinbox_config_step(ctx, report, runtime):
         return report
-
-    try:
-        proc = run(
-            [openclaw_bin, "gateway", "restart"],
-            cwd=str(Path.home()),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if proc.returncode != 0:
-            report.ok = False
-            report.steps.append(
-                DeployStepResult(
-                    "gateway_restart",
-                    "failed",
-                    f"{openclaw_bin} gateway restart failed",
-                    {
-                        "returncode": proc.returncode,
-                        "stderr": (proc.stderr or "")[-4000:],
-                    },
-                )
-            )
-        else:
-            report.steps.append(
-                DeployStepResult(
-                    "gateway_restart",
-                    "ok",
-                    "Gateway restart issued",
-                    {"stdout_tail": (proc.stdout or "")[-2000:]},
-                )
-            )
-    except OSError as exc:
-        report.ok = False
-        report.steps.append(
-            DeployStepResult("gateway_restart", "failed", str(exc))
-        )
-
+    _gateway_restart_step(
+        restart_gateway=ctx.restart_gateway,
+        dry_run=ctx.dry_run,
+        openclaw_bin=ctx.openclaw_bin,
+        cwd=resolved_code_root or Path.home(),
+        report=report,
+        runtime=runtime,
+    )
     return report
