@@ -20,6 +20,10 @@ Use this skill for Twinbox mailbox onboarding, read-only preflight checks, lates
 
 Twinbox mail state is produced by **`twinbox` / `twinbox-orchestrate` on the OpenClaw host** and consumed inside a **`twinbox` agent session** (tool policy + session history + Gateway). Regressions such as empty assistant payloads, “read SKILL only”, or silent turns are addressed by **session design and test procedure** (fresh session when needed, bootstrap turn, split long suites, optional **`plugin-twinbox-task`** tools), documented in `openclaw-skill/prompt-test.md` and `scripts/run_openclaw_prompt_tests.py` — not by relabeling the client app.
 
+Known OpenClaw limitation (confirmed 2026-03-27 on `xfyun-mass` / `astron-code-latest`): OpenClaw injects this skill's **`description`** into the system prompt, but the rest of `~/.openclaw/skills/twinbox/SKILL.md` is visible only if the agent explicitly reads the file. On this model, turns that call generic `exec` can stop immediately after the tool call and return `payloads=[]`, `assistant.content=[]`, or a short stub such as `让我执行命令：`. This is most visible in onboarding because there is currently no native `twinbox_onboarding_*` tool; `twinbox onboarding start|status|next --json` goes through generic `exec`.
+
+Recommended hosted workaround: start a **fresh `twinbox` session**, send one **bootstrap** turn that tells the agent to read `~/.openclaw/skills/twinbox/SKILL.md` first and then run the exact `twinbox ... --json` command in the same turn, and treat host-shell `twinbox ... --json` output as the source of truth for machine-readable verification if the session still returns empty payloads. Prefer native plugin tools where they exist; use the bootstrap path mainly for onboarding and other `exec`-only flows.
+
 ## Turn contract
 
 For **all** twinbox command executions (mail, queue, digest, onboarding, deploy, schedule, rule, etc.): run the matching `twinbox` command with `--json`, then reply with a text summary. Never end with only tool calls and no text response. A turn with `payloads=[]` or `assistant.content=[]` is always a failure.

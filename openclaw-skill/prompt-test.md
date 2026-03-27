@@ -28,6 +28,8 @@
 - 当前 OpenClaw 2026.3.23 本机路由下，`--session-id` 与 `--to` 也可能继续回落到 `agent:twinbox:main`，不能把它们当成稳定的新会话隔离手段
 - 改走 `cron + isolated session` 后，显式探针可以稳定执行 `twinbox task ...` 并正常返回正文
 - 但自然话术在 isolated session 中仍可能只读 `SKILL.md` / memory，最终空响应；因此它不是单纯的主会话污染问题
+- 2026-03-27 确认：OpenClaw 只把 skill `description` 注入 system prompt；`SKILL.md` body 要靠 agent 主动 read 才能看到。对 `xfyun-mass` / `astron-code-latest`，generic `exec` 后模型可能立刻 stop，返回 `payloads=[]` 或只剩一句「让我执行命令：」。
+- `onboarding start|status|next` 是当前最明显的受害路径：OpenClaw 还没有 `twinbox_onboarding_*` 原生工具，所以这几步只能走 generic `exec`。验收时默认把“新 session + bootstrap”当成**已知绕过法**，而不是继续追问 prompt 文案。
 - 所以真实用户 prompt 目前仍应继续测，但验收记录里要单独标明“自然话术结果”与“平台空响应问题”两类证据
 
 ## Control UI 完全空白（连 P0a 探针都没有字）
@@ -67,6 +69,23 @@ twinbox task weekly --json
 ```
 
 长期缓解：安装仓库内 `openclaw-skill/plugin-twinbox-task` 插件（`openclaw plugins install --link <path>`），让 `twinbox_latest_mail` / `twinbox_weekly` 等成为原生工具，减少对 `exec` 链的依赖。
+
+## Onboarding bootstrap（已知限制绕过）
+
+当 `twinbox onboarding start --json` / `status` / `next` 返回空 `payloads`、`assistant.content=[]` 或只有「让我执行命令：」时，先开**新 session**，再把下面整段贴给 **twinbox** agent：
+
+```text
+请先读取 ~/.openclaw/skills/twinbox/SKILL.md，然后在本轮内立即直接运行：
+twinbox onboarding start --json
+不要只说“让我执行命令：”。
+执行后只基于真实 stdout 返回：
+1. current_stage
+2. prompt
+3. next_action（如果 JSON 有）
+若命令失败，贴 stderr。
+```
+
+若这条 bootstrap 之后仍为空响应，不再把问题归因到 Twinbox prompt 文案；直接在宿主 shell 执行 `twinbox onboarding start --json` / `status --json` / `next --json` 做机器可读验收，并把结论记录为 **OpenClaw model/tool-turn 限制**。
 
 ## 推荐顺序
 
