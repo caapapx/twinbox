@@ -12,6 +12,7 @@
 
 ## Layout
 
+- **本地开发 vs OpenClaw 宿主**：前者默认仓库内 `.env` + `runtime/`；后者默认 `~/.twinbox` + `~/.config/twinbox` + OpenClaw 配置 — 对照见仓库根 [README.md](../README.md)（**Choose your setup path**）/ [README.zh.md](../README.zh.md)（**选择安装路径**）。宿主操作主路径：[`openclaw-skill/DEPLOY.md`](../openclaw-skill/DEPLOY.md)。
 - [`ref/`](./ref/architecture.md): 架构、契约、CLI、运行时参考
 - [`guide/`](./guide/): 操作与集成指南
 - [`../openclaw-skill/`](../openclaw-skill/README.md): OpenClaw 托管 skill、部署与宿主桥接（仓库根目录）；正式部署步骤见 [`../openclaw-skill/DEPLOY.md`](../openclaw-skill/DEPLOY.md)；排障见 [`../openclaw-skill/TROUBLESHOOT.md`](../openclaw-skill/TROUBLESHOOT.md)；附录见 [`../openclaw-skill/DEPLOY-APPENDIX.md`](../openclaw-skill/DEPLOY-APPENDIX.md)

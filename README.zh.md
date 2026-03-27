@@ -35,10 +35,22 @@ twinbox task todo --json
 
 ---
 
+## 选择安装路径
+
+| 路径 | 状态与配置落点 | 从这里开始 |
+|------|----------------|------------|
+| **本地 / 开发**（上文 TL;DR） | 仓库内 `.env`；产物在仓库 **`runtime/validation/`** | 本文 → [快速开始](#快速开始) |
+| **OpenClaw 宿主** | 邮件与流水线数据在 **`~/.twinbox`**；roots 在 **`~/.config/twinbox/`**；OpenClaw 读 **`~/.openclaw/openclaw.json`** | **[openclaw-skill/DEPLOY.md](openclaw-skill/DEPLOY.md)**（可选用 `twinbox deploy openclaw`）。设计说明：[docs/ref/openclaw-deploy-model.md](docs/ref/openclaw-deploy-model.md) |
+
+两条路径**不能混为一谈**：只按 TL;DR 做**不会**自动接好 OpenClaw；只跑 `deploy openclaw` 也**不能**代替阅读 **DEPLOY.md** 里的邮箱 / LLM / 环境前置步骤。
+
+---
+
 ## 目录
 
 - [它是做什么的](#它是做什么的)
 - [适合谁用](#适合谁用)
+- [选择安装路径](#选择安装路径)
 - [快速开始](#快速开始)
 - [日常命令](#日常命令)
 - [四个阶段](#四个阶段)

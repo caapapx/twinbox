@@ -35,10 +35,22 @@ twinbox task todo --json
 
 ---
 
+## Choose your setup path
+
+| Path | State & config | Start here |
+|------|----------------|------------|
+| **Local / dev** (TL;DR above) | `.env` in the repo; outputs under **`runtime/validation/`** in the repo | This README → [Quick Start](#quick-start) |
+| **OpenClaw host** | Mail + pipeline data under **`~/.twinbox`**; code/state roots in **`~/.config/twinbox/`**; OpenClaw reads **`~/.openclaw/openclaw.json`** | **[openclaw-skill/DEPLOY.md](openclaw-skill/DEPLOY.md)** (and optional `twinbox deploy openclaw`). Design: [docs/ref/openclaw-deploy-model.md](docs/ref/openclaw-deploy-model.md) |
+
+The two are **not interchangeable**: following only the TL;DR does not configure OpenClaw; running `deploy openclaw` does not replace reading **DEPLOY.md** for mailbox/LLM/env prerequisites.
+
+---
+
 ## Table of Contents
 
 - [What it does](#what-it-does)
 - [Who it is for](#who-it-is-for)
+- [Choose your setup path](#choose-your-setup-path)
 - [Quick Start](#quick-start)
 - [Daily Commands](#daily-commands)
 - [The Four Phases](#the-four-phases)
