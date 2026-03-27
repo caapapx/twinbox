@@ -18,34 +18,13 @@ from typing import Any, Callable
 
 from .bundled_himalaya import bundled_linux_himalaya_tgz, try_materialize_bundled_himalaya
 from .env_writer import load_env_file
+from .mail_env_contract import OPENCLAW_ENV_KEYS, OPENCLAW_OPTIONAL_MAIL_KEYS, missing_required_mail_values
 from .openclaw_deploy_runtime import (
     LocalFileOps,
     OpenClawDeployRuntime,
     build_runtime,
 )
 from .paths import PathResolutionError, config_dir, resolve_code_root, resolve_state_root
-
-# Matches SKILL.md metadata.openclaw.requires.env
-OPENCLAW_REQUIRED_MAIL_KEYS = (
-    "IMAP_HOST",
-    "IMAP_PORT",
-    "IMAP_LOGIN",
-    "IMAP_PASS",
-    "SMTP_HOST",
-    "SMTP_PORT",
-    "SMTP_LOGIN",
-    "SMTP_PASS",
-    "MAIL_ADDRESS",
-)
-
-OPENCLAW_OPTIONAL_MAIL_KEYS = (
-    "MAIL_ACCOUNT_NAME",
-    "MAIL_DISPLAY_NAME",
-    "IMAP_ENCRYPTION",
-    "SMTP_ENCRYPTION",
-)
-
-OPENCLAW_ENV_KEYS = OPENCLAW_REQUIRED_MAIL_KEYS + OPENCLAW_OPTIONAL_MAIL_KEYS
 
 
 def _skill_canonical_path(state_root: Path) -> Path:
@@ -294,14 +273,6 @@ def _fail_step(
     report.ok = False
     _append_step(report, step_id, "failed", message, detail)
     return False
-
-
-def _missing_required_mail_keys(dotenv: dict[str, str]) -> list[str]:
-    missing: list[str] = []
-    for key in OPENCLAW_REQUIRED_MAIL_KEYS:
-        if not (dotenv.get(key) or "").strip():
-            missing.append(key)
-    return missing
 
 
 def _bootstrap_roots_step(
@@ -868,7 +839,7 @@ def run_openclaw_deploy(
 
     dotenv = load_env_file(ctx.state_root / ".env") if ctx.sync_env_from_dotenv else {}
     missing_required = (
-        _missing_required_mail_keys(dotenv) if ctx.sync_env_from_dotenv else []
+        missing_required_mail_values(dotenv) if ctx.sync_env_from_dotenv else []
     )
     if ctx.strict and ctx.sync_env_from_dotenv and missing_required:
         _fail_step(

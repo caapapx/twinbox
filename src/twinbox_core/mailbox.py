@@ -17,20 +17,15 @@ from typing import Any
 
 from .bundled_himalaya import try_materialize_bundled_himalaya
 from .env_writer import load_env_file
+from .mail_env_contract import (
+    OPENCLAW_IMAP_SMTP_ENV_KEYS,
+    OPENCLAW_REQUIRES_ENV_KEYS,
+    missing_required_mail_values,
+)
 from .paths import PathResolutionError, resolve_code_root, resolve_existing_dir, resolve_state_root
 
-OPENCLAW_REQUIRED_ENV = [
-    "IMAP_HOST",
-    "IMAP_PORT",
-    "IMAP_LOGIN",
-    "IMAP_PASS",
-    "SMTP_HOST",
-    "SMTP_PORT",
-    "SMTP_LOGIN",
-    "SMTP_PASS",
-]
-
-RUNTIME_REQUIRED_ENV = [*OPENCLAW_REQUIRED_ENV, "MAIL_ADDRESS"]
+OPENCLAW_REQUIRED_ENV = list(OPENCLAW_IMAP_SMTP_ENV_KEYS)
+RUNTIME_REQUIRED_ENV = list(OPENCLAW_REQUIRES_ENV_KEYS)
 
 EXIT_OK = 0
 EXIT_CONFIG = 2
@@ -123,7 +118,7 @@ def build_effective_env(
 
 
 def missing_runtime_env(effective_env: dict[str, str]) -> list[str]:
-    return [key for key in RUNTIME_REQUIRED_ENV if not str(effective_env.get(key, "")).strip()]
+    return missing_required_mail_values(effective_env)
 
 
 def _account_name(effective_env: dict[str, str], override: str = "") -> str:
