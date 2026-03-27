@@ -25,6 +25,8 @@
 - OpenClaw 部署附录：`openclaw-skill/DEPLOY-APPENDIX.md`
 - 核心重构计划：`docs/core-refactor.md`
 - Daemon / Go 薄壳 / 模组化测试（**当前事实，优先于旧「暂缓 Go」表述**）：`docs/ref/daemon-and-runtime-slice.md`
+- Daemon JSON-RPC：`docs/ref/rpc-protocol.md`；Phase 产物路径约定：`docs/ref/artifact-contract.md`
+- Code root 开发者说明：`docs/ref/code-root-developer.md`
 - 验证工件契约：`docs/ref/validation.md`
 - 编排契约：`docs/ref/orchestration.md`
 - 运行时规范：`docs/ref/runtime.md`

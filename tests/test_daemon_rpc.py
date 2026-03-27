@@ -60,6 +60,9 @@ def test_daemon_ping(state_root: Path) -> None:
         assert resp["twinbox_version"] == TWINBOX_PROTOCOL_VERSION
         assert resp["result"]["status"] == "ok"
         assert "uptime_seconds" in resp["result"]
+        cs = resp["result"].get("cache_stats")
+        assert isinstance(cs, dict)
+        assert "hits" in cs and "misses" in cs
     finally:
         _run_cli(["daemon", "stop"], state_root, check=False)
 
@@ -172,6 +175,29 @@ def test_duplicate_start(state_root: Path) -> None:
 def test_stop_not_running(state_root: Path) -> None:
     r = _run_cli(["daemon", "stop"], state_root, check=False)
     assert r.returncode == 0
+
+
+def test_cli_invoke_prefer_cache_hit(state_root: Path) -> None:
+    (state_root / "runtime" / "context").mkdir(parents=True)
+    assert _run_cli(["daemon", "start"], state_root).returncode == 0
+    try:
+        params = {"argv": ["--help"], "cache_policy": "prefer_cache"}
+        r1 = rpc_call(state_root, "cli_invoke", params, connect_timeout_sec=5.0, io_timeout_sec=120.0)
+        r2 = rpc_call(state_root, "cli_invoke", params, connect_timeout_sec=5.0, io_timeout_sec=120.0)
+        assert r1["result"].get("cache") == "miss"
+        assert r2["result"].get("cache") == "hit"
+        assert r1["result"]["exit_code"] == r2["result"]["exit_code"] == 0
+    finally:
+        _run_cli(["daemon", "stop"], state_root, check=False)
+
+
+def test_imap_pool_stats_rpc(state_root: Path) -> None:
+    assert _run_cli(["daemon", "start"], state_root).returncode == 0
+    try:
+        resp = rpc_call(state_root, "imap_pool_stats", {}, connect_timeout_sec=5.0, io_timeout_sec=5.0)
+        assert resp["result"]["enabled"] is False
+    finally:
+        _run_cli(["daemon", "stop"], state_root, check=False)
 
 
 def test_invalid_rpc(state_root: Path) -> None:

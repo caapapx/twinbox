@@ -1,4 +1,4 @@
-"""Copy twinbox_core package into state_root/vendor for host-only Python path."""
+"""Copy twinbox_core package into shared vendor dir for host-only Python path."""
 
 from __future__ import annotations
 
@@ -6,14 +6,17 @@ import json
 import shutil
 import subprocess
 from datetime import datetime, timezone
+from importlib import metadata
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+
+from twinbox_core.paths import twinbox_home_for_vendor
 
 MANIFEST_NAME = "MANIFEST.json"
 
 
 def vendor_root(state_root: Path) -> Path:
-    return state_root / "vendor"
+    return twinbox_home_for_vendor(state_root) / "vendor"
 
 
 def vendor_twinbox_core_path(state_root: Path) -> Path:
@@ -80,9 +83,16 @@ def install_vendor(
     shutil.copytree(src, dest_pkg, ignore=_ignore_copy)
 
     git_rev = _git_rev(code_root)
+    try:
+        twinbox_ver = metadata.version("twinbox-core")
+    except metadata.PackageNotFoundError:
+        twinbox_ver = "unknown"
+    file_count = _count_all_files(dest_pkg)
     manifest: dict[str, Any] = {
         "installed_at": datetime.now(timezone.utc).isoformat(),
         "source_code_root": str(code_root.resolve()),
+        "file_count": file_count,
+        "twinbox_version": twinbox_ver,
     }
     if git_rev:
         manifest["git_rev"] = git_rev
@@ -91,6 +101,16 @@ def install_vendor(
     result["installed"] = True
     result["manifest"] = manifest
     return result
+
+
+def _count_all_files(root: Path) -> int:
+    n = 0
+    if not root.is_dir():
+        return 0
+    for p in root.rglob("*"):
+        if p.is_file() and "__pycache__" not in p.parts:
+            n += 1
+    return n
 
 
 def _count_py_files(root: Path) -> int:
@@ -125,13 +145,38 @@ def vendor_status(state_root: Path) -> dict[str, Any]:
         except OSError:
             mtime = None
 
+    file_total = _count_all_files(pkg) if pkg_exists else 0
+    key_ok = (
+        pkg_exists
+        and (pkg / "task_cli.py").is_file()
+        and (pkg / "__init__.py").is_file()
+    )
+    expected_count: int | None = None
+    if isinstance(manifest, dict):
+        raw_fc = manifest.get("file_count")
+        if isinstance(raw_fc, int) and raw_fc >= 0:
+            expected_count = raw_fc
+    count_match = (
+        expected_count is None or not pkg_exists or file_total == expected_count
+    )
+    integrity_ok = bool(key_ok and count_match)
+    integrity_issues: list[str] = []
+    if pkg_exists and not key_ok:
+        integrity_issues.append("missing_key_files")
+    if pkg_exists and expected_count is not None and not count_match:
+        integrity_issues.append("file_count_mismatch")
+
     return {
         "state_root": str(state_root.resolve()),
+        "twinbox_home": str(twinbox_home_for_vendor(state_root)),
         "vendor_root": str(vr),
         "twinbox_core_path": str(pkg),
         "package_present": pkg_exists,
+        "file_count": file_total,
         "file_count_py": _count_py_files(pkg) if pkg_exists else 0,
         "manifest_present": mp.is_file(),
         "manifest": manifest,
         "directory_mtime": mtime,
+        "integrity_ok": integrity_ok,
+        "integrity_issues": integrity_issues,
     }

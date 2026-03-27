@@ -68,7 +68,9 @@ def dispatch_vendor(args: argparse.Namespace) -> int:
             print(json.dumps(body, ensure_ascii=False, indent=2))
         else:
             print("package_present:", body["package_present"])
+            print("integrity_ok:", body.get("integrity_ok"))
             print("path:", body["twinbox_core_path"])
+            print("files:", body.get("file_count"))
             print("py_files:", body["file_count_py"])
             print("manifest_present:", body["manifest_present"])
             if body.get("manifest"):

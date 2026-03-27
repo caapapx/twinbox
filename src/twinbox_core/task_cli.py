@@ -23,13 +23,13 @@ from .daytime_slice import (
 from .env_writer import mask_secret, merge_env_file, write_env_file
 from .mailbox import format_preflight_text, run_preflight
 from .material_extract import MaterialExtractError, write_extract_for_import
-from .openclaw_deploy import run_openclaw_deploy, run_openclaw_rollback
 from .paths import resolve_state_root
 from .routing_rules import evaluate_rule, load_rules, load_rules_raw, save_rules_raw, RoutingRule
 from .schedule_override import disable_schedule, enable_schedule, load_schedule_config, reset_schedule_override, update_schedule_override
 from .user_queue_state import complete_thread, dismiss_thread, restore_thread
 
 from .task_cli_daemon import dispatch_daemon, register_daemon_parser
+from .task_cli_loading import dispatch_loading, register_loading_parser
 from .task_cli_vendor import dispatch_vendor, register_vendor_parser
 
 @dataclass(frozen=True)
@@ -1194,6 +1194,8 @@ def cmd_config_set_llm(args: argparse.Namespace) -> int:
 
 def cmd_deploy_openclaw(args: argparse.Namespace) -> int:
     """Host-side OpenClaw wiring (SKILL sync, openclaw.json, roots, gateway)."""
+    from twinbox_core.openclaw_deploy import run_openclaw_deploy, run_openclaw_rollback
+
     code_root = Path(args.repo_root).expanduser() if args.repo_root else None
     openclaw_home = Path(args.openclaw_home).expanduser() if args.openclaw_home else None
     if args.rollback:
@@ -2483,6 +2485,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     register_daemon_parser(subparsers)
     register_vendor_parser(subparsers)
+    register_loading_parser(subparsers)
 
     # context commands
     context_parser = subparsers.add_parser("context", help="Context management")
@@ -2804,16 +2807,46 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _apply_cli_profile(name: str) -> None:
+    base = Path.home() / ".twinbox"
+    base.mkdir(parents=True, exist_ok=True)
+    st = base / "profiles" / name / "state"
+    st.mkdir(parents=True, exist_ok=True)
+    os.environ["TWINBOX_HOME"] = str(base.resolve())
+    os.environ["TWINBOX_STATE_ROOT"] = str(st.resolve())
+
+
+def _strip_profile_from_argv(argv: list[str]) -> list[str]:
+    out: list[str] = []
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--profile" and i + 1 < len(argv):
+            _apply_cli_profile(argv[i + 1])
+            i += 2
+            continue
+        if argv[i].startswith("--profile="):
+            _apply_cli_profile(argv[i].split("=", 1)[1])
+            i += 1
+            continue
+        out.append(argv[i])
+        i += 1
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     """Main entry point for task-facing CLI."""
+    raw = list(sys.argv[1:] if argv is None else argv)
+    rest = _strip_profile_from_argv(raw)
     parser = _build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(rest)
 
     try:
         if args.command == "daemon":
             return dispatch_daemon(args)
         if args.command == "vendor":
             return dispatch_vendor(args)
+        if args.command == "loading":
+            return dispatch_loading(args)
         if args.command == "context":
             if args.context_command == "import-material":
                 return cmd_context_import_material(args)

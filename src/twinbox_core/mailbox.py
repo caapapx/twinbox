@@ -483,6 +483,50 @@ def run_preflight(
         result["env_sources"] = env_sources
         return EXIT_INTERNAL, result
 
+    if os.environ.get("TWINBOX_IMAP_POOL", "").strip() in ("1", "true", "yes"):
+        from twinbox_core import imap_pool as _imap_pool
+
+        ok_sel, sel_detail = _imap_pool.imap_probe_select_folder(effective_env, folder)
+        if ok_sel:
+            paths.imap_sample_json.write_text(
+                json.dumps(
+                    {"mode": "imap_pool", "folder": folder, "detail": sel_detail},
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            imap_check = {
+                "status": "success",
+                "sample_path": str(paths.imap_sample_json),
+                "folder": folder,
+                "page_size": page_size,
+                "mode": "imap_pool",
+            }
+            command = ["imap_pool", sel_detail]
+            result = _preflight_json_payload(
+                login_stage="mailbox-connected",
+                status="warn",
+                effective_env=effective_env,
+                missing_env=[],
+                defaults_applied=defaults_applied,
+                checks={
+                    "env": env_check,
+                    "config_render": config_check,
+                    "imap": imap_check,
+                    "smtp": smtp_check,
+                },
+                actionable_hint="Mailbox read-only preflight passed (IMAP pool). SMTP is not blocking in read-only mode.",
+                next_action="Run `twinbox-orchestrate run` (full pipeline) or `twinbox-orchestrate run --phase 1` to start the read-only pipeline.",
+                error_code="smtp_skipped_read_only",
+                exit_code=EXIT_OK,
+                paths=paths,
+            )
+            result["env_sources"] = env_sources
+            write_preflight_report(paths=paths, result=result, command=command)
+            paths.preflight_json.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            return EXIT_OK, result
+
     command = [
         himalaya_bin,
         "-c",

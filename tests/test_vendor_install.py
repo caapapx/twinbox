@@ -18,6 +18,7 @@ def _fake_repo(tmp: Path) -> Path:
     pkg = repo / "src" / "twinbox_core"
     pkg.mkdir(parents=True)
     (pkg / "__init__.py").write_text("# pkg\n", encoding="utf-8")
+    (pkg / "task_cli.py").write_text("# stub\n", encoding="utf-8")
     (pkg / "stub.py").write_text("VALUE = 42\n", encoding="utf-8")
     return repo
 
@@ -47,6 +48,9 @@ def test_install_vendor_copies_package(tmp_path: Path, monkeypatch: pytest.Monke
     manifest = json.loads(mp.read_text(encoding="utf-8"))
     assert "installed_at" in manifest
     assert manifest["source_code_root"] == str(repo.resolve())
+    assert isinstance(manifest.get("file_count"), int)
+    assert manifest["file_count"] >= 2
+    assert "twinbox_version" in manifest
 
 
 def test_install_vendor_dry_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -70,6 +74,8 @@ def test_vendor_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     st = vendor_status(state)
     assert st["package_present"] is True
     assert st["file_count_py"] >= 2
+    assert st.get("integrity_ok") is True
+    assert st["file_count"] >= 2
     assert st["manifest_present"] is True
     assert st["manifest"] is not None
     assert st["manifest"].get("source_code_root")

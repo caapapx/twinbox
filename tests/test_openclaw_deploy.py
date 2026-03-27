@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 
 from twinbox_core.openclaw_deploy import (
+    apply_openclaw_plugin_vendor_cwd,
     deep_merge_openclaw,
     load_openclaw_json,
     merge_twinbox_openclaw_entry,
@@ -691,3 +692,39 @@ def test_pyproject_declares_runtime_dependencies_for_cli() -> None:
     dependencies = pyproject["project"].get("dependencies", [])
 
     assert any(dep.lower().startswith("pyyaml") for dep in dependencies)
+
+
+def test_apply_openclaw_plugin_vendor_cwd_sets_plugin_cwd(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from twinbox_core.vendor_sync import install_vendor
+
+    state = tmp_path / "st"
+    state.mkdir()
+    repo = tmp_path / "repo"
+    pkg = repo / "src" / "twinbox_core"
+    pkg.mkdir(parents=True)
+    (pkg / "__init__.py").write_text("#\n", encoding="utf-8")
+    (pkg / "task_cli.py").write_text("#\n", encoding="utf-8")
+    monkeypatch.chdir(repo)
+    install_vendor(state_root=state, code_root=repo, dry_run=False)
+
+    data: dict[str, Any] = {
+        "plugins": {
+            "entries": {
+                "twinbox-task-tools": {"enabled": True, "config": {"twinboxBin": "/fake/bin"}},
+            }
+        }
+    }
+    out = apply_openclaw_plugin_vendor_cwd(data, state)
+    vr = (state / "vendor").resolve()
+    assert out["plugins"]["entries"]["twinbox-task-tools"]["config"]["cwd"] == str(vr)
+
+
+def test_apply_openclaw_plugin_vendor_cwd_noop_without_vendor(tmp_path: Path) -> None:
+    state = tmp_path / "empty_state"
+    state.mkdir()
+    data: dict[str, Any] = {"plugins": {"entries": {"twinbox-task-tools": {"config": {}}}}}
+    out = apply_openclaw_plugin_vendor_cwd(data, state)
+    assert "cwd" not in out["plugins"]["entries"]["twinbox-task-tools"].get("config", {})

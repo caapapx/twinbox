@@ -9,6 +9,7 @@
 3. [runtime.md](./ref/runtime.md)
 4. [routing-rules.md](./ref/routing-rules.md) (语义分拣规则)
 5. [cli.md](./ref/cli.md)
+6. [rpc-protocol.md](./ref/rpc-protocol.md)（daemon JSON-RPC）/ [artifact-contract.md](./ref/artifact-contract.md)（Phase 1–4 产物路径约定）/ [code-root-developer.md](./ref/code-root-developer.md)（code root 与宿主）
 
 ## Layout
 

@@ -16,6 +16,17 @@ export TWINBOX_STATE_ROOT=/path/to/state   # or rely on ~/.config/twinbox/state-
 ./twinbox-go task todo --json
 ```
 
+### Offline vendor install (tarball)
+
+Build a tarball from the repo (`scripts/package_vendor_tarball.sh`), then:
+
+```bash
+./twinbox-go install --archive /path/to/twinbox_core-0.1.0.tar.gz
+# optional: --state-root /path/to/state  (default: $TWINBOX_STATE_ROOT or ~/.twinbox)
+```
+
+Then run with `PYTHONPATH="$TWINBOX_STATE_ROOT/vendor" python3 -m twinbox_core.task_cli …` (or set `TWINBOX_HOME` when using profiles).
+
 Override socket path:
 
 ```bash

@@ -196,10 +196,17 @@ def cmd_status(state_root: Path, *, json_output: bool) -> int:
         pass
 
     if ping_result and ping_result.get("status") == "ok":
+        cs = ping_result.get("cache_stats")
+        if not isinstance(cs, dict):
+            cs = {"hits": 0, "misses": 0, "size_mb": 0}
         body: dict[str, Any] = {
             "status": "running",
             "uptime_seconds": ping_result.get("uptime_seconds", 0),
-            "cache_stats": {"hits": 0, "misses": 0, "size_mb": 0},
+            "cache_stats": {
+                "hits": int(cs.get("hits", 0)),
+                "misses": int(cs.get("misses", 0)),
+                "size_mb": float(cs.get("size_mb", 0)),
+            },
             "active_connections": ping_result.get("active_connections", 0),
             "pid": int(raw) if raw.isdigit() else None,
             "twinbox_version": TWINBOX_PROTOCOL_VERSION,

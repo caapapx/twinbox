@@ -9,8 +9,12 @@ import (
 )
 
 func main() {
-	socketFlag := ""
 	args := os.Args[1:]
+	if len(args) > 0 && args[0] == "install" {
+		os.Exit(runInstall(args[1:]))
+	}
+
+	socketFlag := ""
 	for len(args) > 0 && args[0] == "--socket" {
 		if len(args) < 2 {
 			fmt.Fprintln(os.Stderr, "twinbox-go: --socket requires a path")

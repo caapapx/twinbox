@@ -124,6 +124,24 @@ def resolve_state_root(
         raise PathResolutionError(f"Configured state root does not exist: {candidate}") from exc
 
 
+def twinbox_home_for_vendor(
+    state_root: str | os.PathLike[str],
+    env: dict[str, str] | None = None,
+) -> Path:
+    """Directory under which shared ``vendor/`` lives.
+
+    If ``TWINBOX_HOME`` is set, vendor is ``$TWINBOX_HOME/vendor`` while
+    ``TWINBOX_STATE_ROOT`` may point at ``.../profiles/<name>/state``.
+    Otherwise *state_root* is the home (classic layout: vendor under state).
+    """
+    if env is None:
+        env = os.environ
+    h = env.get("TWINBOX_HOME", "").strip()
+    if h:
+        return Path(h).expanduser().resolve()
+    return Path(state_root).expanduser().resolve()
+
+
 def resolve_canonical_root(
     code_root: str | os.PathLike[str],
     env: dict[str, str] | None = None,

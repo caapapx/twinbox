@@ -239,6 +239,40 @@ def atomic_write_json(path: Path, data: dict[str, Any]) -> None:
     LocalFileOps().write_json_atomic(path, data)
 
 
+def apply_openclaw_plugin_vendor_cwd(data: dict[str, Any], state_root: Path) -> dict[str, Any]:
+    """If ``vendor/twinbox_core`` exists under the shared vendor home, set plugin ``config.cwd`` there.
+
+    OpenClaw plugin entries that reference Twinbox (name or ``twinboxBin``) need ``cwd`` on
+    ``PYTHONPATH`` parent (the ``vendor`` directory).
+    """
+    from twinbox_core.vendor_sync import vendor_root, vendor_twinbox_core_path
+
+    vr = vendor_root(state_root)
+    if not (vendor_twinbox_core_path(state_root) / "__init__.py").is_file():
+        return data
+    cwd_s = str(vr.resolve())
+    plugins = data.get("plugins")
+    if not isinstance(plugins, dict):
+        return data
+    entries = plugins.get("entries")
+    if not isinstance(entries, dict):
+        return data
+    for name, ent in entries.items():
+        if not isinstance(ent, dict):
+            continue
+        cfg = ent.get("config")
+        if not isinstance(cfg, dict):
+            cfg = {}
+            ent["config"] = cfg
+        if "twinbox" not in name.lower() and "twinboxBin" not in cfg:
+            continue
+        cfg["cwd"] = cwd_s
+        entries[name] = ent
+    plugins["entries"] = entries
+    data["plugins"] = plugins
+    return data
+
+
 def _append_step(
     report: OpenClawDeployReport,
     step_id: str,
@@ -379,6 +413,7 @@ def _merge_openclaw_json_step(
         dotenv=dotenv,
         sync_env_from_dotenv=ctx.sync_env_from_dotenv,
     )
+    merged = apply_openclaw_plugin_vendor_cwd(merged, ctx.state_root)
 
     if ctx.dry_run:
         _append_step(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import logging.handlers
 import os
 import signal
 import socket
@@ -17,7 +18,12 @@ import fcntl
 
 from twinbox_core.daemon import TWINBOX_PROTOCOL_VERSION
 from twinbox_core.daemon import metrics
-from twinbox_core.daemon.handlers import handle_cli_invoke, handle_ping
+from twinbox_core.daemon.handlers import (
+    handle_cli_invoke,
+    handle_imap_pool_stats,
+    handle_ping,
+    set_daemon_state_root,
+)
 from twinbox_core.daemon.layout import ensure_daemon_dirs, log_path, pid_path, socket_path
 from twinbox_core.paths import resolve_state_root
 
@@ -113,6 +119,8 @@ def _rpc_dispatch(method: str, params: dict[str, Any]) -> Any:
         return handle_ping(params or {})
     if method == "cli_invoke":
         return handle_cli_invoke(params or {})
+    if method == "imap_pool_stats":
+        return handle_imap_pool_stats(params or {})
     raise ValueError(f"unknown method: {method}")
 
 
@@ -247,10 +255,17 @@ def run_daemon_forever() -> int:
     lf.touch(exist_ok=True)
     os.chmod(lf, 0o600)
 
+    set_daemon_state_root(state_root)
+    rot = logging.handlers.RotatingFileHandler(
+        lf,
+        maxBytes=10 * 1024 * 1024,
+        backupCount=3,
+        encoding="utf-8",
+    )
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
-        handlers=[logging.FileHandler(lf, encoding="utf-8")],
+        handlers=[rot],
         force=True,
     )
 
