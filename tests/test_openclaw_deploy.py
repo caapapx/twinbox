@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import subprocess
 import tomllib
 from pathlib import Path
@@ -338,6 +339,7 @@ def test_run_openclaw_deploy_dry_run_ok(monkeypatch: pytest.MonkeyPatch, tmp_pat
     ids = [s.id for s in report.steps]
     assert "bootstrap_roots" in ids
     assert "merge_openclaw_json" in ids
+    assert "ensure_himalaya" in ids
     assert "sync_skill_md" in ids
     assert "gateway_restart" in ids
     assert not (oc / "openclaw.json").exists()
@@ -364,6 +366,7 @@ def test_run_openclaw_deploy_runtime_dry_run_keeps_side_effects_zero(
         "bootstrap_roots",
         "merge_openclaw_fragment",
         "merge_openclaw_json",
+        "ensure_himalaya",
         "sync_skill_md",
         "gateway_restart",
     ]
@@ -460,6 +463,7 @@ def test_run_openclaw_deploy_runtime_restart_failure_keeps_prior_steps(
         "bootstrap_roots",
         "merge_openclaw_fragment",
         "merge_openclaw_json",
+        "ensure_himalaya",
         "sync_skill_md",
         "gateway_restart",
     ]
@@ -574,6 +578,36 @@ def test_run_openclaw_rollback_runtime_only_unwires_twinbox(
         openclaw_home / "skills" / "twinbox"
     ]
     assert cfg_dir.exists()
+
+
+def test_run_openclaw_deploy_ensure_himalaya_skipped_on_non_linux(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    code_root, state_root, openclaw_home, runtime = _make_runtime_layout(tmp_path)
+    monkeypatch.setenv("TWINBOX_CODE_ROOT", str(code_root.resolve()))
+    monkeypatch.setenv("TWINBOX_STATE_ROOT", str(state_root))
+    monkeypatch.setattr(platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(platform, "machine", lambda: "arm64")
+    monkeypatch.setattr(
+        "twinbox_core.openclaw_deploy.shutil.which",
+        lambda _cmd: None,
+    )
+
+    report = run_openclaw_deploy(
+        code_root=code_root,
+        openclaw_home=openclaw_home,
+        dry_run=False,
+        restart_gateway=False,
+        sync_env_from_dotenv=False,
+        runtime=runtime,
+    )
+
+    assert report.ok
+    step = next(s for s in report.steps if s.id == "ensure_himalaya")
+    assert step.status == "skipped"
+    assert step.detail.get("mode") == "skipped"
+    assert report.deploy_host_system == "Darwin"
+    assert report.deploy_host_machine == "arm64"
 
 
 def test_run_openclaw_deploy_missing_skill_md_fails(

@@ -8,11 +8,15 @@ from __future__ import annotations
 
 import json
 import os
+import platform
+import shutil
 import subprocess
+import tarfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+from .bundled_himalaya import bundled_linux_himalaya_tgz, try_materialize_bundled_himalaya
 from .env_writer import load_env_file
 from .openclaw_deploy_runtime import (
     LocalFileOps,
@@ -67,6 +71,8 @@ class OpenClawDeployReport:
     skill_dest: str = ""
     skill_canonical_dest: str = ""
     openclaw_json: str = ""
+    deploy_host_system: str = ""
+    deploy_host_machine: str = ""
 
     def to_json_dict(self) -> dict[str, Any]:
         return {
@@ -77,6 +83,8 @@ class OpenClawDeployReport:
             "skill_dest": self.skill_dest,
             "skill_canonical_dest": self.skill_canonical_dest,
             "openclaw_json": self.openclaw_json,
+            "deploy_host_system": self.deploy_host_system,
+            "deploy_host_machine": self.deploy_host_machine,
             "steps": [
                 {
                     "id": s.id,
@@ -453,6 +461,101 @@ def _sync_skill_md_step(
     return True
 
 
+def _ensure_himalaya_step(ctx: _DeployContext, report: OpenClawDeployReport) -> bool:
+    """Detect host OS/CPU; ensure ``himalaya`` exists for mailbox preflight (best-effort).
+
+    Does not fail deploy on unsupported platforms; records ``skipped`` with guidance.
+    """
+    system = platform.system()
+    machine = platform.machine()
+    detail: dict[str, Any] = {"system": system, "machine": machine}
+    runtime_bin = ctx.state_root / "runtime" / "bin" / "himalaya"
+
+    path_hit = shutil.which("himalaya")
+    if path_hit:
+        detail["mode"] = "path"
+        detail["himalaya"] = path_hit
+        _append_step(
+            report,
+            "ensure_himalaya",
+            "ok",
+            f"himalaya on PATH ({path_hit})",
+            detail,
+        )
+        return True
+
+    if runtime_bin.exists() and os.access(runtime_bin, os.X_OK):
+        detail["mode"] = "state_runtime_bin"
+        detail["himalaya"] = str(runtime_bin)
+        _append_step(
+            report,
+            "ensure_himalaya",
+            "ok",
+            f"himalaya already at {runtime_bin}",
+            detail,
+        )
+        return True
+
+    bundle = bundled_linux_himalaya_tgz()
+    if bundle is None:
+        detail["mode"] = "skipped"
+        detail["reason"] = (
+            "No bundled himalaya for this host (shipped: Linux x86_64, Linux aarch64 only)"
+        )
+        _append_step(
+            report,
+            "ensure_himalaya",
+            "skipped",
+            f"No himalaya in PATH or {runtime_bin}; install the CLI for {system}/{machine} "
+            "or copy a binary to runtime/bin/himalaya",
+            detail,
+        )
+        return True
+
+    if ctx.dry_run:
+        detail["mode"] = "would_extract_bundled"
+        detail["bundle"] = str(bundle)
+        detail["target"] = str(runtime_bin)
+        _append_step(
+            report,
+            "ensure_himalaya",
+            "dry_run",
+            f"Would extract bundled {bundle.name} -> {runtime_bin}",
+            detail,
+        )
+        return True
+
+    try:
+        dest = try_materialize_bundled_himalaya(ctx.state_root)
+    except (OSError, RuntimeError, tarfile.TarError) as exc:
+        return _fail_step(
+            report,
+            "ensure_himalaya",
+            f"Bundled himalaya extract failed: {exc}",
+            detail,
+        )
+
+    if dest is not None and dest.exists() and os.access(dest, os.X_OK):
+        detail["mode"] = "extracted_bundled"
+        detail["himalaya"] = str(dest)
+        detail["bundle"] = str(bundle)
+        _append_step(
+            report,
+            "ensure_himalaya",
+            "ok",
+            f"Extracted bundled himalaya to {dest}",
+            detail,
+        )
+        return True
+
+    return _fail_step(
+        report,
+        "ensure_himalaya",
+        "Bundled himalaya extract produced no usable binary",
+        detail,
+    )
+
+
 def _gateway_restart_step(
     *,
     restart_gateway: bool,
@@ -653,9 +756,12 @@ def run_openclaw_deploy(
     """Wire Twinbox into OpenClaw on the current host.
 
     Steps: roots init script → resolve state root → optional env merge into
-    ~/.openclaw/openclaw.json → copy SKILL.md to state root → gateway restart.
+    ~/.openclaw/openclaw.json → OS-aware himalaya check/extract → copy SKILL.md to
+    state root → gateway restart.
     """
     report = OpenClawDeployReport(ok=True, steps=[])
+    report.deploy_host_system = platform.system()
+    report.deploy_host_machine = platform.machine()
     runtime = runtime or build_runtime(run_subprocess)
 
     try:
@@ -746,6 +852,8 @@ def run_openclaw_deploy(
         dotenv=dotenv,
         missing_required=missing_required,
     ):
+        return report
+    if not _ensure_himalaya_step(ctx, report):
         return report
     if not _sync_skill_md_step(ctx, report, runtime):
         return report
