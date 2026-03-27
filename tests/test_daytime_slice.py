@@ -194,3 +194,18 @@ def test_build_activity_pulse_reactivates_dismissed_thread_on_new_fingerprint(mo
     assert pulse["thread_index"][0]["thread_key"] == "项目北辰资源申请"
     payload = yaml.safe_load((tmp_path / "runtime/context/user-queue-state.yaml").read_text(encoding="utf-8"))
     assert payload["dismissed"] == []
+
+
+def test_coerce_daytime_state_root_explicit(tmp_path: Path) -> None:
+    from twinbox_core.daytime_slice import coerce_daytime_state_root
+
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    assert coerce_daytime_state_root(nested) == nested.resolve()
+
+
+def test_coerce_daytime_state_root_none_uses_paths_resolve(monkeypatch, tmp_path: Path) -> None:
+    from twinbox_core.daytime_slice import coerce_daytime_state_root
+
+    monkeypatch.setenv("TWINBOX_STATE_ROOT", str(tmp_path))
+    assert coerce_daytime_state_root(None) == tmp_path.resolve()

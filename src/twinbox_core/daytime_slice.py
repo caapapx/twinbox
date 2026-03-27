@@ -67,8 +67,15 @@ def generated_at() -> str:
     return datetime.now(SHANGHAI).isoformat(timespec="seconds")
 
 
-def resolve_state_root(root: str | Path | None = None) -> Path:
-    """Resolve the canonical runtime root for projections."""
+def coerce_daytime_state_root(root: str | Path | None = None) -> Path:
+    """Normalize state root for daytime/activity-pulse paths.
+
+    If *root* is ``None``, uses :func:`twinbox_core.paths.resolve_state_root`\\(cwd\\).
+    Otherwise expands a caller-supplied path (no extra env merge).
+
+    For the full config-file / env resolution contract, use
+    :func:`twinbox_core.paths.resolve_state_root` directly.
+    """
     if root is None:
         return resolve_shared_state_root(Path.cwd())
     return Path(root).expanduser().resolve()
@@ -291,7 +298,7 @@ def build_activity_pulse(
     top_k: int = 3,
 ) -> dict[str, Any]:
     """Build the daytime activity pulse from existing artifacts."""
-    resolved_root = resolve_state_root(state_root)
+    resolved_root = coerce_daytime_state_root(state_root)
     envelopes = _load_phase1_envelopes(resolved_root)
     if not envelopes:
         raise DaytimeSliceError(
@@ -351,7 +358,7 @@ def write_activity_pulse(
     update_dedupe: bool = False,
 ) -> tuple[dict[str, Any], Path]:
     """Build and persist the activity pulse artifact."""
-    resolved_root = resolve_state_root(state_root)
+    resolved_root = coerce_daytime_state_root(state_root)
     payload = build_activity_pulse(resolved_root, window_hours=window_hours, top_k=top_k)
     out_path = activity_pulse_path(resolved_root)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -379,7 +386,7 @@ def write_activity_pulse(
 
 def load_activity_pulse(state_root: str | Path | None = None) -> dict[str, Any]:
     """Load the persisted activity pulse artifact."""
-    resolved_root = resolve_state_root(state_root)
+    resolved_root = coerce_daytime_state_root(state_root)
     path = activity_pulse_path(resolved_root)
     if not path.is_file():
         raise DaytimeSliceError(
