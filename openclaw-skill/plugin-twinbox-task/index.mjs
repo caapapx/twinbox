@@ -17,8 +17,16 @@ export default {
     type: "object",
     additionalProperties: false,
     properties: {
-      twinboxBin: { type: "string", default: "twinbox" },
-      cwd: { type: "string" },
+      twinboxBin: {
+        type: "string",
+        description:
+          "Optional Twinbox executable path. Prefer an absolute path on the Gateway host. If unset, the plugin auto-detects <cwd>/scripts/twinbox before falling back to twinbox from PATH.",
+      },
+      cwd: {
+        type: "string",
+        description:
+          "Twinbox code root. Used as the working directory and for auto-detecting <cwd>/scripts/twinbox when twinboxBin is unset.",
+      },
     },
   },
   register(api) {

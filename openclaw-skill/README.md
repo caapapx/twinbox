@@ -87,6 +87,7 @@
 2. Twinbox 问题固定走专用 `twinbox` agent
 3. skill / env 变更后，用新 session 验证，不继续复用旧快照
 4. 对常见任务优先走 `twinbox task ...`，不要继续依赖“自由自然语言 + 模型自己选命令”
+5. 若启用 `plugin-twinbox-task`，优先把插件 `config.twinboxBin` 写成 Gateway 宿主机上的绝对路径 `/abs/path/to/twinbox/scripts/twinbox`；至少保证 `cwd` 指向代码根目录，以便插件自动探测该脚本，而不是赌 Gateway PATH 里正好有 `.venv/bin/twinbox`
 
 ## 初始化重点
 

@@ -47,8 +47,7 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 
 | User intent | Command |
 |-------------|---------|
-| Latest mail / today summary / "最新邮件情况" / 帮我查看下最新的邮件情况 | `twinbox task latest-mail --json` |
-| 最新未读邮件 / 未读 / 只看未读 / 「不要已读的」 | `twinbox task latest-mail --unread-only --json` **或** OpenClaw 工具 `twinbox_latest_mail` 且 **`unread_only: true`**（必须二选一执行，禁止只读 SKILL 就结束） |
+| Latest mail / today summary / "最新邮件情况" / 帮我查看下最新的邮件情况 | `twinbox task latest-mail --json` (use `--unread-only` if user asks for unread) |
 | "我有哪些待办 / 待回复 / 最值得关注的线程" | `twinbox task todo --json` |
 | 暂时忽略某个线程 / 标记已处理但先别再提醒 | `twinbox queue dismiss THREAD_ID --reason "..." --json`；OpenClaw 插件：`twinbox_queue_dismiss`（`thread_id`，可选 `reason`） |
 | 标记某个线程已完成（须落库，聊天里打 ✅ 不算） | `twinbox queue complete THREAD_ID --action-taken "..." --json`；OpenClaw 插件：`twinbox_queue_complete`（`thread_id`，可选 `action_taken`） |
@@ -56,14 +55,21 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 | 查看当前调度配置 | `twinbox schedule list --json` 或 OpenClaw 工具 `twinbox_schedule_list` |
 | 修改 daily/weekly/nightly 调度时间 | `twinbox schedule update JOB_NAME --cron "30 9 * * *" --json` 或 OpenClaw 工具 `twinbox_schedule_update` |
 | 恢复某个调度到默认时间 | `twinbox schedule reset JOB_NAME --json` 或 OpenClaw 工具 `twinbox_schedule_reset` |
+| 启用某个后台调度（创建 OpenClaw cron job） | `twinbox schedule enable JOB_NAME --json` 或 OpenClaw 工具 `twinbox_schedule_enable` |
+| 禁用某个后台调度（删除 OpenClaw cron job） | `twinbox schedule disable JOB_NAME --json` 或 OpenClaw 工具 `twinbox_schedule_disable` |
 | "某个事情进展如何" / progress on a topic | `twinbox task progress QUERY --json` |
 | Mailbox status / env diagnosis | `twinbox task mailbox-status --json` |
+| Auto-detect email server config | `twinbox mailbox detect EMAIL --json` |
+| 配置邮箱凭据（自动探测 + 写入 .env）| `twinbox mailbox setup --email EMAIL --json`（密码从 `TWINBOX_SETUP_IMAP_PASS` 注入）或 OpenClaw 工具 `twinbox_mailbox_setup` |
+| 配置 LLM API（写入 .env）| `twinbox config set-llm --provider openai|anthropic --json`（key 从 `TWINBOX_SETUP_API_KEY` 注入）或 OpenClaw 工具 `twinbox_config_set_llm` |
 | Weekly brief lookup | `twinbox task weekly --json` |
 | Manage semantic routing rules / "以后别把这类邮件派给我" | `twinbox rule list --json` / `twinbox rule add --rule-json ...` |
 | Test a routing rule against recent threads | `twinbox rule test --rule-id RULE_ID --json` |
 | Start onboarding flow | `twinbox onboarding start --json` |
 | Check onboarding progress | `twinbox onboarding status --json` |
 | Advance onboarding to next stage | `twinbox onboarding next --json` |
+| Subscribe to push notifications | `twinbox push subscribe SESSION_ID --json` |
+| List push subscriptions | `twinbox push list --json` |
 | Inspect one exact thread / “把这个线程内容返回给我看看” / “先读这个线程” | `twinbox thread inspect THREAD_ID --json` 或 OpenClaw 工具 `twinbox_thread_inspect` 且传 `thread_id` |
 | Explain why a thread is urgent / pending | `twinbox thread explain THREAD_ID --json` |
 | Daily digest | `twinbox digest daily --json` |
@@ -87,16 +93,18 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 - The incremental Phase 1 path uses UID watermarks and automatically falls back to the existing full loader when `UIDVALIDITY` changes
 - Default schedule definitions now live in `config/schedules.yaml`; `twinbox schedule update/reset` writes `runtime/context/schedule-overrides.yaml` and then attempts to sync the matching Twinbox OpenClaw cron job via `openclaw cron list/edit/add`
 - If Gateway access fails, the command still preserves the runtime override and exposes `platform_sync.status=error` in JSON output
-- For schedule prompts, prefer native OpenClaw tools `twinbox_schedule_list` / `twinbox_schedule_update` / `twinbox_schedule_reset` over generic `cron` or workspace search
+- For schedule prompts, prefer native OpenClaw tools `twinbox_schedule_list` / `twinbox_schedule_update` / `twinbox_schedule_reset` / `twinbox_schedule_enable` / `twinbox_schedule_disable` over generic `cron` or workspace search
+- For onboarding mailbox setup, prefer native OpenClaw tool `twinbox_mailbox_setup` (passes password via env, never CLI args)
+- For onboarding LLM API config, prefer native OpenClaw tool `twinbox_config_set_llm` (passes api_key via env)
 - Stay read-only unless the user explicitly asks for draft/action generation
 - **Never end a task turn with only file reads and no text answer.** A turn with `assistant.content=[]` or no text is a failure — always produce real command output followed by a summary
-- **OpenClaw 模型偶发空回复**：若连续出现「有 token 但正文为空」，先**新开会话**再试；技能/工具更新后旧会话里的 `skillsSnapshot` 可能仍引用旧说明（见 Hosted Defaults）。
 
 ## Hosted Defaults
 
 - Prefer a dedicated `twinbox` agent/session for Twinbox work; keep `main` for general chat
 - After skill or env changes, use a fresh Twinbox session; `skillsSnapshot` can freeze old injection results
 - Hosted env should come from `skills.entries.twinbox.env`; `state root/.env` is a local fallback, not the primary hosted config source
+- If `plugin-twinbox-task` is enabled, prefer an absolute `twinboxBin` pointing to `scripts/twinbox`; if unset, keep `cwd` accurate so the plugin can auto-detect `<cwd>/scripts/twinbox` instead of relying on Gateway PATH
 - Treat OpenClaw schedule execution as a Twinbox-managed bridge cron concern; current default definitions come from `config/schedules.yaml`, not skill metadata
 - The currently verified refresh path is `openclaw cron -> system-event -> host bridge/poller -> twinbox-orchestrate schedule --job ...`
 

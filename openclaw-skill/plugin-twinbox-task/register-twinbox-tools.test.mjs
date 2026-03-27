@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -21,6 +21,20 @@ test("toolOpts uses env TWINBOX_CODE_ROOT when cwd omitted", () => {
       process.env.TWINBOX_CODE_ROOT = prev;
     }
   }
+});
+
+test("toolOpts prefers cwd/scripts/twinbox when twinboxBin omitted", () => {
+  const dir = mkdtempSync(join(tmpdir(), "twinbox-plugin-"));
+  const scriptsDir = join(dir, "scripts");
+  const twinboxScript = join(scriptsDir, "twinbox");
+  mkdirSync(scriptsDir, { recursive: true });
+  writeFileSync(twinboxScript, "#!/bin/sh\nexit 0\n");
+  chmodSync(twinboxScript, 0o755);
+
+  assert.deepEqual(toolOpts({ cwd: dir }), {
+    twinboxBin: twinboxScript,
+    cwd: dir,
+  });
 });
 
 test("formatResult prefers stdout then stderr", () => {

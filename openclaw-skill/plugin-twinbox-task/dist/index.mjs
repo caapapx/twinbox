@@ -6,8 +6,9 @@ var __export = (target, all) => {
 
 // register-twinbox-tools.mjs
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
+import { join } from "node:path";
 
 // node_modules/@sinclair/typebox/build/esm/type/guard/value.mjs
 var value_exports = {};
@@ -2617,7 +2618,7 @@ var Type = type_exports2;
 
 // register-twinbox-tools.mjs
 function toolOpts(pluginConfig) {
-  const twinboxBin = typeof pluginConfig?.twinboxBin === "string" && pluginConfig.twinboxBin || "twinbox";
+  const configuredTwinboxBin = typeof pluginConfig?.twinboxBin === "string" && pluginConfig.twinboxBin.trim() ? pluginConfig.twinboxBin.trim() : null;
   let cwd = pluginConfig?.cwd || process.env.TWINBOX_CODE_ROOT;
   if (!cwd) {
     try {
@@ -2626,6 +2627,7 @@ function toolOpts(pluginConfig) {
     } catch {
     }
   }
+  const twinboxBin = configuredTwinboxBin || (cwd && existsSync(join(cwd, "scripts", "twinbox")) ? join(cwd, "scripts", "twinbox") : "twinbox");
   return { twinboxBin, cwd };
 }
 function runTwinbox(args, { twinboxBin, cwd }, extraEnv = {}) {
@@ -2932,8 +2934,14 @@ var index_default = {
     type: "object",
     additionalProperties: false,
     properties: {
-      twinboxBin: { type: "string", default: "twinbox" },
-      cwd: { type: "string" }
+      twinboxBin: {
+        type: "string",
+        description: "Optional Twinbox executable path. Prefer an absolute path on the Gateway host. If unset, the plugin auto-detects <cwd>/scripts/twinbox before falling back to twinbox from PATH."
+      },
+      cwd: {
+        type: "string",
+        description: "Twinbox code root. Used as the working directory and for auto-detecting <cwd>/scripts/twinbox when twinboxBin is unset."
+      }
     }
   },
   register(api) {

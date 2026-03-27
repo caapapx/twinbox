@@ -3,13 +3,16 @@
  * Kept free of `openclaw` imports so `node --test` can run with only @sinclair/typebox.
  */
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
+import { join } from "node:path";
 import { Type } from "@sinclair/typebox";
 
 export function toolOpts(pluginConfig) {
-  const twinboxBin =
-    (typeof pluginConfig?.twinboxBin === "string" && pluginConfig.twinboxBin) || "twinbox";
+  const configuredTwinboxBin =
+    typeof pluginConfig?.twinboxBin === "string" && pluginConfig.twinboxBin.trim()
+      ? pluginConfig.twinboxBin.trim()
+      : null;
 
   let cwd = pluginConfig?.cwd || process.env.TWINBOX_CODE_ROOT;
 
@@ -22,6 +25,12 @@ export function toolOpts(pluginConfig) {
       // File doesn't exist or unreadable, leave cwd undefined
     }
   }
+
+  const twinboxBin =
+    configuredTwinboxBin ||
+    (cwd && existsSync(join(cwd, "scripts", "twinbox"))
+      ? join(cwd, "scripts", "twinbox")
+      : "twinbox");
 
   return { twinboxBin, cwd };
 }

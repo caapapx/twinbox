@@ -104,6 +104,7 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 - Prefer a dedicated `twinbox` agent/session for Twinbox work; keep `main` for general chat
 - After skill or env changes, use a fresh Twinbox session; `skillsSnapshot` can freeze old injection results
 - Hosted env should come from `skills.entries.twinbox.env`; `state root/.env` is a local fallback, not the primary hosted config source
+- If `plugin-twinbox-task` is enabled, prefer an absolute `twinboxBin` pointing to `scripts/twinbox`; if unset, keep `cwd` accurate so the plugin can auto-detect `<cwd>/scripts/twinbox` instead of relying on Gateway PATH
 - Treat OpenClaw schedule execution as a Twinbox-managed bridge cron concern; current default definitions come from `config/schedules.yaml`, not skill metadata
 - The currently verified refresh path is `openclaw cron -> system-event -> host bridge/poller -> twinbox-orchestrate schedule --job ...`
 

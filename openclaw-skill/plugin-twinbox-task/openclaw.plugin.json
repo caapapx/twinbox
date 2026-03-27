@@ -9,12 +9,11 @@
     "properties": {
       "twinboxBin": {
         "type": "string",
-        "default": "twinbox",
-        "description": "twinbox executable name or absolute path on the Gateway host"
+        "description": "Optional Twinbox executable path on the Gateway host. Prefer an absolute path. If unset, the plugin auto-detects <cwd>/scripts/twinbox before falling back to twinbox from PATH."
       },
       "cwd": {
         "type": "string",
-        "description": "Working directory (Twinbox code root). Falls back to TWINBOX_CODE_ROOT env if unset."
+        "description": "Working directory (Twinbox code root). Falls back to TWINBOX_CODE_ROOT env if unset and is also used to auto-detect <cwd>/scripts/twinbox."
       }
     }
   }
