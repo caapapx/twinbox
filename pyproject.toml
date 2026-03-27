@@ -22,6 +22,12 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+twinbox_core = [
+    "_bundled/himalaya/*.tgz",
+    "_bundled/himalaya/README.md",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [

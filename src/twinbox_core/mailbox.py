@@ -9,11 +9,13 @@ import re
 import shutil
 import subprocess
 import sys
+import tarfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from .bundled_himalaya import try_materialize_bundled_himalaya
 from .env_writer import load_env_file
 from .paths import PathResolutionError, resolve_code_root, resolve_existing_dir, resolve_state_root
 
@@ -194,8 +196,18 @@ def find_himalaya_binary(paths: MailboxPaths) -> str:
     fallback = paths.state_root / "runtime" / "bin" / "himalaya"
     if fallback.exists() and os.access(fallback, os.X_OK):
         return str(fallback)
+    try:
+        materialized = try_materialize_bundled_himalaya(paths.state_root)
+    except (OSError, RuntimeError, tarfile.TarError) as exc:
+        raise FileNotFoundError(
+            "himalaya CLI not found; bundled extract failed "
+            f"({type(exc).__name__}: {exc})"
+        ) from exc
+    if materialized is not None and materialized.exists() and os.access(materialized, os.X_OK):
+        return str(materialized)
     raise FileNotFoundError(
-        f"himalaya CLI not found in PATH or {fallback}"
+        f"himalaya CLI not found in PATH, {fallback}, "
+        "or a bundled Linux x86_64/aarch64 archive next to twinbox_core"
     )
 
 
@@ -459,8 +471,11 @@ def run_preflight(
                 "imap": {"status": "fail", "error_code": "himalaya_missing", "detail": str(exc)},
                 "smtp": smtp_check,
             },
-            actionable_hint="Install himalaya or place the binary in runtime/bin/himalaya.",
-            next_action="Install the CLI and rerun `twinbox mailbox preflight --json`.",
+            actionable_hint=(
+                "Install himalaya, place the binary at runtime/bin/himalaya, or use Linux x86_64/aarch64 "
+                "where a bundled release tarball ships with twinbox_core."
+            ),
+            next_action="Install the CLI (or use a bundled platform) and rerun `twinbox mailbox preflight --json`.",
             error_code="himalaya_missing",
             exit_code=EXIT_INTERNAL,
             paths=paths,

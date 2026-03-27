@@ -156,6 +156,6 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 - `status=warn` with `smtp_skipped_read_only` is acceptable for preflight
 - OpenClaw-native deployments should inject mailbox env into process env via `skills.entries.twinbox.env`; `state root/.env` is a local fallback, not the preferred hosted config source
 - If Twinbox stops appearing in answers after a deploy, check env gating first, then session-level `skillsSnapshot`
-- If Twinbox commands fail, first verify env, mounted repo root, `runtime/bin/himalaya`, and Python dependencies on the OpenClaw host
+- If Twinbox commands fail, first verify env, mounted repo root, `runtime/bin/himalaya` (on Linux x86_64/aarch64, twinbox can extract a bundled `himalaya` there on first preflight), and Python dependencies on the OpenClaw host
 
 **Claude Code skill (deeper repo workflow):** [`.claude/skills/twinbox/SKILL.md`](.claude/skills/twinbox/SKILL.md)
