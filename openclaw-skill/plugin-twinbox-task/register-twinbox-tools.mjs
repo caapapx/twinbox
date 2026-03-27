@@ -26,12 +26,12 @@ export function toolOpts(pluginConfig) {
   return { twinboxBin, cwd };
 }
 
-export function runTwinbox(args, { twinboxBin, cwd }) {
+export function runTwinbox(args, { twinboxBin, cwd }, extraEnv = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(twinboxBin, args, {
       cwd,
       shell: false,
-      env: { ...process.env },
+      env: { ...process.env, ...extraEnv },
     });
     let stdout = "";
     let stderr = "";
@@ -307,6 +307,50 @@ export function registerTwinboxTaskTools(api) {
         return { content: [{ type: "text", text: "Error: Must provide either rule_id or rule_json" }] };
       }
       const r = await runTwinbox(cliArgs, opts);
+      return formatResult(r);
+    },
+  });
+
+  api.registerTool({
+    name: "twinbox_mailbox_setup",
+    description:
+      "Configure mailbox credentials: auto-detect IMAP/SMTP servers from email, write .env, and run preflight. Password is passed via imap_pass param (injected as env var, never exposed in CLI args). Use during onboarding mailbox_login stage. Runs: twinbox mailbox setup --email EMAIL --json",
+    parameters: Type.Object({
+      email: Type.String({ description: "Email address to configure" }),
+      imap_pass: Type.String({ description: "IMAP/app password (injected as TWINBOX_SETUP_IMAP_PASS, not logged)" }),
+      smtp_pass: Type.Optional(Type.String({ description: "SMTP password if different from IMAP password (injected as TWINBOX_SETUP_SMTP_PASS)" })),
+      imap_login: Type.Optional(Type.String({ description: "Override IMAP login username (default: email)" })),
+      smtp_login: Type.Optional(Type.String({ description: "Override SMTP login username (default: email)" })),
+    }),
+    async execute(...args) {
+      const params = args.length >= 2 ? args[1] : args[0];
+      const cliArgs = ["mailbox", "setup", "--email", params.email ?? "", "--json"];
+      if (params.imap_login) cliArgs.push("--imap-login", params.imap_login);
+      if (params.smtp_login) cliArgs.push("--smtp-login", params.smtp_login);
+      const extraEnv = { TWINBOX_SETUP_IMAP_PASS: params.imap_pass ?? "" };
+      if (params.smtp_pass) extraEnv.TWINBOX_SETUP_SMTP_PASS = params.smtp_pass;
+      const r = await runTwinbox(cliArgs, opts, extraEnv);
+      return formatResult(r);
+    },
+  });
+
+  api.registerTool({
+    name: "twinbox_config_set_llm",
+    description:
+      "Configure LLM API backend: writes api_key to .env and validates backend. api_key is injected as TWINBOX_SETUP_API_KEY (not logged). Use during onboarding llm_setup stage. Runs: twinbox config set-llm --provider PROVIDER --json",
+    parameters: Type.Object({
+      api_key: Type.String({ description: "LLM API key (injected as TWINBOX_SETUP_API_KEY, not logged)" }),
+      provider: Type.Optional(Type.Union([Type.Literal("openai"), Type.Literal("anthropic")], { default: "openai", description: "LLM provider: openai (default, also works for OpenAI-compatible endpoints) or anthropic" })),
+      model: Type.Optional(Type.String({ description: "Model ID override (e.g. gpt-4o, claude-sonnet-4-6)" })),
+      api_url: Type.Optional(Type.String({ description: "API URL override for OpenAI-compatible endpoints" })),
+    }),
+    async execute(...args) {
+      const params = args.length >= 2 ? args[1] : args[0];
+      const cliArgs = ["config", "set-llm", "--provider", params.provider ?? "openai", "--json"];
+      if (params.model) cliArgs.push("--model", params.model);
+      if (params.api_url) cliArgs.push("--api-url", params.api_url);
+      const extraEnv = { TWINBOX_SETUP_API_KEY: params.api_key ?? "" };
+      const r = await runTwinbox(cliArgs, opts, extraEnv);
       return formatResult(r);
     },
   });

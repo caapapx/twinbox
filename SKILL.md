@@ -60,6 +60,8 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 | "某个事情进展如何" / progress on a topic | `twinbox task progress QUERY --json` |
 | Mailbox status / env diagnosis | `twinbox task mailbox-status --json` |
 | Auto-detect email server config | `twinbox mailbox detect EMAIL --json` |
+| 配置邮箱凭据（自动探测 + 写入 .env）| `twinbox mailbox setup --email EMAIL --json`（密码从 `TWINBOX_SETUP_IMAP_PASS` 注入）或 OpenClaw 工具 `twinbox_mailbox_setup` |
+| 配置 LLM API（写入 .env）| `twinbox config set-llm --provider openai|anthropic --json`（key 从 `TWINBOX_SETUP_API_KEY` 注入）或 OpenClaw 工具 `twinbox_config_set_llm` |
 | Weekly brief lookup | `twinbox task weekly --json` |
 | Manage semantic routing rules / "以后别把这类邮件派给我" | `twinbox rule list --json` / `twinbox rule add --rule-json ...` |
 | Test a routing rule against recent threads | `twinbox rule test --rule-id RULE_ID --json` |
@@ -92,6 +94,8 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 - Default schedule definitions now live in `config/schedules.yaml`; `twinbox schedule update/reset` writes `runtime/context/schedule-overrides.yaml` and then attempts to sync the matching Twinbox OpenClaw cron job via `openclaw cron list/edit/add`
 - If Gateway access fails, the command still preserves the runtime override and exposes `platform_sync.status=error` in JSON output
 - For schedule prompts, prefer native OpenClaw tools `twinbox_schedule_list` / `twinbox_schedule_update` / `twinbox_schedule_reset` / `twinbox_schedule_enable` / `twinbox_schedule_disable` over generic `cron` or workspace search
+- For onboarding mailbox setup, prefer native OpenClaw tool `twinbox_mailbox_setup` (passes password via env, never CLI args)
+- For onboarding LLM API config, prefer native OpenClaw tool `twinbox_config_set_llm` (passes api_key via env)
 - Stay read-only unless the user explicitly asks for draft/action generation
 - **Never end a task turn with only file reads and no text answer.** A turn with `assistant.content=[]` or no text is a failure — always produce real command output followed by a summary
 

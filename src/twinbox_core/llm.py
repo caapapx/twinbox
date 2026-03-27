@@ -13,6 +13,8 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
+from .env_writer import load_env_file as _load_env_file
+
 
 DEFAULT_OPENAI_URL = "https://coding.dashscope.aliyuncs.com/v1/chat/completions"
 DEFAULT_OPENAI_MODEL = "kimi-k2.5"
@@ -37,27 +39,10 @@ class BackendConfig:
 def load_env_file(path: str | os.PathLike[str] | None) -> dict[str, str]:
     if not path:
         return {}
-
     env_path = Path(path).expanduser()
     if not env_path.is_file():
         return {}
-
-    values: dict[str, str] = {}
-    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("export "):
-            line = line[7:].strip()
-        if "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        key = key.strip()
-        value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
-            value = value[1:-1]
-        values[key] = value
-    return values
+    return _load_env_file(env_path)
 
 
 def merged_env(

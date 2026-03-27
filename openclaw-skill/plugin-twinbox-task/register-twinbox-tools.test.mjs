@@ -50,7 +50,9 @@ test("registerTwinboxTaskTools registers expected tools and task/thread helpers 
 
   const names = tools.map((t) => t.name).sort();
   assert.deepEqual(names, [
+    "twinbox_config_set_llm",
     "twinbox_latest_mail",
+    "twinbox_mailbox_setup",
     "twinbox_mailbox_status",
     "twinbox_queue_complete",
     "twinbox_queue_dismiss",
@@ -153,4 +155,21 @@ test("registerTwinboxTaskTools registers expected tools and task/thread helpers 
   assert.match(sdout.content[0].text, /disable/);
   assert.match(sdout.content[0].text, /nightly-full-refresh/);
   assert.match(sdout.content[0].text, /--json/);
+
+  const mailboxSetup = tools.find((t) => t.name === "twinbox_mailbox_setup");
+  assert.ok(mailboxSetup);
+  const msout = await mailboxSetup.execute({ email: "user@example.com", imap_pass: "secret" });
+  assert.match(msout.content[0].text, /mailbox/);
+  assert.match(msout.content[0].text, /setup/);
+  assert.match(msout.content[0].text, /user@example.com/);
+  assert.match(msout.content[0].text, /--email/);
+  assert.match(msout.content[0].text, /--json/);
+
+  const configSetLlm = tools.find((t) => t.name === "twinbox_config_set_llm");
+  assert.ok(configSetLlm);
+  const clout = await configSetLlm.execute({ api_key: "sk-test", provider: "anthropic" });
+  assert.match(clout.content[0].text, /config/);
+  assert.match(clout.content[0].text, /set-llm/);
+  assert.match(clout.content[0].text, /anthropic/);
+  assert.match(clout.content[0].text, /--json/);
 });

@@ -20,6 +20,7 @@ from typing import Any, Literal
 OnboardingStage = Literal[
     "not_started",
     "mailbox_login",
+    "llm_setup",
     "profile_setup",
     "material_import",
     "routing_rules",
@@ -102,6 +103,7 @@ def save_state(state_root: Path, state: OnboardingState) -> None:
 STAGE_ORDER: list[OnboardingStage] = [
     "not_started",
     "mailbox_login",
+    "llm_setup",
     "profile_setup",
     "material_import",
     "routing_rules",
@@ -110,7 +112,22 @@ STAGE_ORDER: list[OnboardingStage] = [
 ]
 
 STAGE_PROMPTS = {
-    "mailbox_login": "📧 邮箱登录配置\n请提供您的邮箱地址，我会自动探测服务器配置并测试连接。",
+    "mailbox_login": (
+        "📧 邮箱登录配置\n"
+        "请提供您的邮箱地址，以及 IMAP 密码（通过环境变量注入，不会出现在命令行参数中）。\n\n"
+        "配置方式（由 agent 调用 `twinbox_mailbox_setup` 插件工具，或在宿主机执行）：\n"
+        "  TWINBOX_SETUP_IMAP_PASS=<app_password> twinbox mailbox setup --email you@example.com --json\n\n"
+        "也可先只探测服务器配置：\n"
+        "  twinbox mailbox detect you@example.com --json"
+    ),
+    "llm_setup": (
+        "🤖 LLM API 配置\n"
+        "Phase 1-4 流水线需要 LLM 后端（OpenAI 兼容 或 Anthropic）。\n\n"
+        "配置方式（由 agent 调用 `twinbox_config_set_llm` 插件工具，或在宿主机执行）：\n"
+        "  TWINBOX_SETUP_API_KEY=<your_key> twinbox config set-llm --provider openai [--model MODEL] [--api-url URL] --json\n"
+        "  TWINBOX_SETUP_API_KEY=<your_key> twinbox config set-llm --provider anthropic [--model MODEL] --json\n\n"
+        "配置写入 state root/.env，不会泄露到命令行参数。"
+    ),
     "profile_setup": "👤 个人画像设置\n请告诉我您的职位、工作习惯和偏好，帮助我更好地理解邮件优先级。",
     "material_import": "📄 上下文材料导入\n您可以上传项目文档、团队信息等材料，帮助我理解业务背景。",
     "routing_rules": "🎯 邮件过滤规则\n配置语义路由规则，自动过滤不重要的邮件（如群组通知、系统告警）。",

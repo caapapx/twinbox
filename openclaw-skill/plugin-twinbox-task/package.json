@@ -5,12 +5,18 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "test": "node --test register-twinbox-tools.test.mjs"
+    "test": "node --test register-twinbox-tools.test.mjs",
+    "build": "npx esbuild index.mjs --bundle --format=esm --platform=node --outfile=dist/index.mjs --external:node:child_process --external:node:fs --external:node:os --external:node:path"
   },
   "openclaw": {
-    "extensions": ["./index.mjs"]
+    "extensions": [
+      "./dist/index.mjs"
+    ]
   },
   "dependencies": {
     "@sinclair/typebox": "^0.34.41"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.4"
   }
 }

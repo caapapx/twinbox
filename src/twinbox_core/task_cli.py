@@ -19,6 +19,7 @@ from .daytime_slice import (
     load_activity_pulse,
     search_activity_pulse,
 )
+from .env_writer import mask_secret, merge_env_file, write_env_file
 from .mailbox import format_preflight_text, run_preflight
 from .material_extract import MaterialExtractError, write_extract_for_import
 from .paths import resolve_state_root
@@ -1027,6 +1028,163 @@ def cmd_mailbox_detect(args: argparse.Namespace) -> int:
         print(f"  Note: {result['_note']}")
 
     return 0
+
+
+def cmd_mailbox_setup(args: argparse.Namespace) -> int:
+    """Configure mailbox credentials via env var injection and write .env."""
+    from .mailbox_detect import detect_to_env
+
+    imap_pass = os.environ.get("TWINBOX_SETUP_IMAP_PASS", "").strip()
+    if not imap_pass:
+        if args.json:
+            print(json.dumps({
+                "status": "fail",
+                "error_code": "missing_imap_pass",
+                "actionable_hint": "Set TWINBOX_SETUP_IMAP_PASS env var before calling this command.",
+            }, ensure_ascii=False, indent=2))
+        else:
+            print("错误: 必须设置 TWINBOX_SETUP_IMAP_PASS 环境变量", file=sys.stderr)
+        return 2
+
+    smtp_pass = os.environ.get("TWINBOX_SETUP_SMTP_PASS", "").strip() or imap_pass
+
+    detected = detect_to_env(args.email, verbose=False)
+    if detected is None:
+        if args.json:
+            print(json.dumps({
+                "status": "fail",
+                "error_code": "detection_failed",
+                "email": args.email,
+                "actionable_hint": "Could not auto-detect IMAP/SMTP servers. Try a known email provider.",
+            }, ensure_ascii=False, indent=2))
+        else:
+            print(f"错误: 无法自动探测 {args.email} 的服务器配置", file=sys.stderr)
+        return 1
+
+    imap_login = args.imap_login or args.email
+    smtp_login = args.smtp_login or args.email
+
+    updates: dict[str, str] = {
+        "MAIL_ADDRESS": args.email,
+        "IMAP_HOST": detected["IMAP_HOST"],
+        "IMAP_PORT": detected["IMAP_PORT"],
+        "IMAP_ENCRYPTION": detected["IMAP_ENCRYPTION"],
+        "IMAP_LOGIN": imap_login,
+        "IMAP_PASS": imap_pass,
+        "SMTP_HOST": detected["SMTP_HOST"],
+        "SMTP_PORT": detected["SMTP_PORT"],
+        "SMTP_ENCRYPTION": detected["SMTP_ENCRYPTION"],
+        "SMTP_LOGIN": smtp_login,
+        "SMTP_PASS": smtp_pass,
+    }
+
+    from .mailbox import resolve_mailbox_paths
+    paths = resolve_mailbox_paths(state_root=args.state_root)
+    merged = merge_env_file(paths.env_file, updates)
+    write_env_file(paths.env_file, merged)
+
+    exit_code, preflight = run_preflight(state_root=args.state_root)
+
+    mailbox_config_masked = {
+        "MAIL_ADDRESS": args.email,
+        "IMAP_HOST": detected["IMAP_HOST"],
+        "IMAP_PORT": detected["IMAP_PORT"],
+        "IMAP_ENCRYPTION": detected["IMAP_ENCRYPTION"],
+        "IMAP_LOGIN": imap_login,
+        "IMAP_PASS": mask_secret(imap_pass),
+        "SMTP_HOST": detected["SMTP_HOST"],
+        "SMTP_PORT": detected["SMTP_PORT"],
+        "SMTP_ENCRYPTION": detected["SMTP_ENCRYPTION"],
+        "SMTP_LOGIN": smtp_login,
+        "SMTP_PASS": mask_secret(smtp_pass),
+    }
+
+    output = {
+        "status": "ok" if exit_code == 0 else "warn",
+        "env_file_path": str(paths.env_file),
+        "mailbox_config": mailbox_config_masked,
+        "preflight_result": preflight,
+    }
+
+    if args.json:
+        print(json.dumps(output, ensure_ascii=False, indent=2))
+    else:
+        print(f"✅ 邮箱配置已写入: {paths.env_file}")
+        print(f"  IMAP: {detected['IMAP_HOST']}:{detected['IMAP_PORT']} ({detected['IMAP_ENCRYPTION']})")
+        print(f"  SMTP: {detected['SMTP_HOST']}:{detected['SMTP_PORT']} ({detected['SMTP_ENCRYPTION']})")
+        print(f"  Preflight: {preflight.get('status', 'unknown')}")
+    return exit_code
+
+
+def cmd_config_set_llm(args: argparse.Namespace) -> int:
+    """Configure LLM API key and write .env."""
+    from .llm import resolve_backend, LLMError
+
+    api_key = os.environ.get("TWINBOX_SETUP_API_KEY", "").strip()
+    if not api_key:
+        if args.json:
+            print(json.dumps({
+                "status": "fail",
+                "error_code": "missing_api_key",
+                "actionable_hint": "Set TWINBOX_SETUP_API_KEY env var before calling this command.",
+            }, ensure_ascii=False, indent=2))
+        else:
+            print("错误: 必须设置 TWINBOX_SETUP_API_KEY 环境变量", file=sys.stderr)
+        return 2
+
+    state_root = _state_root()
+    env_file = state_root / ".env"
+
+    updates: dict[str, str] = {}
+    if args.provider == "anthropic":
+        updates["ANTHROPIC_API_KEY"] = api_key
+        if args.model:
+            updates["ANTHROPIC_MODEL"] = args.model
+        if args.api_url:
+            updates["ANTHROPIC_BASE_URL"] = args.api_url
+    else:  # openai (default)
+        updates["LLM_API_KEY"] = api_key
+        if args.model:
+            updates["LLM_MODEL"] = args.model
+        if args.api_url:
+            updates["LLM_API_URL"] = args.api_url
+
+    merged = merge_env_file(env_file, updates)
+    write_env_file(env_file, merged)
+
+    # Validate by resolving backend from the merged env (not process env)
+    from .llm import load_env_file as llm_load_env_file, merged_env
+    try:
+        from .llm import resolve_backend
+        cfg = resolve_backend(env_file=env_file, env={})
+        backend_ok = True
+        resolved_model = cfg.model
+        resolved_url = cfg.url
+    except LLMError as exc:
+        backend_ok = False
+        resolved_model = args.model or ""
+        resolved_url = args.api_url or ""
+
+    api_url_display = resolved_url or args.api_url or ""
+    output = {
+        "status": "ok" if backend_ok else "warn",
+        "provider": args.provider,
+        "model": resolved_model,
+        "api_url": api_url_display,
+        "api_key_masked": mask_secret(api_key),
+        "env_file_path": str(env_file),
+        "backend_validated": backend_ok,
+    }
+
+    if args.json:
+        print(json.dumps(output, ensure_ascii=False, indent=2))
+    else:
+        status_icon = "✅" if backend_ok else "⚠️"
+        print(f"{status_icon} LLM 配置已写入: {env_file}")
+        print(f"  Provider: {args.provider}")
+        print(f"  Model: {resolved_model}")
+        print(f"  API Key: {mask_secret(api_key)}")
+    return 0 if backend_ok else 1
 
 
 def cmd_onboarding_status(args: argparse.Namespace) -> int:
@@ -2327,6 +2485,23 @@ def _build_parser() -> argparse.ArgumentParser:
     mailbox_detect.add_argument("email", help="Email address to detect servers for")
     mailbox_detect.add_argument("--json", action="store_true", help="Output as JSON")
 
+    mailbox_setup = mailbox_sub.add_parser("setup", help="Auto-detect + write .env (password from TWINBOX_SETUP_IMAP_PASS)")
+    mailbox_setup.add_argument("--email", required=True, help="Email address to configure")
+    mailbox_setup.add_argument("--imap-login", default="", help="Override IMAP login (default: email)")
+    mailbox_setup.add_argument("--smtp-login", default="", help="Override SMTP login (default: email)")
+    mailbox_setup.add_argument("--state-root", help="Override twinbox state root")
+    mailbox_setup.add_argument("--json", action="store_true", help="Output as JSON")
+
+    # config commands
+    config_parser = subparsers.add_parser("config", help="Configuration management")
+    config_sub = config_parser.add_subparsers(dest="config_command", required=True)
+
+    config_set_llm = config_sub.add_parser("set-llm", help="Configure LLM API (key from TWINBOX_SETUP_API_KEY)")
+    config_set_llm.add_argument("--provider", default="openai", choices=["openai", "anthropic"], help="LLM provider")
+    config_set_llm.add_argument("--model", default="", help="Model ID override")
+    config_set_llm.add_argument("--api-url", default="", help="API URL override")
+    config_set_llm.add_argument("--json", action="store_true", help="Output as JSON")
+
     # onboarding commands
     onboarding_parser = subparsers.add_parser("onboarding", help="Conversational onboarding flow")
     onboarding_sub = onboarding_parser.add_subparsers(dest="onboarding_command", required=True)
@@ -2541,6 +2716,11 @@ def main(argv: list[str] | None = None) -> int:
                 return cmd_mailbox_preflight(args)
             elif args.mailbox_command == "detect":
                 return cmd_mailbox_detect(args)
+            elif args.mailbox_command == "setup":
+                return cmd_mailbox_setup(args)
+        elif args.command == "config":
+            if args.config_command == "set-llm":
+                return cmd_config_set_llm(args)
         elif args.command == "onboarding":
             if args.onboarding_command == "start":
                 return cmd_onboarding_start(args)

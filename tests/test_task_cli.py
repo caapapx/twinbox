@@ -858,7 +858,7 @@ class TestOnboardingCli:
         payload = json.loads(capsys.readouterr().out)
 
         assert payload["completed_stage"] == "mailbox_login"
-        assert payload["current_stage"] == "profile_setup"
+        assert payload["current_stage"] == "llm_setup"
         assert "mailbox_login" in payload["completed_stages"]
 
     def test_onboarding_next_without_start_bootstraps_and_advances(self, monkeypatch, tmp_path, capsys):
@@ -869,7 +869,7 @@ class TestOnboardingCli:
         payload = json.loads(capsys.readouterr().out)
 
         assert payload["completed_stage"] == "mailbox_login"
-        assert payload["current_stage"] == "profile_setup"
+        assert payload["current_stage"] == "llm_setup"
         assert "mailbox_login" in payload["completed_stages"]
 
     def test_onboarding_status_json_contract(self, monkeypatch, tmp_path, capsys):
