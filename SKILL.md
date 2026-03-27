@@ -55,6 +55,8 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 | 查看当前调度配置 | `twinbox schedule list --json` 或 OpenClaw 工具 `twinbox_schedule_list` |
 | 修改 daily/weekly/nightly 调度时间 | `twinbox schedule update JOB_NAME --cron "30 9 * * *" --json` 或 OpenClaw 工具 `twinbox_schedule_update` |
 | 恢复某个调度到默认时间 | `twinbox schedule reset JOB_NAME --json` 或 OpenClaw 工具 `twinbox_schedule_reset` |
+| 启用某个后台调度（创建 OpenClaw cron job） | `twinbox schedule enable JOB_NAME --json` 或 OpenClaw 工具 `twinbox_schedule_enable` |
+| 禁用某个后台调度（删除 OpenClaw cron job） | `twinbox schedule disable JOB_NAME --json` 或 OpenClaw 工具 `twinbox_schedule_disable` |
 | "某个事情进展如何" / progress on a topic | `twinbox task progress QUERY --json` |
 | Mailbox status / env diagnosis | `twinbox task mailbox-status --json` |
 | Auto-detect email server config | `twinbox mailbox detect EMAIL --json` |
@@ -89,7 +91,7 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 - The incremental Phase 1 path uses UID watermarks and automatically falls back to the existing full loader when `UIDVALIDITY` changes
 - Default schedule definitions now live in `config/schedules.yaml`; `twinbox schedule update/reset` writes `runtime/context/schedule-overrides.yaml` and then attempts to sync the matching Twinbox OpenClaw cron job via `openclaw cron list/edit/add`
 - If Gateway access fails, the command still preserves the runtime override and exposes `platform_sync.status=error` in JSON output
-- For schedule prompts, prefer native OpenClaw tools `twinbox_schedule_list` / `twinbox_schedule_update` / `twinbox_schedule_reset` over generic `cron` or workspace search
+- For schedule prompts, prefer native OpenClaw tools `twinbox_schedule_list` / `twinbox_schedule_update` / `twinbox_schedule_reset` / `twinbox_schedule_enable` / `twinbox_schedule_disable` over generic `cron` or workspace search
 - Stay read-only unless the user explicitly asks for draft/action generation
 - **Never end a task turn with only file reads and no text answer.** A turn with `assistant.content=[]` or no text is a failure — always produce real command output followed by a summary
 

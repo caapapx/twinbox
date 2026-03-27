@@ -214,6 +214,36 @@ export function registerTwinboxTaskTools(api) {
   });
 
   api.registerTool({
+    name: "twinbox_schedule_enable",
+    description:
+      "Enable a Twinbox background schedule and create the corresponding OpenClaw cron job. Use for prompts like 启用日间同步、开启夜间全量、打开周报刷新. Runs: twinbox schedule enable JOB_NAME --json",
+    parameters: Type.Object({
+      job_name: Type.String({ description: "Schedule name: daily-refresh | weekly-refresh | nightly-full-refresh" }),
+    }),
+    async execute(...args) {
+      const params = args.length >= 2 ? args[1] : args[0];
+      const jobName = params?.job_name ?? "";
+      const r = await runTwinbox(["schedule", "enable", jobName, "--json"], opts);
+      return formatResult(r);
+    },
+  });
+
+  api.registerTool({
+    name: "twinbox_schedule_disable",
+    description:
+      "Disable a Twinbox background schedule and delete the corresponding OpenClaw cron job. Use for prompts like 关闭日间同步、禁用夜间全量、不要周报刷新. Runs: twinbox schedule disable JOB_NAME --json",
+    parameters: Type.Object({
+      job_name: Type.String({ description: "Schedule name: daily-refresh | weekly-refresh | nightly-full-refresh" }),
+    }),
+    async execute(...args) {
+      const params = args.length >= 2 ? args[1] : args[0];
+      const jobName = params?.job_name ?? "";
+      const r = await runTwinbox(["schedule", "disable", jobName, "--json"], opts);
+      return formatResult(r);
+    },
+  });
+
+  api.registerTool({
     name: "twinbox_weekly",
     description: "Weekly brief task projection (read-only). Runs: twinbox task weekly --json",
     parameters: Type.Object({}),

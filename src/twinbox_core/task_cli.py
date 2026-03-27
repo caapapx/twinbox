@@ -23,7 +23,7 @@ from .mailbox import format_preflight_text, run_preflight
 from .material_extract import MaterialExtractError, write_extract_for_import
 from .paths import resolve_state_root
 from .routing_rules import evaluate_rule, load_rules, load_rules_raw, save_rules_raw, RoutingRule
-from .schedule_override import load_schedule_config, reset_schedule_override, update_schedule_override
+from .schedule_override import disable_schedule, enable_schedule, load_schedule_config, reset_schedule_override, update_schedule_override
 from .user_queue_state import complete_thread, dismiss_thread, restore_thread
 
 @dataclass(frozen=True)
@@ -662,6 +662,46 @@ def cmd_schedule_reset(args: argparse.Namespace) -> int:
         return 0
 
     print(f"已恢复 {payload['job_name']} 默认 cron: {payload['effective_cron']}")
+    print(payload["next_action"])
+    return 0
+
+
+def cmd_schedule_enable(args: argparse.Namespace) -> int:
+    """Enable a schedule and create the OpenClaw cron job."""
+    try:
+        payload = enable_schedule(
+            state_root=_state_root(),
+            job_name=args.job_name,
+        )
+    except ValueError as exc:
+        print(f"错误: {exc}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    print(f"已启用 {payload['job_name']}: {payload['effective_cron']}")
+    print(payload["next_action"])
+    return 0
+
+
+def cmd_schedule_disable(args: argparse.Namespace) -> int:
+    """Disable a schedule and delete the OpenClaw cron job."""
+    try:
+        payload = disable_schedule(
+            state_root=_state_root(),
+            job_name=args.job_name,
+        )
+    except ValueError as exc:
+        print(f"错误: {exc}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    print(f"已禁用 {payload['job_name']}")
     print(payload["next_action"])
     return 0
 
@@ -2362,6 +2402,14 @@ def _build_parser() -> argparse.ArgumentParser:
     schedule_reset.add_argument("job_name", help="Schedule name to reset")
     schedule_reset.add_argument("--json", action="store_true", help="Output as JSON")
 
+    schedule_enable = schedule_sub.add_parser("enable", help="Enable a schedule and create OpenClaw cron job")
+    schedule_enable.add_argument("job_name", help="Schedule name to enable")
+    schedule_enable.add_argument("--json", action="store_true", help="Output as JSON")
+
+    schedule_disable = schedule_sub.add_parser("disable", help="Disable a schedule and delete OpenClaw cron job")
+    schedule_disable.add_argument("job_name", help="Schedule name to disable")
+    schedule_disable.add_argument("--json", action="store_true", help="Output as JSON")
+
     # thread commands
     thread_parser = subparsers.add_parser("thread", help="Thread inspection")
     thread_sub = thread_parser.add_subparsers(dest="thread_command", required=True)
@@ -2529,6 +2577,10 @@ def main(argv: list[str] | None = None) -> int:
                 return cmd_schedule_update(args)
             elif args.schedule_command == "reset":
                 return cmd_schedule_reset(args)
+            elif args.schedule_command == "enable":
+                return cmd_schedule_enable(args)
+            elif args.schedule_command == "disable":
+                return cmd_schedule_disable(args)
         elif args.command == "thread":
             if args.thread_command == "inspect":
                 return cmd_thread_inspect(args)

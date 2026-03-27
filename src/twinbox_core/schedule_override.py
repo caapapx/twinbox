@@ -13,6 +13,7 @@ import yaml
 from .orchestration import OrchestrationError, parse_bridge_event_text
 
 DEFAULT_TIMEZONE = "Asia/Shanghai"
+DISABLED_SENTINEL = "__disabled__"
 SCHEDULE_BINDINGS: dict[str, dict[str, str]] = {
     "daily-refresh": {
         "scheduled_job": "daytime-sync",
@@ -369,13 +370,16 @@ def load_schedule_config(
     for row in defaults["schedules"]:
         name = row["name"]
         default_cron = row["cron"]
-        effective_cron = override_map.get(name, default_cron)
+        raw_override = override_map.get(name)
+        disabled = raw_override == DISABLED_SENTINEL
+        effective_cron = default_cron if (disabled or raw_override is None) else raw_override
         schedules.append(
             {
                 "name": name,
                 "default_cron": default_cron,
                 "effective_cron": effective_cron,
-                "source": "override" if name in override_map else "default",
+                "enabled": not disabled,
+                "source": "disabled" if disabled else ("override" if name in override_map else "default"),
                 "command": row.get("command", ""),
                 "description": row.get("description", ""),
             }
@@ -466,5 +470,109 @@ def reset_schedule_override(
             "OpenClaw cron job synced back to the default schedule."
             if platform_sync.get("status") in {"updated", "created"}
             else "Runtime override reset, but OpenClaw cron sync failed; fix gateway access and retry the same command."
+        ),
+    }
+
+
+def _delete_openclaw_cron_job(
+    *,
+    job_name: str,
+    skill_path: Path | None = None,
+    schedule_path: Path | None = None,
+    runner: Any = None,
+) -> dict[str, Any]:
+    binding = _schedule_binding(job_name, skill_path, schedule_path)
+    run = runner or _default_openclaw_runner
+    list_stdout = run(["openclaw", "cron", "list", "--all", "--json"])
+    try:
+        jobs_payload = json.loads(list_stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"OpenClaw cron list output is not valid JSON: {exc.msg}") from exc
+    if not isinstance(jobs_payload, dict):
+        raise RuntimeError("OpenClaw cron list output must be a JSON object.")
+    matching_ids = _matching_openclaw_job_ids(jobs_payload, binding["scheduled_job"])
+    if not matching_ids:
+        return {
+            "status": "not_found",
+            "job_name": job_name,
+            "scheduled_job": binding["scheduled_job"],
+            "message": "No matching OpenClaw cron job found.",
+        }
+    job_id = matching_ids[0]
+    run(["openclaw", "cron", "delete", job_id])
+    return {
+        "status": "deleted",
+        "job_id": job_id,
+        "job_name": job_name,
+        "scheduled_job": binding["scheduled_job"],
+        "platform_name": binding["platform_name"],
+    }
+
+
+def disable_schedule(
+    *,
+    state_root: Path,
+    job_name: str,
+    skill_path: Path | None = None,
+    schedule_path: Path | None = None,
+) -> dict[str, Any]:
+    if job_name not in _known_schedule_names(skill_path, schedule_path):
+        raise ValueError(f"Unknown schedule: {job_name}")
+    payload = load_schedule_overrides(state_root)
+    payload["timezone"] = str(payload.get("timezone", DEFAULT_TIMEZONE) or DEFAULT_TIMEZONE)
+    payload["overrides"][job_name] = DISABLED_SENTINEL
+    _write_schedule_overrides(state_root, payload)
+    try:
+        platform_result = _delete_openclaw_cron_job(
+            job_name=job_name,
+            skill_path=skill_path,
+            schedule_path=schedule_path,
+        )
+    except (RuntimeError, ValueError) as exc:
+        platform_result = {"status": "error", "job_name": job_name, "message": str(exc)}
+    return {
+        "job_name": job_name,
+        "enabled": False,
+        "platform_sync": platform_result,
+        "next_action": (
+            "Schedule disabled and OpenClaw cron job deleted."
+            if platform_result.get("status") in {"deleted", "not_found"}
+            else "Schedule marked disabled locally, but OpenClaw cron delete failed; fix gateway access and retry."
+        ),
+    }
+
+
+def enable_schedule(
+    *,
+    state_root: Path,
+    job_name: str,
+    skill_path: Path | None = None,
+    schedule_path: Path | None = None,
+) -> dict[str, Any]:
+    if job_name not in _known_schedule_names(skill_path, schedule_path):
+        raise ValueError(f"Unknown schedule: {job_name}")
+    payload = load_schedule_overrides(state_root)
+    payload["timezone"] = str(payload.get("timezone", DEFAULT_TIMEZONE) or DEFAULT_TIMEZONE)
+    payload["overrides"].pop(job_name, None)
+    _write_schedule_overrides(state_root, payload)
+    config = load_schedule_config(state_root, skill_path, schedule_path)
+    current = next(row for row in config["schedules"] if row["name"] == job_name)
+    platform_sync = _platform_sync_payload(
+        job_name=job_name,
+        cron=current["effective_cron"],
+        timezone=config["timezone"],
+        skill_path=skill_path,
+        schedule_path=schedule_path,
+    )
+    return {
+        "timezone": config["timezone"],
+        "job_name": job_name,
+        **current,
+        "enabled": True,
+        "platform_sync": platform_sync,
+        "next_action": (
+            "Schedule enabled and OpenClaw cron job created."
+            if platform_sync.get("status") in {"updated", "created"}
+            else "Schedule enabled locally, but OpenClaw cron sync failed; fix gateway access and retry."
         ),
     }

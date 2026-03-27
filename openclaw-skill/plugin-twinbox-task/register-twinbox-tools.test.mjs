@@ -58,6 +58,8 @@ test("registerTwinboxTaskTools registers expected tools and task/thread helpers 
     "twinbox_rule_list",
     "twinbox_rule_remove",
     "twinbox_rule_test",
+    "twinbox_schedule_disable",
+    "twinbox_schedule_enable",
     "twinbox_schedule_list",
     "twinbox_schedule_reset",
     "twinbox_schedule_update",
@@ -135,4 +137,20 @@ test("registerTwinboxTaskTools registers expected tools and task/thread helpers 
   assert.match(srout.content[0].text, /reset/);
   assert.match(srout.content[0].text, /daily-refresh/);
   assert.match(srout.content[0].text, /--json/);
+
+  const scheduleEnable = tools.find((t) => t.name === "twinbox_schedule_enable");
+  assert.ok(scheduleEnable);
+  const seout = await scheduleEnable.execute({ job_name: "daily-refresh" });
+  assert.match(seout.content[0].text, /schedule/);
+  assert.match(seout.content[0].text, /enable/);
+  assert.match(seout.content[0].text, /daily-refresh/);
+  assert.match(seout.content[0].text, /--json/);
+
+  const scheduleDisable = tools.find((t) => t.name === "twinbox_schedule_disable");
+  assert.ok(scheduleDisable);
+  const sdout = await scheduleDisable.execute({ job_name: "nightly-full-refresh" });
+  assert.match(sdout.content[0].text, /schedule/);
+  assert.match(sdout.content[0].text, /disable/);
+  assert.match(sdout.content[0].text, /nightly-full-refresh/);
+  assert.match(sdout.content[0].text, /--json/);
 });
