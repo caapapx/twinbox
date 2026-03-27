@@ -92,7 +92,13 @@ def resolve_backend(
             retries=retries,
         )
 
-    raise LLMError("No LLM backend. Set LLM_API_KEY or ANTHROPIC_API_KEY.")
+    raise LLMError(
+        "No LLM backend configured. "
+        "OpenAI-compatible (HTTP chat/completions + Bearer): set LLM_API_KEY; "
+        "optional LLM_API_URL, LLM_MODEL. "
+        "Anthropic native (/v1/messages + x-api-key): set ANTHROPIC_API_KEY; "
+        "optional ANTHROPIC_MODEL, ANTHROPIC_BASE_URL."
+    )
 
 
 def backend_summary(config: BackendConfig) -> str:

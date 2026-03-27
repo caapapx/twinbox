@@ -26,7 +26,9 @@ Usage:
   bash scripts/phase1_thinking.sh [options]
 
 Reads phase1-context.json, calls LLM for batch intent classification.
-Requires: LLM_API_KEY or ANTHROPIC_API_KEY in .env or environment.
+Requires one LLM backend in .env or environment:
+  OpenAI-compatible: LLM_API_KEY (optional LLM_API_URL, LLM_MODEL).
+  Anthropic native: ANTHROPIC_API_KEY (optional ANTHROPIC_MODEL, ANTHROPIC_BASE_URL).
 
 Options:
   --context <path>    Override context-pack path
