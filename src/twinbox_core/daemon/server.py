@@ -16,7 +16,6 @@ from typing import Any
 
 import fcntl
 
-from twinbox_core.daemon import TWINBOX_PROTOCOL_VERSION
 from twinbox_core.daemon import metrics
 from twinbox_core.daemon.handlers import (
     handle_cli_invoke,
@@ -25,6 +24,7 @@ from twinbox_core.daemon.handlers import (
     set_daemon_state_root,
 )
 from twinbox_core.daemon.layout import ensure_daemon_dirs, log_path, pid_path, socket_path
+from twinbox_core.daemon.rpc_protocol import process_rpc_line
 from twinbox_core.paths import resolve_daemon_state_root
 
 logger = logging.getLogger(__name__)
@@ -124,66 +124,13 @@ def _rpc_dispatch(method: str, params: dict[str, Any]) -> Any:
     raise ValueError(f"unknown method: {method}")
 
 
-def _build_response(
-    req_id: Any,
-    result: Any | None = None,
-    error: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    msg: dict[str, Any] = {
-        "jsonrpc": "2.0",
-        "id": req_id,
-        "twinbox_version": TWINBOX_PROTOCOL_VERSION,
-    }
-    if error is not None:
-        msg["error"] = error
-    else:
-        msg["result"] = result
-    return msg
-
-
 def _handle_connection(conn: socket.socket, idle_sec: float) -> None:
     _adjust_active(1)
     try:
         raw = _read_message_line(conn, MAX_REQUEST_BYTES, idle_sec)
-        if not raw.strip():
-            return
-        try:
-            req = json.loads(raw.decode("utf-8"))
-        except json.JSONDecodeError as exc:
-            err = _build_response(
-                None,
-                error={"code": -32700, "message": "Parse error", "data": str(exc)},
-            )
-            conn.sendall((json.dumps(err) + "\n").encode("utf-8"))
-            return
-        if not isinstance(req, dict):
-            err = _build_response(None, error={"code": -32600, "message": "Invalid Request"})
-            conn.sendall((json.dumps(err) + "\n").encode("utf-8"))
-            return
-
-        req_id = req.get("id")
-        method = req.get("method")
-        params = req.get("params") or {}
-        if req.get("jsonrpc") != "2.0":
-            resp = _build_response(req_id, error={"code": -32600, "message": "Invalid Request"})
+        resp = process_rpc_line(raw, _rpc_dispatch, max_request_bytes=MAX_REQUEST_BYTES)
+        if resp is not None:
             conn.sendall((json.dumps(resp) + "\n").encode("utf-8"))
-            return
-        if not isinstance(method, str):
-            resp = _build_response(req_id, error={"code": -32600, "message": "Invalid method"})
-            conn.sendall((json.dumps(resp) + "\n").encode("utf-8"))
-            return
-        if not isinstance(params, dict):
-            resp = _build_response(req_id, error={"code": -32602, "message": "Invalid params"})
-            conn.sendall((json.dumps(resp) + "\n").encode("utf-8"))
-            return
-        try:
-            result = _rpc_dispatch(method, params)
-        except Exception as exc:
-            logger.exception("handler error")
-            resp = _build_response(req_id, error={"code": -32603, "message": str(exc)})
-        else:
-            resp = _build_response(req_id, result=result)
-        conn.sendall((json.dumps(resp) + "\n").encode("utf-8"))
     finally:
         _adjust_active(-1)
 
