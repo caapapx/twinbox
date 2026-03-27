@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .env_writer import load_env_file
-from .paths import PathResolutionError, resolve_code_root, resolve_state_root
+from .paths import PathResolutionError, config_dir, resolve_code_root, resolve_state_root
 
 # Matches SKILL.md metadata.openclaw.requires.env
 OPENCLAW_REQUIRED_MAIL_KEYS = (
@@ -131,6 +131,26 @@ def merge_twinbox_openclaw_entry(
 
     entries["twinbox"] = twin
     return out
+
+
+def remove_twinbox_skill_entry_from_openclaw(
+    data: dict[str, Any],
+) -> tuple[dict[str, Any], bool]:
+    """Return (new_config, had_twinbox_entry).
+
+    Preserves all other keys; only drops ``skills.entries.twinbox``.
+    """
+    out = _deep_copy_json(data) if data else {}
+    skills = out.get("skills")
+    if not isinstance(skills, dict):
+        return out, False
+    entries = skills.get("entries")
+    if not isinstance(entries, dict):
+        return out, False
+    had = "twinbox" in entries
+    skills["entries"] = {k: v for k, v in entries.items() if k != "twinbox"}
+    out["skills"] = skills
+    return out, had
 
 
 def atomic_write_json(path: Path, data: dict[str, Any]) -> None:
@@ -382,6 +402,233 @@ def run_openclaw_deploy(
         proc = run(
             [openclaw_bin, "gateway", "restart"],
             cwd=str(cr),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if proc.returncode != 0:
+            report.ok = False
+            report.steps.append(
+                DeployStepResult(
+                    "gateway_restart",
+                    "failed",
+                    f"{openclaw_bin} gateway restart failed",
+                    {
+                        "returncode": proc.returncode,
+                        "stderr": (proc.stderr or "")[-4000:],
+                    },
+                )
+            )
+        else:
+            report.steps.append(
+                DeployStepResult(
+                    "gateway_restart",
+                    "ok",
+                    "Gateway restart issued",
+                    {"stdout_tail": (proc.stdout or "")[-2000:]},
+                )
+            )
+    except OSError as exc:
+        report.ok = False
+        report.steps.append(
+            DeployStepResult("gateway_restart", "failed", str(exc))
+        )
+
+    return report
+
+
+def run_openclaw_rollback(
+    *,
+    code_root: Path | None = None,
+    openclaw_home: Path | None = None,
+    dry_run: bool = False,
+    restart_gateway: bool = True,
+    remove_config: bool = False,
+    openclaw_bin: str = "openclaw",
+    run_subprocess: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+) -> OpenClawDeployReport:
+    """Undo host wiring done by :func:`run_openclaw_deploy` (narrow scope).
+
+    Removes ``skills.entries.twinbox``, deletes ``~/.openclaw/skills/twinbox/``,
+    optionally removes ``~/.config/twinbox/`` (code-root / state-root pointers).
+
+    Does **not** remove ``~/.twinbox`` (mail state), OpenClaw plugins, cron,
+    systemd bridge, or ``uninstall_openclaw_twinbox.sh`` scope — use that script
+    for a full teardown.
+    """
+    run = run_subprocess or subprocess.run
+    report = OpenClawDeployReport(ok=True, steps=[])
+
+    try:
+        cr = resolve_code_root(code_root or Path.cwd())
+        report.code_root = str(cr)
+    except PathResolutionError:
+        report.code_root = ""
+
+    default_sr = Path(
+        os.environ.get("TWINBOX_STATE_ROOT", str(Path.home() / ".twinbox"))
+    ).expanduser()
+    try:
+        sr = resolve_state_root(default_sr)
+        report.state_root = str(sr)
+    except PathResolutionError:
+        report.state_root = str(default_sr)
+
+    och = (openclaw_home or Path.home() / ".openclaw").expanduser()
+    report.openclaw_home = str(och)
+    report.openclaw_json = str(och / "openclaw.json")
+    skill_dir = och / "skills" / "twinbox"
+    report.skill_dest = str(skill_dir / "SKILL.md")
+
+    json_path = och / "openclaw.json"
+    try:
+        existing = load_openclaw_json(json_path)
+    except ValueError as exc:
+        report.ok = False
+        report.steps.append(
+            DeployStepResult("strip_openclaw_json", "failed", str(exc))
+        )
+        return report
+
+    stripped, had_entry = remove_twinbox_skill_entry_from_openclaw(existing)
+
+    if dry_run:
+        report.steps.append(
+            DeployStepResult(
+                "strip_openclaw_json",
+                "dry_run",
+                f"Would remove skills.entries.twinbox from {json_path}",
+                {"had_twinbox_entry": had_entry},
+            )
+        )
+    else:
+        if had_entry:
+            try:
+                atomic_write_json(json_path, stripped)
+                report.steps.append(
+                    DeployStepResult(
+                        "strip_openclaw_json",
+                        "ok",
+                        "Removed skills.entries.twinbox",
+                    )
+                )
+            except OSError as exc:
+                report.ok = False
+                report.steps.append(
+                    DeployStepResult("strip_openclaw_json", "failed", str(exc))
+                )
+                return report
+        else:
+            report.steps.append(
+                DeployStepResult(
+                    "strip_openclaw_json",
+                    "skipped",
+                    "No skills.entries.twinbox present",
+                )
+            )
+
+    # --- skill directory ---
+    if dry_run:
+        report.steps.append(
+            DeployStepResult(
+                "remove_skill_dir",
+                "dry_run",
+                f"Would remove directory {skill_dir} if present",
+                {"exists": skill_dir.is_dir()},
+            )
+        )
+    else:
+        if skill_dir.is_dir():
+            try:
+                shutil.rmtree(skill_dir)
+                report.steps.append(
+                    DeployStepResult(
+                        "remove_skill_dir",
+                        "ok",
+                        f"Removed {skill_dir}",
+                    )
+                )
+            except OSError as exc:
+                report.ok = False
+                report.steps.append(
+                    DeployStepResult("remove_skill_dir", "failed", str(exc))
+                )
+                return report
+        else:
+            report.steps.append(
+                DeployStepResult(
+                    "remove_skill_dir",
+                    "skipped",
+                    "Skill directory not present",
+                )
+            )
+
+    # --- ~/.config/twinbox ---
+    cfg = config_dir()
+    if dry_run:
+        report.steps.append(
+            DeployStepResult(
+                "remove_twinbox_config",
+                "dry_run",
+                f"Would remove {cfg}" if remove_config else "Skipped (--remove-config not set)",
+                {"remove_config": remove_config, "exists": cfg.is_dir()},
+            )
+        )
+    elif remove_config:
+        if cfg.is_dir():
+            try:
+                shutil.rmtree(cfg)
+                report.steps.append(
+                    DeployStepResult(
+                        "remove_twinbox_config",
+                        "ok",
+                        f"Removed {cfg}",
+                    )
+                )
+            except OSError as exc:
+                report.ok = False
+                report.steps.append(
+                    DeployStepResult("remove_twinbox_config", "failed", str(exc))
+                )
+                return report
+        else:
+            report.steps.append(
+                DeployStepResult(
+                    "remove_twinbox_config",
+                    "skipped",
+                    "Config directory not present",
+                )
+            )
+    else:
+        report.steps.append(
+            DeployStepResult(
+                "remove_twinbox_config",
+                "skipped",
+                "Preserved ~/.config/twinbox (pass --remove-config to delete)",
+            )
+        )
+
+    # --- gateway restart ---
+    if not restart_gateway:
+        report.steps.append(
+            DeployStepResult("gateway_restart", "skipped", "--no-restart")
+        )
+        return report
+
+    if dry_run:
+        report.steps.append(
+            DeployStepResult(
+                "gateway_restart",
+                "dry_run",
+                f"Would run: {openclaw_bin} gateway restart",
+            )
+        )
+        return report
+
+    try:
+        proc = run(
+            [openclaw_bin, "gateway", "restart"],
+            cwd=str(Path.home()),
             capture_output=True,
             text=True,
             check=False,

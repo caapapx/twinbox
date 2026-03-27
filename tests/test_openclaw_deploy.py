@@ -11,7 +11,9 @@ import pytest
 from twinbox_core.openclaw_deploy import (
     load_openclaw_json,
     merge_twinbox_openclaw_entry,
+    remove_twinbox_skill_entry_from_openclaw,
     run_openclaw_deploy,
+    run_openclaw_rollback,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -33,6 +35,23 @@ def test_merge_preserves_other_skill_entries() -> None:
     assert tb["enabled"] is True
     assert tb["env"]["IMAP_HOST"] == "imap.example.com"
     assert tb["env"]["IMAP_PORT"] == "993"
+
+
+def test_remove_twinbox_skill_entry_preserves_other_entries() -> None:
+    base = {
+        "skills": {
+            "entries": {
+                "twinbox": {"enabled": True},
+                "other": {"enabled": False},
+            }
+        },
+        "gateway": {"x": 1},
+    }
+    out, had = remove_twinbox_skill_entry_from_openclaw(base)
+    assert had is True
+    assert "twinbox" not in out["skills"]["entries"]
+    assert out["skills"]["entries"]["other"]["enabled"] is False
+    assert out["gateway"]["x"] == 1
 
 
 def test_merge_no_env_sync_keeps_existing_twinbox_env() -> None:
@@ -117,6 +136,57 @@ def test_run_openclaw_deploy_applies_files_no_gateway_restart_call(
     assert skill.is_file()
     cfg = json.loads((oc / "openclaw.json").read_text(encoding="utf-8"))
     assert cfg["skills"]["entries"]["twinbox"]["enabled"] is True
+
+
+def test_run_openclaw_rollback_removes_json_and_skill_dir(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    oc = tmp_path / ".openclaw"
+    oc.mkdir(parents=True)
+    cfg = {"skills": {"entries": {"twinbox": {"enabled": True, "env": {}}}}}
+    (oc / "openclaw.json").write_text(
+        json.dumps(cfg, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    sd = oc / "skills" / "twinbox"
+    sd.mkdir(parents=True)
+    (sd / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
+
+    report = run_openclaw_rollback(
+        openclaw_home=oc,
+        dry_run=False,
+        restart_gateway=False,
+        remove_config=False,
+        run_subprocess=_fake_run_ok,
+    )
+    assert report.ok
+    data = json.loads((oc / "openclaw.json").read_text(encoding="utf-8"))
+    assert "twinbox" not in data.get("skills", {}).get("entries", {})
+    assert not sd.exists()
+
+
+def test_run_openclaw_rollback_remove_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    cfg_dir = tmp_path / ".config" / "twinbox"
+    cfg_dir.mkdir(parents=True)
+    (cfg_dir / "code-root").write_text("/tmp/x\n", encoding="utf-8")
+    oc = tmp_path / ".openclaw"
+    oc.mkdir(parents=True)
+    (oc / "openclaw.json").write_text("{}", encoding="utf-8")
+
+    report = run_openclaw_rollback(
+        openclaw_home=oc,
+        dry_run=False,
+        restart_gateway=False,
+        remove_config=True,
+        run_subprocess=_fake_run_ok,
+    )
+    assert report.ok
+    assert not cfg_dir.exists()
 
 
 def test_run_openclaw_deploy_missing_skill_md_fails(

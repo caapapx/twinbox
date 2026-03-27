@@ -22,7 +22,7 @@ from .daytime_slice import (
 from .env_writer import mask_secret, merge_env_file, write_env_file
 from .mailbox import format_preflight_text, run_preflight
 from .material_extract import MaterialExtractError, write_extract_for_import
-from .openclaw_deploy import run_openclaw_deploy
+from .openclaw_deploy import run_openclaw_deploy, run_openclaw_rollback
 from .paths import resolve_state_root
 from .routing_rules import evaluate_rule, load_rules, load_rules_raw, save_rules_raw, RoutingRule
 from .schedule_override import disable_schedule, enable_schedule, load_schedule_config, reset_schedule_override, update_schedule_override
@@ -1192,21 +1192,33 @@ def cmd_deploy_openclaw(args: argparse.Namespace) -> int:
     """Host-side OpenClaw wiring (SKILL sync, openclaw.json, roots, gateway)."""
     code_root = Path(args.repo_root).expanduser() if args.repo_root else None
     openclaw_home = Path(args.openclaw_home).expanduser() if args.openclaw_home else None
-    report = run_openclaw_deploy(
-        code_root=code_root,
-        openclaw_home=openclaw_home,
-        dry_run=args.dry_run,
-        restart_gateway=not args.no_restart,
-        sync_env_from_dotenv=not args.no_env_sync,
-        openclaw_bin=args.openclaw_bin,
-    )
+    if args.rollback:
+        report = run_openclaw_rollback(
+            code_root=code_root,
+            openclaw_home=openclaw_home,
+            dry_run=args.dry_run,
+            restart_gateway=not args.no_restart,
+            remove_config=args.remove_config,
+            openclaw_bin=args.openclaw_bin,
+        )
+        label = "Rollback"
+    else:
+        report = run_openclaw_deploy(
+            code_root=code_root,
+            openclaw_home=openclaw_home,
+            dry_run=args.dry_run,
+            restart_gateway=not args.no_restart,
+            sync_env_from_dotenv=not args.no_env_sync,
+            openclaw_bin=args.openclaw_bin,
+        )
+        label = "Deploy"
     if args.json:
         print(json.dumps(report.to_json_dict(), ensure_ascii=False, indent=2))
     else:
         for step in report.steps:
             print(f"[{step.status}] {step.id}: {step.message}")
         if not report.ok:
-            print("Deploy finished with errors.", file=sys.stderr)
+            print(f"{label} finished with errors.", file=sys.stderr)
     return 0 if report.ok else 1
 
 
@@ -2533,7 +2545,18 @@ def _build_parser() -> argparse.ArgumentParser:
 
     dep_oc = deploy_sub.add_parser(
         "openclaw",
-        help="Init Twinbox roots, merge openclaw.json, copy SKILL.md, restart gateway",
+        help="Init Twinbox roots, merge openclaw.json, copy SKILL.md, restart gateway "
+        "(or --rollback to undo that wiring only)",
+    )
+    dep_oc.add_argument(
+        "--rollback",
+        action="store_true",
+        help="Undo deploy openclaw: drop skills.entries.twinbox, remove ~/.openclaw/skills/twinbox/",
+    )
+    dep_oc.add_argument(
+        "--remove-config",
+        action="store_true",
+        help="With --rollback: also remove ~/.config/twinbox (code-root/state-root pointers)",
     )
     dep_oc.add_argument(
         "--repo-root",
