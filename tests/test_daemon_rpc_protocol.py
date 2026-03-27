@@ -62,11 +62,25 @@ def test_process_rpc_line_method_not_str() -> None:
 
 
 def test_process_rpc_line_params_not_object() -> None:
-    # Non-dict params must be rejected (list is treated as falsy and coerced to {} by JSON-RPC layer).
     raw = json.dumps({"jsonrpc": "2.0", "id": 3, "method": "ping", "params": "bad"}).encode()
     out = process_rpc_line(raw, lambda m, p: None)
     assert out is not None
     assert out["error"]["code"] == -32602
+
+
+def test_process_rpc_line_params_json_array_rejected() -> None:
+    """Non-object params (e.g. JSON array) must be rejected; empty [] is falsy and coerces to {}."""
+    raw = json.dumps({"jsonrpc": "2.0", "id": 31, "method": "ping", "params": [1, 2]}).encode()
+    out = process_rpc_line(raw, lambda m, p: None)
+    assert out is not None
+    assert out["error"]["code"] == -32602
+
+
+def test_process_rpc_line_missing_method() -> None:
+    raw = json.dumps({"jsonrpc": "2.0", "id": 32, "params": {}}).encode()
+    out = process_rpc_line(raw, lambda m, p: None)
+    assert out is not None
+    assert out["error"]["code"] == -32600
 
 
 def test_process_rpc_line_dispatch_ok() -> None:
@@ -99,3 +113,9 @@ def test_process_rpc_line_dispatch_exception() -> None:
 def test_build_jsonrpc_response_round_trip() -> None:
     r = build_jsonrpc_response(1, result={"a": 1})
     assert r["jsonrpc"] == "2.0" and r["result"] == {"a": 1}
+
+
+def test_build_jsonrpc_response_error_branch() -> None:
+    r = build_jsonrpc_response(2, error={"code": -1, "message": "x"})
+    assert r["jsonrpc"] == "2.0" and r["id"] == 2 and "result" not in r
+    assert r["error"] == {"code": -1, "message": "x"}

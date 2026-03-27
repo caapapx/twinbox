@@ -24,12 +24,12 @@ from twinbox_core.daemon.handlers import (
     set_daemon_state_root,
 )
 from twinbox_core.daemon.layout import ensure_daemon_dirs, log_path, pid_path, socket_path
-from twinbox_core.daemon.rpc_protocol import process_rpc_line
+from twinbox_core.daemon.rpc_protocol import DEFAULT_MAX_REQUEST_BYTES, process_rpc_line
 from twinbox_core.paths import resolve_daemon_state_root
 
 logger = logging.getLogger(__name__)
 
-MAX_REQUEST_BYTES = 256 * 1024
+MAX_REQUEST_BYTES = DEFAULT_MAX_REQUEST_BYTES
 SHUTDOWN_JOIN_SEC = 3.0
 
 _shutdown = threading.Event()
