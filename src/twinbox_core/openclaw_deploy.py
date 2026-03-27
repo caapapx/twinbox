@@ -180,6 +180,7 @@ def run_openclaw_deploy(
     dry_run: bool = False,
     restart_gateway: bool = True,
     sync_env_from_dotenv: bool = True,
+    strict: bool = False,
     openclaw_bin: str = "openclaw",
     run_subprocess: Callable[..., subprocess.CompletedProcess[str]] | None = None,
 ) -> OpenClawDeployReport:
@@ -292,6 +293,19 @@ def run_openclaw_deploy(
         for key in OPENCLAW_REQUIRED_MAIL_KEYS:
             if not (dotenv.get(key) or "").strip():
                 missing_required.append(key)
+
+    if strict and sync_env_from_dotenv and missing_required:
+        report.ok = False
+        report.steps.append(
+            DeployStepResult(
+                "merge_openclaw_json",
+                "failed",
+                "--strict: state root .env missing required keys for OpenClaw skill: "
+                + ", ".join(missing_required),
+                {"missing_required_env_in_dotenv": missing_required},
+            )
+        )
+        return report
 
     # --- merge openclaw.json ---
     json_path = och / "openclaw.json"

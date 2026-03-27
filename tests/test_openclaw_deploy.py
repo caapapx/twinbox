@@ -86,6 +86,24 @@ def test_load_openclaw_json_invalid_raises(tmp_path: Path) -> None:
         load_openclaw_json(p)
 
 
+def test_run_openclaw_deploy_strict_fails_when_mail_env_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    report = run_openclaw_deploy(
+        code_root=REPO_ROOT,
+        openclaw_home=tmp_path / ".openclaw",
+        dry_run=True,
+        restart_gateway=False,
+        sync_env_from_dotenv=True,
+        strict=True,
+    )
+    assert not report.ok
+    failed = [s for s in report.steps if s.id == "merge_openclaw_json" and s.status == "failed"]
+    assert failed
+    assert "IMAP_HOST" in failed[0].message
+
+
 def test_run_openclaw_deploy_dry_run_ok(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
     oc = tmp_path / ".openclaw"

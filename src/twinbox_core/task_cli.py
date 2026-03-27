@@ -1209,6 +1209,7 @@ def cmd_deploy_openclaw(args: argparse.Namespace) -> int:
             dry_run=args.dry_run,
             restart_gateway=not args.no_restart,
             sync_env_from_dotenv=not args.no_env_sync,
+            strict=args.strict,
             openclaw_bin=args.openclaw_bin,
         )
         label = "Deploy"
@@ -2582,6 +2583,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "--no-env-sync",
         action="store_true",
         help="Only set skills.entries.twinbox.enabled; do not copy mailbox keys from state .env",
+    )
+    dep_oc.add_argument(
+        "--strict",
+        action="store_true",
+        help="With env sync (default): fail if state .env lacks any OpenClaw-required mail key "
+        "(SKILL.md requires.env); skips writing openclaw.json / later steps",
     )
     dep_oc.add_argument(
         "--openclaw-bin",
