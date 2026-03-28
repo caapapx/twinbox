@@ -505,8 +505,8 @@ def test_run_openclaw_onboard_v2_requires_explicit_steps_even_with_existing_valu
         select_values=[
             "continue",
             "quickstart",
-            "use_current_mailbox",
-            "use_current_llm",
+            "use_existing",
+            "use_existing",
             "yes",
             "apply",
         ],
@@ -519,22 +519,22 @@ def test_run_openclaw_onboard_v2_requires_explicit_steps_even_with_existing_valu
     )
 
     assert report.ok is True
-    assert [event[1]["title"] for event in prompter.events if event[0] == "note"][:5] == [
-        "TwinBox setup",
-        "Security",
-        "Mailbox",
-        "LLM",
-        "Twinbox tools integration",
-    ]
-    llm_select = next(
-        event[1] for event in prompter.events if event[0] == "select" and event[1]["prompt"] == "Choose LLM setup"
+    note_titles = [event[1]["title"] for event in prompter.events if event[0] == "note"]
+    assert note_titles.count("Existing config detected") == 2
+    assert all(
+        title in note_titles
+        for title in ["TwinBox setup", "Security", "Mailbox", "LLM", "Twinbox tools integration", "Apply setup"]
     )
-    assert [option["label"] for option in llm_select["options"]] == [
-        "Use current value",
-        "Configure OpenAI",
-        "Configure Anthropic",
-        "Skip for now",
+    config_handling_selects = [
+        event[1] for event in prompter.events if event[0] == "select" and event[1]["prompt"] == "◆  Config handling"
     ]
+    assert len(config_handling_selects) == 2
+    assert [option["label"] for option in config_handling_selects[0]["options"]] == [
+        "Use existing values",
+        "Update values",
+        "Reset",
+    ]
+    assert not any(event[0] == "select" and event[1]["prompt"] == "Choose LLM setup" for event in prompter.events)
     apply_note = next(
         event[1] for event in prompter.events if event[0] == "note" and event[1]["title"] == "Apply setup"
     )
@@ -571,13 +571,14 @@ def test_run_openclaw_onboard_v2_collects_llm_inputs_before_validation_progress(
         select_values=[
             "continue",
             "quickstart",
-            "use_current_mailbox",
+            "use_existing",
+            "update",
             "openai",
             "yes",
             "apply",
         ],
         secret_values=[""],
-        text_values=["test-model", "https://example.com/v1/chat/completions"],
+        text_values=["https://example.com/v1/chat/completions", "test-model"],
     )
 
     report = run_openclaw_onboard_v2(
@@ -587,13 +588,27 @@ def test_run_openclaw_onboard_v2_collects_llm_inputs_before_validation_progress(
     )
 
     assert report.ok is True
-    api_key_index = next(index for index, event in enumerate(prompter.events) if event[0] == "secret")
-    model_index = next(index for index, event in enumerate(prompter.events) if event[0] == "text")
+    api_url_index = next(
+        index
+        for index, event in enumerate(prompter.events)
+        if event[0] == "text" and event[1]["prompt"] == "API URL"
+    )
+    api_key_index = next(
+        index
+        for index, event in enumerate(prompter.events)
+        if event[0] == "secret" and event[1]["prompt"] == "API key"
+    )
+    model_index = next(
+        index
+        for index, event in enumerate(prompter.events)
+        if event[0] == "text" and event[1]["prompt"] == "Model ID"
+    )
     progress_index = next(
         index
         for index, event in enumerate(prompter.events)
         if event[0] == "progress" and event[1] == "Validating LLM configuration"
     )
+    assert api_url_index < api_key_index
     assert api_key_index < progress_index
     assert model_index < progress_index
 
@@ -817,7 +832,7 @@ def test_run_openclaw_onboard_v2_allows_llm_skip_and_returns_incomplete_handoff(
         select_values=[
             "continue",
             "quickstart",
-            "use_current_mailbox",
+            "use_existing",
             "skip",
             "yes",
             "apply",
@@ -889,7 +904,7 @@ def test_run_openclaw_onboard_v2_hides_use_current_llm_when_only_api_key_exists(
         select_values=[
             "continue",
             "quickstart",
-            "use_current_mailbox",
+            "use_existing",
             "skip",
             "yes",
             "apply",
