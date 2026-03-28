@@ -163,9 +163,20 @@ def test_run_openclaw_onboard_skips_prompts_when_mailbox_and_llm_already_configu
 
 
 class _FakePrompter:
-    def __init__(self, *, flow: str = "quickstart", confirm_values: list[bool] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        flow: str = "quickstart",
+        select_values: list[str] | None = None,
+        confirm_values: list[bool] | None = None,
+        text_values: list[str] | None = None,
+        secret_values: list[str] | None = None,
+    ) -> None:
         self.flow = flow
+        self.select_values = list(select_values or [])
         self.confirm_values = list(confirm_values or [])
+        self.text_values = list(text_values or [])
+        self.secret_values = list(secret_values or [])
         self.events: list[tuple[str, object]] = []
 
     def intro(self, text: str) -> None:
@@ -177,8 +188,19 @@ class _FakePrompter:
     def note(self, title: str, body: str) -> None:
         self.events.append(("note", {"title": title, "body": body}))
 
-    def select(self, prompt: str, options: list[dict[str, str]], *, default: str | None = None) -> str:
-        self.events.append(("select", {"prompt": prompt, "options": options, "default": default}))
+    def select(
+        self,
+        prompt: str,
+        options: list[dict[str, str]],
+        *,
+        default: str | None = None,
+        layout: str = "vertical",
+    ) -> str:
+        self.events.append(
+            ("select", {"prompt": prompt, "options": options, "default": default, "layout": layout})
+        )
+        if self.select_values:
+            return self.select_values.pop(0)
         return self.flow
 
     def confirm(self, prompt: str, *, default: bool = True) -> bool:
@@ -186,6 +208,18 @@ class _FakePrompter:
         if self.confirm_values:
             return self.confirm_values.pop(0)
         return default
+
+    def text(self, prompt: str, *, default: str | None = None) -> str:
+        self.events.append(("text", {"prompt": prompt, "default": default}))
+        if self.text_values:
+            return self.text_values.pop(0)
+        return default or ""
+
+    def secret(self, prompt: str, *, allow_empty: bool = False) -> str:
+        self.events.append(("secret", {"prompt": prompt, "allow_empty": allow_empty}))
+        if self.secret_values:
+            return self.secret_values.pop(0)
+        return ""
 
     def progress(self, title: str):
         self.events.append(("progress", title))
@@ -232,33 +266,26 @@ def test_run_openclaw_onboard_v2_console_prompter_prints_english_shell(
     monkeypatch.setenv("TWINBOX_STATE_ROOT", str(state_root))
     monkeypatch.setenv("TWINBOX_CODE_ROOT", str(repo))
     monkeypatch.setattr("twinbox_core.openclaw_onboard.shutil.which", lambda _bin: "/usr/bin/openclaw")
-    answers = iter([""])
+    monkeypatch.setattr("twinbox_core.mailbox.run_preflight", _fake_run_preflight)
+    monkeypatch.setattr(
+        "twinbox_core.openclaw_onboard.run_openclaw_deploy",
+        lambda **_: OpenClawDeployReport(ok=True, steps=[]),
+    )
+    answers = iter(["", "", "", "3", "", ""])
     monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
-
-    def fake_run_openclaw_onboard(**kwargs: object):
-        report = run_openclaw_onboard(
-            code_root=repo,
-            openclaw_home=openclaw_home,
-            fragment_decision=kwargs.get("fragment_decision"),
-            input_fn=lambda _prompt="": (_ for _ in ()).throw(AssertionError("input should not be called")),
-            secret_input_fn=lambda _prompt="": (_ for _ in ()).throw(AssertionError("secret should not be called")),
-            deploy_runner=lambda **deploy_kwargs: OpenClawDeployReport(ok=True, steps=[]),
-        )
-        report.next_action = "Continue in the twinbox agent with profile setup."
-        return report
 
     _ = run_openclaw_onboard_v2(
         code_root=repo,
         openclaw_home=openclaw_home,
-        run_onboard=fake_run_openclaw_onboard,
     )
     out = capsys.readouterr().out
 
     assert "Twinbox OpenClaw onboarding" in out
     assert "Phase 1 of 2" in out
-    assert "1. Quickstart [Recommended]" in out
-    assert "2. Advanced" in out
-    assert "Running Twinbox host onboarding" in out
+    assert "Security" in out
+    assert "Choose onboarding flow" in out
+    assert "Mailbox" in out
+    assert "LLM" in out
     assert "Phase 2 of 2" in out
 
 
@@ -303,6 +330,28 @@ def test_console_journey_prompter_select_supports_arrow_navigation() -> None:
     assert "Use ↑/↓ to move" in out
     assert "Press Enter to confirm" in out
     assert "› Advanced" in out
+
+
+def test_console_journey_prompter_select_supports_horizontal_radio_layout() -> None:
+    stream = _TTYBuffer()
+    keys = iter(["RIGHT", "ENTER"])
+    prompter = ConsoleJourneyPrompter(stream=stream, key_reader=lambda: next(keys))
+
+    choice = prompter.select(
+        "Continue?",
+        options=[
+            {"value": "yes", "label": "Yes (Recommended)"},
+            {"value": "no", "label": "No"},
+        ],
+        default="yes",
+        layout="horizontal",
+    )
+
+    out = stream.getvalue()
+    assert choice == "no"
+    assert "Use ←/→ to move" in out
+    assert "○ Yes (Recommended)" in out or "● Yes (Recommended)" in out
+    assert "● No" in out
 
 
 def test_console_journey_prompter_note_wraps_to_terminal_width() -> None:
@@ -354,7 +403,7 @@ def test_console_journey_prompter_progress_renders_tty_spinner_frames() -> None:
     assert "OK: Host wiring verified and onboarding handoff prepared" in out
 
 
-def test_run_openclaw_onboard_v2_quickstart_defaults_fragment_and_handoffs(
+def test_run_openclaw_onboard_v2_requires_explicit_steps_even_with_existing_values(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -372,51 +421,70 @@ def test_run_openclaw_onboard_v2_quickstart_defaults_fragment_and_handoffs(
     monkeypatch.setenv("TWINBOX_STATE_ROOT", str(state_root))
     monkeypatch.setenv("TWINBOX_CODE_ROOT", str(repo))
     monkeypatch.setattr("twinbox_core.openclaw_onboard.shutil.which", lambda _bin: "/usr/bin/openclaw")
+    monkeypatch.setattr("twinbox_core.mailbox.run_preflight", _fake_run_preflight)
 
-    deploy_calls: list[dict[str, object]] = []
+    def fail_if_old_onboard_is_used(**_: object):
+        raise AssertionError("run_openclaw_onboard should not be used by V2 anymore")
 
-    def fake_run_openclaw_onboard(**kwargs: object):
-        deploy_calls.append(kwargs)
-        report = run_openclaw_onboard(
-            code_root=repo,
-            openclaw_home=openclaw_home,
-            fragment_decision=kwargs.get("fragment_decision"),
-            input_fn=lambda _prompt="": (_ for _ in ()).throw(AssertionError("input should not be called")),
-            secret_input_fn=lambda _prompt="": (_ for _ in ()).throw(AssertionError("secret should not be called")),
-            deploy_runner=lambda **deploy_kwargs: OpenClawDeployReport(ok=True, steps=[]),
-        )
-        report.next_action = "Continue in the twinbox agent with profile setup."
-        return report
+    monkeypatch.setattr(
+        "twinbox_core.openclaw_onboard.run_openclaw_deploy",
+        lambda **_: OpenClawDeployReport(ok=True, steps=[]),
+    )
 
-    prompter = _FakePrompter(flow="quickstart")
+    prompter = _FakePrompter(
+        select_values=[
+            "continue",
+            "quickstart",
+            "use_current_mailbox",
+            "openai",
+            "yes",
+            "apply",
+        ],
+        secret_values=[""],
+        text_values=["", ""],
+    )
     report = run_openclaw_onboard_v2(
         code_root=repo,
         openclaw_home=openclaw_home,
-        run_onboard=fake_run_openclaw_onboard,
+        run_onboard=fail_if_old_onboard_is_used,
         prompter=prompter,
     )
 
     assert report.ok is True
-    assert deploy_calls
-    assert deploy_calls[0]["fragment_decision"] is True
-    assert ("intro", "Twinbox OpenClaw onboarding") in prompter.events
-    assert any(
-        event[0] == "note" and event[1]["title"] == "Phase 1 of 2"
-        for event in prompter.events
-    )
-    assert any(
-        event[0] == "outro" and "twinbox agent" in str(event[1])
-        for event in prompter.events
-    )
+    assert [event[1]["title"] for event in prompter.events if event[0] == "note"][:5] == [
+        "Phase 1 of 2",
+        "Security",
+        "Mailbox",
+        "LLM",
+        "Twinbox tools integration",
+    ]
+    assert any(event[0] == "note" and event[1]["title"] == "Apply setup" for event in prompter.events)
+    assert any(event[0] == "outro" and "twinbox agent" in str(event[1]) for event in prompter.events)
 
 
-def test_run_openclaw_onboard_v2_advanced_can_decline_fragment(
+def test_run_openclaw_onboard_v2_allows_llm_skip_and_returns_incomplete_handoff(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     state_root = tmp_path / "state"
     state_root.mkdir()
-    _write_ready_env(state_root)
+    (state_root / ".env").write_text(
+        "\n".join(
+            [
+                "MAIL_ADDRESS=user@example.com",
+                "IMAP_HOST=imap.example.com",
+                "IMAP_PORT=993",
+                "IMAP_LOGIN=user@example.com",
+                "IMAP_PASS=secret-pass",
+                "SMTP_HOST=smtp.example.com",
+                "SMTP_PORT=465",
+                "SMTP_LOGIN=user@example.com",
+                "SMTP_PASS=secret-pass",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
@@ -428,31 +496,30 @@ def test_run_openclaw_onboard_v2_advanced_can_decline_fragment(
     monkeypatch.setenv("TWINBOX_STATE_ROOT", str(state_root))
     monkeypatch.setenv("TWINBOX_CODE_ROOT", str(repo))
     monkeypatch.setattr("twinbox_core.openclaw_onboard.shutil.which", lambda _bin: "/usr/bin/openclaw")
+    monkeypatch.setattr("twinbox_core.mailbox.run_preflight", _fake_run_preflight)
+    monkeypatch.setattr(
+        "twinbox_core.openclaw_onboard.run_openclaw_deploy",
+        lambda **_: OpenClawDeployReport(ok=True, steps=[]),
+    )
 
-    onboard_calls: list[dict[str, object]] = []
-
-    def fake_run_openclaw_onboard(**kwargs: object):
-        onboard_calls.append(kwargs)
-        return run_openclaw_onboard(
-            code_root=repo,
-            openclaw_home=openclaw_home,
-            fragment_decision=kwargs.get("fragment_decision"),
-            input_fn=lambda _prompt="": (_ for _ in ()).throw(AssertionError("input should not be called")),
-            secret_input_fn=lambda _prompt="": (_ for _ in ()).throw(AssertionError("secret should not be called")),
-            deploy_runner=lambda **deploy_kwargs: OpenClawDeployReport(ok=True, steps=[]),
-        )
-
-    prompter = _FakePrompter(flow="advanced", confirm_values=[False])
+    prompter = _FakePrompter(
+        select_values=[
+            "continue",
+            "quickstart",
+            "use_current_mailbox",
+            "skip",
+            "yes",
+            "apply",
+        ]
+    )
     report = run_openclaw_onboard_v2(
         code_root=repo,
         openclaw_home=openclaw_home,
-        run_onboard=fake_run_openclaw_onboard,
+        run_onboard=lambda **_: (_ for _ in ()).throw(AssertionError("old onboard should not be used")),
         prompter=prompter,
     )
 
-    assert report.ok is True
-    assert onboard_calls[0]["fragment_decision"] is False
-    assert any(
-        event[0] == "note" and event[1]["title"] == "Advanced mode"
-        for event in prompter.events
-    )
+    assert report.ok is False
+    assert report.onboarding["current_stage"] == "llm_setup"
+    assert "llm" in report.error.lower()
+    assert "next guided conversation stage is llm_setup" in report.next_action.lower()
