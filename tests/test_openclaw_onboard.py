@@ -334,9 +334,9 @@ def test_console_journey_prompter_select_supports_arrow_navigation() -> None:
     assert choice == "manual"
     assert "Use ↑/↓ to move" in out
     assert "Press Enter to confirm" in out
-    assert "› Manual" in out
+    assert "› Manual (Configure port, network, Tailscale, and auth options.)" in out
     assert "[Recommended]" not in out
-    assert "(Configure port, network, Tailscale, and auth options.)" in out
+    assert "\n  (Configure port, network, Tailscale, and auth options.)" not in out
 
 
 def test_console_journey_prompter_select_supports_horizontal_radio_layout() -> None:
@@ -347,8 +347,8 @@ def test_console_journey_prompter_select_supports_horizontal_radio_layout() -> N
     choice = prompter.select(
         "Continue?",
         options=[
-            {"value": "yes", "label": "Yes"},
-            {"value": "no", "label": "No"},
+            {"value": "yes", "label": "Yes", "selected_glyph": "●", "unselected_glyph": "○"},
+            {"value": "no", "label": "No", "selected_glyph": "●", "unselected_glyph": "○"},
         ],
         default="yes",
         layout="horizontal",
@@ -357,7 +357,7 @@ def test_console_journey_prompter_select_supports_horizontal_radio_layout() -> N
     out = stream.getvalue()
     assert choice == "no"
     assert "Use ←/→ to move" in out
-    assert "○ Yes" in out or "● Yes" in out
+    assert "○ Yes" in out
     assert "● No" in out
 
 
