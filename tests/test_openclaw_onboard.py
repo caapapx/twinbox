@@ -369,6 +369,37 @@ def test_console_journey_prompter_select_supports_horizontal_radio_layout() -> N
     assert "● No" in out
 
 
+def test_console_journey_prompter_vertical_select_clears_previous_taller_frame() -> None:
+    """Redraw uses the *previous* frame height so shorter options do not leave orphan lines."""
+    stream = _TTYBuffer()
+    keys = iter(["DOWN", "UP", "ENTER"])
+    prompter = ConsoleJourneyPrompter(stream=stream, key_reader=lambda: next(keys), width=36)
+
+    choice = prompter.select(
+        "Step",
+        [
+            {
+                "value": "tall",
+                "label": "Option A very long label",
+                "description": "Long description that wraps on a narrow terminal width.",
+            },
+            {"value": "short", "label": "B", "description": "x"},
+        ],
+        default="tall",
+    )
+    assert choice == "tall"
+
+
+def test_console_journey_prompter_enter_clears_menu_before_next_select() -> None:
+    stream = _TTYBuffer()
+    keys = iter(["ENTER", "ENTER"])
+    prompter = ConsoleJourneyPrompter(stream=stream, key_reader=lambda: next(keys), width=48)
+    assert prompter.select("Menu one", [{"value": "a", "label": "A", "description": "z" * 80}], default="a") == "a"
+    assert prompter.select("Menu two", [{"value": "b", "label": "B"}], default="b") == "b"
+    plain = _strip_ansi(stream.getvalue())
+    assert plain.count("Menu two") == 1
+
+
 def test_console_journey_prompter_note_draws_closed_box_with_rail_glyphs() -> None:
     stream = io.StringIO()
     prompter = ConsoleJourneyPrompter(stream=stream, width=64)
