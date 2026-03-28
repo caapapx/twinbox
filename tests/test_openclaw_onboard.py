@@ -276,7 +276,7 @@ def test_run_openclaw_onboard_v2_console_prompter_prints_english_shell(
         "twinbox_core.openclaw_onboard.run_openclaw_deploy",
         lambda **_: OpenClawDeployReport(ok=True, steps=[]),
     )
-    answers = iter(["", "", "", "3", "", ""])
+    answers = iter(["", "", "", "1", "", ""])
     monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
 
     _ = run_openclaw_onboard_v2(
@@ -495,6 +495,19 @@ def test_run_openclaw_onboard_v2_requires_explicit_steps_even_with_existing_valu
         "LLM",
         "Twinbox tools integration",
     ]
+    llm_select = next(
+        event[1] for event in prompter.events if event[0] == "select" and event[1]["prompt"] == "Choose LLM setup"
+    )
+    assert [option["label"] for option in llm_select["options"]] == [
+        "Use current value",
+        "Configure OpenAI",
+        "Configure Anthropic",
+        "Skip for now",
+    ]
+    apply_note = next(
+        event[1] for event in prompter.events if event[0] == "note" and event[1]["title"] == "Apply setup"
+    )
+    assert "LLM: kimi-k2.5" in apply_note["body"]
     assert any(event[0] == "note" and event[1]["title"] == "Apply setup" for event in prompter.events)
     assert any(event[0] == "outro" and "twinbox agent" in str(event[1]) for event in prompter.events)
 
@@ -557,6 +570,14 @@ def test_run_openclaw_onboard_v2_allows_llm_skip_and_returns_incomplete_handoff(
     )
 
     assert report.ok is False
+    llm_select = next(
+        event[1] for event in prompter.events if event[0] == "select" and event[1]["prompt"] == "Choose LLM setup"
+    )
+    assert [option["label"] for option in llm_select["options"]] == [
+        "Configure OpenAI",
+        "Configure Anthropic",
+        "Skip for now",
+    ]
     assert report.onboarding["current_stage"] == "llm_setup"
     assert "llm" in report.error.lower()
     assert "next guided conversation stage is llm_setup" in report.next_action.lower()
