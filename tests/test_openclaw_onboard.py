@@ -725,9 +725,6 @@ def test_run_openclaw_onboard_v2_requires_explicit_steps_even_with_existing_valu
     monkeypatch.setattr("twinbox_core.openclaw_onboard.shutil.which", lambda _bin: "/usr/bin/openclaw")
     monkeypatch.setattr("twinbox_core.mailbox.run_preflight", _fake_run_preflight)
 
-    def fail_if_old_onboard_is_used(**_: object):
-        raise AssertionError("run_openclaw_onboard should not be used by V2 anymore")
-
     monkeypatch.setattr(
         "twinbox_core.openclaw_onboard.run_openclaw_deploy",
         lambda **_: OpenClawDeployReport(ok=True, steps=[]),
@@ -746,7 +743,6 @@ def test_run_openclaw_onboard_v2_requires_explicit_steps_even_with_existing_valu
     report = run_openclaw_onboard_v2(
         code_root=repo,
         openclaw_home=openclaw_home,
-        run_onboard=fail_if_old_onboard_is_used,
         prompter=prompter,
     )
 
@@ -1264,7 +1260,6 @@ def test_run_openclaw_onboard_v2_allows_llm_skip_and_returns_incomplete_handoff(
     report = run_openclaw_onboard_v2(
         code_root=repo,
         openclaw_home=openclaw_home,
-        run_onboard=lambda **_: (_ for _ in ()).throw(AssertionError("old onboard should not be used")),
         prompter=prompter,
     )
 
@@ -1275,6 +1270,7 @@ def test_run_openclaw_onboard_v2_allows_llm_skip_and_returns_incomplete_handoff(
     assert [option["label"] for option in llm_select["options"]] == [
         "Configure OpenAI",
         "Configure Anthropic",
+        "Import from OpenClaw",
         "Skip for now",
     ]
     assert report.onboarding["current_stage"] == "llm_setup"
@@ -1345,9 +1341,147 @@ def test_run_openclaw_onboard_v2_hides_use_current_llm_when_only_api_key_exists(
     assert [option["label"] for option in llm_select["options"]] == [
         "Configure OpenAI",
         "Configure Anthropic",
+        "Import from OpenClaw",
         "Skip for now",
     ]
     assert report.ok is False
+
+
+def test_run_openclaw_onboard_journey_imports_llm_from_openclaw_json(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    _write_mailbox_only_env(state_root)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
+    (repo / "openclaw-skill").mkdir()
+    (repo / "openclaw-skill" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    openclaw_home = tmp_path / ".openclaw"
+    openclaw_home.mkdir()
+    (openclaw_home / "openclaw.json").write_text(
+        json.dumps(
+            {
+                "agents": {"defaults": {"model": "ocprov/ocmodel"}},
+                "models": {
+                    "providers": {
+                        "ocprov": {
+                            "baseUrl": "https://api.example.com/v1",
+                            "apiKey": "oc-secret",
+                            "api": "openai-completions",
+                            "models": [{"id": "ocmodel"}],
+                        }
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("TWINBOX_STATE_ROOT", str(state_root))
+    monkeypatch.setenv("TWINBOX_CODE_ROOT", str(repo))
+    monkeypatch.setattr("twinbox_core.openclaw_onboard.shutil.which", lambda _bin: "/usr/bin/openclaw")
+    monkeypatch.setattr("twinbox_core.mailbox.run_preflight", _fake_run_preflight)
+    monkeypatch.setattr(
+        "twinbox_core.openclaw_onboard.run_openclaw_deploy",
+        lambda **_: OpenClawDeployReport(ok=True, steps=[]),
+    )
+
+    calls: list[dict[str, object]] = []
+
+    def capture_llm_runner(**kwargs: object) -> tuple[bool, dict[str, object], dict[str, str]]:
+        calls.append(kwargs)
+        dot = dict(kwargs["dotenv"])  # type: ignore[arg-type]
+        dot["LLM_API_KEY"] = str(kwargs["api_key"])
+        dot["LLM_MODEL"] = str(kwargs["model"])
+        dot["LLM_API_URL"] = str(kwargs["api_url"])
+        return (
+            True,
+            {
+                "prompted": True,
+                "configured": True,
+                "backend": str(kwargs["provider"]),
+                "model": str(kwargs["model"]),
+                "url": str(kwargs["api_url"]),
+            },
+            dot,
+        )
+
+    prompter = _FakePrompter(
+        select_values=[
+            "continue",
+            "quickstart",
+            "use_existing",
+            "openclaw",
+            "yes",
+            "apply",
+        ],
+    )
+    report = run_openclaw_onboard_v2(
+        code_root=repo,
+        openclaw_home=openclaw_home,
+        prompter=prompter,
+        llm_update_runner=capture_llm_runner,
+    )
+
+    assert report.ok is True
+    assert len(calls) == 1
+    assert calls[0]["provider"] == "openai"
+    assert calls[0]["api_key"] == "oc-secret"
+    assert calls[0]["model"] == "ocmodel"
+    assert calls[0]["api_url"] == "https://api.example.com/v1"
+    assert report.llm.get("openclaw_model_ref") == "ocprov/ocmodel"
+    assert str(openclaw_home / "openclaw.json") in str(report.llm.get("openclaw_json", ""))
+
+
+def test_run_openclaw_onboard_journey_openclaw_import_error_returns_to_llm_menu(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    _write_mailbox_only_env(state_root)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
+    (repo / "openclaw-skill").mkdir()
+    (repo / "openclaw-skill" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    openclaw_home = tmp_path / ".openclaw"
+    openclaw_home.mkdir()
+
+    monkeypatch.setenv("TWINBOX_STATE_ROOT", str(state_root))
+    monkeypatch.setenv("TWINBOX_CODE_ROOT", str(repo))
+    monkeypatch.setattr("twinbox_core.openclaw_onboard.shutil.which", lambda _bin: "/usr/bin/openclaw")
+    monkeypatch.setattr("twinbox_core.mailbox.run_preflight", _fake_run_preflight)
+    monkeypatch.setattr(
+        "twinbox_core.openclaw_onboard.run_openclaw_deploy",
+        lambda **_: OpenClawDeployReport(ok=True, steps=[]),
+    )
+
+    prompter = _FakePrompter(
+        select_values=[
+            "continue",
+            "quickstart",
+            "use_existing",
+            "openclaw",
+            "skip",
+            "yes",
+            "apply",
+        ],
+    )
+    report = run_openclaw_onboard_v2(
+        code_root=repo,
+        openclaw_home=openclaw_home,
+        prompter=prompter,
+    )
+
+    assert report.ok is False
+    llm_prompts = [e for e in prompter.events if e[0] == "select" and e[1]["prompt"] == "Choose LLM setup"]
+    assert len(llm_prompts) == 2
+    recovery = [e for e in prompter.events if e[0] == "note" and e[1]["title"] == "Recovery"]
+    assert recovery and "openclaw.json" in recovery[0][1]["body"].lower()
 
 
 def test_run_openclaw_onboard_v2_validates_existing_llm_before_continue(
