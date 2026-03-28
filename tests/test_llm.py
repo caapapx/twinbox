@@ -39,12 +39,21 @@ class TestResolveBackend:
             env={
                 "LLM_API_KEY": "k",
                 "LLM_MODEL": "m",
+                "LLM_API_URL": "https://example.com/v1/chat/completions",
                 "LLM_TIMEOUT": "10",
                 "LLM_RETRIES": "2",
             }
         )
         assert isinstance(backend.timeout, int)
         assert isinstance(backend.retries, int)
+
+    def test_openai_requires_explicit_model_and_url(self):
+        with pytest.raises(RuntimeError):
+            resolve_backend(
+                env={
+                    "LLM_API_KEY": "k",
+                }
+            )
 
 
 class TestCleanJsonText:

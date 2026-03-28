@@ -16,12 +16,6 @@ from pathlib import Path
 from .env_writer import load_env_file as _load_env_file
 
 
-DEFAULT_OPENAI_URL = "https://coding.dashscope.aliyuncs.com/v1/chat/completions"
-DEFAULT_OPENAI_MODEL = "kimi-k2.5"
-DEFAULT_ANTHROPIC_BASE_URL = "https://api.anthropic.com"
-DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-20250514"
-
-
 class LLMError(RuntimeError):
     """Raised when twinbox cannot resolve or call an LLM backend."""
 
@@ -72,20 +66,31 @@ def resolve_backend(
     retries = _int_value(resolved_env.get("LLM_RETRIES"), 2)
 
     if resolved_env.get("LLM_API_KEY"):
+        model = resolved_env.get("LLM_MODEL", "").strip()
+        url = resolved_env.get("LLM_API_URL", "").strip()
+        if not model or not url:
+            raise LLMError(
+                "Incomplete OpenAI-compatible configuration. Set LLM_API_KEY, LLM_MODEL, and LLM_API_URL."
+            )
         return BackendConfig(
             backend="openai",
-            model=resolved_env.get("LLM_MODEL", DEFAULT_OPENAI_MODEL),
-            url=resolved_env.get("LLM_API_URL", DEFAULT_OPENAI_URL),
+            model=model,
+            url=url,
             api_key=resolved_env["LLM_API_KEY"],
             timeout=timeout,
             retries=retries,
         )
 
     if resolved_env.get("ANTHROPIC_API_KEY"):
-        base_url = resolved_env.get("ANTHROPIC_BASE_URL", DEFAULT_ANTHROPIC_BASE_URL)
+        model = resolved_env.get("ANTHROPIC_MODEL", "").strip()
+        base_url = resolved_env.get("ANTHROPIC_BASE_URL", "").strip()
+        if not model or not base_url:
+            raise LLMError(
+                "Incomplete Anthropic configuration. Set ANTHROPIC_API_KEY, ANTHROPIC_MODEL, and ANTHROPIC_BASE_URL."
+            )
         return BackendConfig(
             backend="anthropic",
-            model=resolved_env.get("ANTHROPIC_MODEL", DEFAULT_ANTHROPIC_MODEL),
+            model=model,
             url=f"{base_url.rstrip('/')}/v1/messages",
             api_key=resolved_env["ANTHROPIC_API_KEY"],
             timeout=timeout,
@@ -94,10 +99,8 @@ def resolve_backend(
 
     raise LLMError(
         "No LLM backend configured. "
-        "OpenAI-compatible (HTTP chat/completions + Bearer): set LLM_API_KEY; "
-        "optional LLM_API_URL, LLM_MODEL. "
-        "Anthropic native (/v1/messages + x-api-key): set ANTHROPIC_API_KEY; "
-        "optional ANTHROPIC_MODEL, ANTHROPIC_BASE_URL."
+        "OpenAI-compatible (HTTP chat/completions + Bearer): set LLM_API_KEY, LLM_MODEL, and LLM_API_URL. "
+        "Anthropic native (/v1/messages + x-api-key): set ANTHROPIC_API_KEY, ANTHROPIC_MODEL, and ANTHROPIC_BASE_URL."
     )
 
 

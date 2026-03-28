@@ -1155,19 +1155,37 @@ def cmd_config_set_llm(args: argparse.Namespace) -> int:
     state_root = _state_root()
     env_file = state_root / ".env"
 
+    if not args.model.strip():
+        if args.json:
+            print(json.dumps({
+                "status": "fail",
+                "error_code": "missing_model",
+                "actionable_hint": "Pass --model explicitly. Twinbox no longer uses a built-in default model.",
+            }, ensure_ascii=False, indent=2))
+        else:
+            print("错误: 必须显式传入 --model；Twinbox 不再内置默认模型", file=sys.stderr)
+        return 2
+
+    if not args.api_url.strip():
+        if args.json:
+            print(json.dumps({
+                "status": "fail",
+                "error_code": "missing_api_url",
+                "actionable_hint": "Pass --api-url explicitly. Twinbox no longer uses a built-in default API URL.",
+            }, ensure_ascii=False, indent=2))
+        else:
+            print("错误: 必须显式传入 --api-url；Twinbox 不再内置默认 API URL", file=sys.stderr)
+        return 2
+
     updates: dict[str, str] = {}
     if args.provider == "anthropic":
         updates["ANTHROPIC_API_KEY"] = api_key
-        if args.model:
-            updates["ANTHROPIC_MODEL"] = args.model
-        if args.api_url:
-            updates["ANTHROPIC_BASE_URL"] = args.api_url
+        updates["ANTHROPIC_MODEL"] = args.model
+        updates["ANTHROPIC_BASE_URL"] = args.api_url
     else:  # openai (default)
         updates["LLM_API_KEY"] = api_key
-        if args.model:
-            updates["LLM_MODEL"] = args.model
-        if args.api_url:
-            updates["LLM_API_URL"] = args.api_url
+        updates["LLM_MODEL"] = args.model
+        updates["LLM_API_URL"] = args.api_url
 
     merged = merge_env_file(env_file, updates)
     write_env_file(env_file, merged)

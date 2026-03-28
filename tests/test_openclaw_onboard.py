@@ -53,6 +53,8 @@ def _write_ready_env(state_root: Path) -> None:
                 "SMTP_LOGIN=user@example.com",
                 "SMTP_PASS=secret-pass",
                 "LLM_API_KEY=sk-test",
+                "LLM_MODEL=test-model",
+                "LLM_API_URL=https://example.com/v1/chat/completions",
             ]
         )
         + "\n",
@@ -78,7 +80,7 @@ def test_run_openclaw_onboard_configures_missing_mailbox_and_llm_then_deploys(
     monkeypatch.setattr("twinbox_core.mailbox_detect.detect_to_env", _fake_detect_to_env)
     monkeypatch.setattr("twinbox_core.mailbox.run_preflight", _fake_run_preflight)
 
-    answers = iter(["user@example.com", "openai"])
+    answers = iter(["user@example.com", "openai", "test-model", "https://example.com/v1/chat/completions"])
     monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
     monkeypatch.setattr("getpass.getpass", lambda _prompt="": "secret-value")
 
@@ -99,6 +101,7 @@ def test_run_openclaw_onboard_configures_missing_mailbox_and_llm_then_deploys(
     assert report.mailbox["status"] == "ok"
     assert report.llm["prompted"] is True
     assert report.llm["backend"] == "openai"
+    assert report.llm["model"] == "test-model"
     assert deploy_calls and deploy_calls[0]["strict"] is True
     assert deploy_calls[0]["sync_env_from_dotenv"] is True
 
@@ -127,6 +130,8 @@ def test_run_openclaw_onboard_skips_prompts_when_mailbox_and_llm_already_configu
                 "SMTP_LOGIN=user@example.com",
                 "SMTP_PASS=secret-pass",
                 "LLM_API_KEY=sk-test",
+                "LLM_MODEL=test-model",
+                "LLM_API_URL=https://example.com/v1/chat/completions",
             ]
         )
         + "\n",
@@ -362,6 +367,31 @@ def test_console_journey_prompter_select_supports_horizontal_radio_layout() -> N
     assert "● No" in out
 
 
+def test_console_journey_prompter_note_draws_closed_box_with_rail_glyphs() -> None:
+    stream = io.StringIO()
+    prompter = ConsoleJourneyPrompter(stream=stream, width=64)
+
+    prompter.note("Security", "First line.\n\nSecond paragraph.", complete=False)
+    out = stream.getvalue()
+    assert "┌" in out and "┐" in out and "└" in out and "┘" in out
+    assert "◆" in out
+    assert "Security" in out
+    assert "First line." in out
+
+    stream2 = io.StringIO()
+    prompter2 = ConsoleJourneyPrompter(stream=stream2, width=64)
+    prompter2.note("Mailbox", "Configured.", complete=True)
+    assert "◇" in stream2.getvalue()
+
+    stream3 = io.StringIO()
+    prompter3 = ConsoleJourneyPrompter(stream=stream3, width=64)
+    prompter3.note("Intro", "No rail glyph.", complete=None)
+    out3 = stream3.getvalue()
+    assert "┌" in out3
+    assert "◆" not in out3 and "◇" not in out3
+    assert "Intro" in out3
+
+
 def test_console_journey_prompter_ctrl_c_in_select_raises_keyboard_interrupt() -> None:
     stream = _TTYBuffer()
     keys = iter(["\x03"])
@@ -474,12 +504,10 @@ def test_run_openclaw_onboard_v2_requires_explicit_steps_even_with_existing_valu
             "continue",
             "quickstart",
             "use_current_mailbox",
-            "openai",
+            "use_current_llm",
             "yes",
             "apply",
         ],
-        secret_values=[""],
-        text_values=["", ""],
     )
     report = run_openclaw_onboard_v2(
         code_root=repo,
@@ -508,7 +536,7 @@ def test_run_openclaw_onboard_v2_requires_explicit_steps_even_with_existing_valu
     apply_note = next(
         event[1] for event in prompter.events if event[0] == "note" and event[1]["title"] == "Apply setup"
     )
-    assert "LLM: kimi-k2.5" in apply_note["body"]
+    assert "LLM: test-model" in apply_note["body"]
     assert any(event[0] == "note" and event[1]["title"] == "Apply setup" for event in prompter.events)
     assert any(event[0] == "outro" and "twinbox agent" in str(event[1]) for event in prompter.events)
 
@@ -547,7 +575,7 @@ def test_run_openclaw_onboard_v2_collects_llm_inputs_before_validation_progress(
             "apply",
         ],
         secret_values=[""],
-        text_values=["", ""],
+        text_values=["test-model", "https://example.com/v1/chat/completions"],
     )
 
     report = run_openclaw_onboard_v2(
@@ -637,6 +665,74 @@ def test_run_openclaw_onboard_v2_allows_llm_skip_and_returns_incomplete_handoff(
     assert report.onboarding["current_stage"] == "llm_setup"
     assert "llm" in report.error.lower()
     assert "next guided conversation stage is llm_setup" in report.next_action.lower()
+
+
+def test_run_openclaw_onboard_v2_hides_use_current_llm_when_only_api_key_exists(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    (state_root / ".env").write_text(
+        "\n".join(
+            [
+                "MAIL_ADDRESS=user@example.com",
+                "IMAP_HOST=imap.example.com",
+                "IMAP_PORT=993",
+                "IMAP_LOGIN=user@example.com",
+                "IMAP_PASS=secret-pass",
+                "SMTP_HOST=smtp.example.com",
+                "SMTP_PORT=465",
+                "SMTP_LOGIN=user@example.com",
+                "SMTP_PASS=secret-pass",
+                "LLM_API_KEY=sk-test",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
+    (repo / "openclaw-skill").mkdir()
+    (repo / "openclaw-skill" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    openclaw_home = tmp_path / ".openclaw"
+    openclaw_home.mkdir()
+
+    monkeypatch.setenv("TWINBOX_STATE_ROOT", str(state_root))
+    monkeypatch.setenv("TWINBOX_CODE_ROOT", str(repo))
+    monkeypatch.setattr("twinbox_core.openclaw_onboard.shutil.which", lambda _bin: "/usr/bin/openclaw")
+    monkeypatch.setattr("twinbox_core.mailbox.run_preflight", _fake_run_preflight)
+    monkeypatch.setattr(
+        "twinbox_core.openclaw_onboard.run_openclaw_deploy",
+        lambda **_: OpenClawDeployReport(ok=True, steps=[]),
+    )
+
+    prompter = _FakePrompter(
+        select_values=[
+            "continue",
+            "quickstart",
+            "use_current_mailbox",
+            "skip",
+            "yes",
+            "apply",
+        ]
+    )
+    report = run_openclaw_onboard_v2(
+        code_root=repo,
+        openclaw_home=openclaw_home,
+        prompter=prompter,
+    )
+
+    llm_select = next(
+        event[1] for event in prompter.events if event[0] == "select" and event[1]["prompt"] == "Choose LLM setup"
+    )
+    assert [option["label"] for option in llm_select["options"]] == [
+        "Configure OpenAI",
+        "Configure Anthropic",
+        "Skip for now",
+    ]
+    assert report.ok is False
 
 
 def test_run_openclaw_onboard_v2_ctrl_c_returns_cancelled_report(
