@@ -497,18 +497,17 @@ def test_console_journey_prompter_journey_rail_prefixes_connected_boxes() -> Non
     prompter.note("Step one", "Body A.", complete=False)
     prompter.note("Step two", "Body B.", complete=True)
     plain = _strip_ansi(stream.getvalue())
-    lines = [ln for ln in plain.splitlines() if ln.strip()]
-    assert lines[0] == "│"
-    assert plain.count("├") == 0
-    tops = [ln for ln in plain.splitlines() if ln.endswith("┐") and not ln.startswith("│")]
+    lines = plain.splitlines()
+    assert lines
+    assert "" not in lines
+    assert all(ln.startswith("│") for ln in lines)
+    tops = [ln for ln in lines if ln.endswith("┐")]
     assert len(tops) == 2
-    assert tops[0].startswith("◇")
+    assert tops[0].startswith("│  ◇")
     assert "Step one" in tops[0]
-    assert tops[1].startswith("◆")
+    assert tops[1].startswith("│  ◆")
     assert "Step two" in tops[1]
-    assert "└" in plain and "┘" in plain
-    assert "◇" in plain
-    assert "◆" in plain
+    assert any(ln.startswith("│  └") for ln in lines)
 
 
 def test_console_journey_prompter_ctrl_c_in_select_raises_keyboard_interrupt() -> None:
@@ -999,6 +998,75 @@ def test_run_openclaw_onboard_v2_times_out_llm_validation(
     assert report.ok is False
     assert "timed out" in report.error.lower()
     assert ("progress.fail", "LLM validation timed out") in prompter.events
+
+
+def test_run_openclaw_onboard_v2_stops_when_llm_validation_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """401 or other validation errors must not fall through to integration / deploy."""
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    _write_ready_env(state_root)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
+    (repo / "openclaw-skill").mkdir()
+    (repo / "openclaw-skill" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    openclaw_home = tmp_path / ".openclaw"
+    openclaw_home.mkdir()
+
+    monkeypatch.setenv("TWINBOX_STATE_ROOT", str(state_root))
+    monkeypatch.setenv("TWINBOX_CODE_ROOT", str(repo))
+    monkeypatch.setattr("twinbox_core.openclaw_onboard.shutil.which", lambda _bin: "/usr/bin/openclaw")
+    monkeypatch.setattr("twinbox_core.mailbox.run_preflight", _fake_run_preflight)
+    monkeypatch.setattr(
+        "twinbox_core.openclaw_onboard.run_openclaw_deploy",
+        lambda **_: OpenClawDeployReport(ok=True, steps=[]),
+    )
+
+    def failing_llm_update_runner(**kwargs):
+        return (
+            False,
+            {
+                "prompted": True,
+                "configured": False,
+                "backend": "openai",
+                "model": kwargs.get("model", ""),
+                "url": kwargs.get("api_url", ""),
+                "error": "HTTP Error 401: Unauthorized",
+            },
+            dict(kwargs["dotenv"]),
+        )
+
+    prompter = _FakePrompter(
+        select_values=[
+            "continue",
+            "quickstart",
+            "use_existing",
+            "update",
+            "openai",
+            "yes",
+            "apply",
+        ],
+        secret_values=["bad-key"],
+        text_values=["https://example.com/v1/chat/completions", "test-model"],
+    )
+
+    report = run_openclaw_onboard_v2(
+        code_root=repo,
+        openclaw_home=openclaw_home,
+        prompter=prompter,
+        llm_update_runner=failing_llm_update_runner,
+    )
+
+    assert report.ok is False
+    assert "401" in (report.error or "") or "Unauthorized" in (report.error or "")
+    assert not any(
+        event[0] == "select" and "Twinbox tools integration" in event[1].get("prompt", "")
+        for event in prompter.events
+    )
+    assert any(event[0] == "note" and event[1]["title"] == "Recovery" for event in prompter.events)
 
 
 def test_run_openclaw_onboard_v2_times_out_mailbox_validation(
