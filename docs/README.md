@@ -14,7 +14,7 @@
 ## Layout
 
 - **文档与代码不一致时**：以大范围重构分支上的 **实现与单测** 为准；先看 [daemon-and-runtime-slice.md](./ref/daemon-and-runtime-slice.md)（daemon / Go 薄壳 / 模组化模拟邮箱等**当前事实**），再读归档计划类文档。
-- **本地开发 vs OpenClaw 宿主**：前者默认仓库内 `.env` + `runtime/`；后者默认 `~/.twinbox` + `~/.config/twinbox` + OpenClaw 配置 — 对照见仓库根 [README.md](../README.md)（**Choose your setup path**）/ [README.zh.md](../README.zh.md)（**选择安装路径**）。宿主操作主路径：[`openclaw-skill/DEPLOY.md`](../openclaw-skill/DEPLOY.md)。
+- **本地开发 vs OpenClaw 宿主**：前者默认仓库根 `twinbox.json` + `runtime/`；后者默认 `~/.twinbox` + `~/.config/twinbox` + OpenClaw 配置 — 对照见仓库根 [README.md](../README.md)（**Choose your setup path**）/ [README.zh.md](../README.zh.md)（**选择安装路径**）。宿主操作主路径：[`openclaw-skill/DEPLOY.md`](../openclaw-skill/DEPLOY.md)。
 - [`ref/`](./ref/architecture.md): 架构、契约、CLI、运行时参考
 - [`guide/`](./guide/): 操作与集成指南
 - [`../openclaw-skill/`](../openclaw-skill/README.md): OpenClaw 托管 skill、部署与宿主桥接（仓库根目录）；正式部署步骤见 [`../openclaw-skill/DEPLOY.md`](../openclaw-skill/DEPLOY.md)；排障见 [`../openclaw-skill/TROUBLESHOOT.md`](../openclaw-skill/TROUBLESHOOT.md)；附录见 [`../openclaw-skill/DEPLOY-APPENDIX.md`](../openclaw-skill/DEPLOY-APPENDIX.md)

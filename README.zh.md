@@ -17,9 +17,11 @@
 git clone https://github.com/caapapx/twinbox.git && cd twinbox
 pip install -e .
 
-# 2. 配置（复制并编辑）
-cp .env.example .env
-# 设置：MAIL_ADDRESS, IMAP_HOST, IMAP_LOGIN, IMAP_PASS 等
+# 2. 配置邮箱 + LLM（写入 twinbox.json）
+TWINBOX_SETUP_IMAP_PASS=your-app-password \
+  twinbox mailbox setup --email you@example.com --json
+TWINBOX_SETUP_API_KEY=your-api-key \
+  twinbox config set-llm --provider openai --model MODEL --api-url URL --json
 
 # 3. 验证连接
 twinbox mailbox preflight --json
@@ -41,7 +43,7 @@ twinbox task todo --json
 
 | 路径 | 状态与配置落点 | 从这里开始 |
 |------|----------------|------------|
-| **本地 / 开发**（上文 TL;DR） | 仓库内 `.env`；产物在仓库 **`runtime/validation/`** | 本文 → [快速开始](#快速开始) |
+| **本地 / 开发**（上文 TL;DR） | 仓库根的 `twinbox.json`；产物在仓库 **`runtime/validation/`** | 本文 → [快速开始](#快速开始) |
 | **OpenClaw 宿主** | 邮件与流水线数据在 **`~/.twinbox`**；roots 在 **`~/.config/twinbox/`**；OpenClaw 读 **`~/.openclaw/openclaw.json`** | **[openclaw-skill/DEPLOY.md](openclaw-skill/DEPLOY.md)**（可选用 `twinbox deploy openclaw`）。设计说明：[docs/ref/openclaw-deploy-model.md](docs/ref/openclaw-deploy-model.md) |
 
 两条路径**不能混为一谈**：只按 TL;DR 做**不会**自动接好 OpenClaw；只跑 `deploy openclaw` 也**不能**代替阅读 **DEPLOY.md** 里的邮箱 / LLM / 环境前置步骤。
@@ -108,22 +110,16 @@ bash scripts/twinbox
 ### 配置
 
 ```bash
-# 复制模板
-cp .env.example .env
+# 把邮箱配置写入 ./twinbox.json
+TWINBOX_SETUP_IMAP_PASS=your-app-password \
+  twinbox mailbox setup --email you@example.com --json
 
-# 编辑 .env 填入你的设置
-MAIL_ADDRESS=you@example.com
-IMAP_HOST=imap.gmail.com
-IMAP_PORT=993
-IMAP_LOGIN=you@example.com
-IMAP_PASS=your-app-password
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_LOGIN=you@example.com
-SMTP_PASS=your-app-password
+# 把 LLM 配置写入 ./twinbox.json
+TWINBOX_SETUP_API_KEY=your-api-key \
+  twinbox config set-llm --provider openai --model MODEL --api-url URL --json
 ```
 
-> 🔒 **安全提示**：`.env` 默认已被 gitignore。永远不要提交凭证。
+> 🔒 **安全提示**：本地 / 开发使用的 `twinbox.json` 已加入 gitignore。永远不要提交凭证。
 
 ### 验证与运行
 

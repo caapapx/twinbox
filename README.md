@@ -17,9 +17,11 @@
 git clone https://github.com/caapapx/twinbox.git && cd twinbox
 pip install -e .
 
-# 2. Configure (copy and edit)
-cp .env.example .env
-# Set: MAIL_ADDRESS, IMAP_HOST, IMAP_LOGIN, IMAP_PASS, etc.
+# 2. Configure mailbox + LLM (writes twinbox.json)
+TWINBOX_SETUP_IMAP_PASS=your-app-password \
+  twinbox mailbox setup --email you@example.com --json
+TWINBOX_SETUP_API_KEY=your-api-key \
+  twinbox config set-llm --provider openai --model MODEL --api-url URL --json
 
 # 3. Verify connection
 twinbox mailbox preflight --json
@@ -41,7 +43,7 @@ twinbox task todo --json
 
 | Path | State & config | Start here |
 |------|----------------|------------|
-| **Local / dev** (TL;DR above) | `.env` in the repo; outputs under **`runtime/validation/`** in the repo | This README → [Quick Start](#quick-start) |
+| **Local / dev** (TL;DR above) | `twinbox.json` in the repo root; outputs under **`runtime/validation/`** in the repo | This README → [Quick Start](#quick-start) |
 | **OpenClaw host** | Mail + pipeline data under **`~/.twinbox`**; code/state roots in **`~/.config/twinbox/`**; OpenClaw reads **`~/.openclaw/openclaw.json`** | **[openclaw-skill/DEPLOY.md](openclaw-skill/DEPLOY.md)** (and optional `twinbox deploy openclaw`). Design: [docs/ref/openclaw-deploy-model.md](docs/ref/openclaw-deploy-model.md) |
 
 The two are **not interchangeable**: following only the TL;DR does not configure OpenClaw; running `deploy openclaw` does not replace reading **DEPLOY.md** for mailbox/LLM/env prerequisites.
@@ -108,22 +110,16 @@ bash scripts/twinbox
 ### Configuration
 
 ```bash
-# Copy template
-cp .env.example .env
+# Configure mailbox into ./twinbox.json
+TWINBOX_SETUP_IMAP_PASS=your-app-password \
+  twinbox mailbox setup --email you@example.com --json
 
-# Edit .env with your settings
-MAIL_ADDRESS=you@example.com
-IMAP_HOST=imap.gmail.com
-IMAP_PORT=993
-IMAP_LOGIN=you@example.com
-IMAP_PASS=your-app-password
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_LOGIN=you@example.com
-SMTP_PASS=your-app-password
+# Configure LLM into ./twinbox.json
+TWINBOX_SETUP_API_KEY=your-api-key \
+  twinbox config set-llm --provider openai --model MODEL --api-url URL --json
 ```
 
-> 🔒 **Security**: `.env` is gitignored by default. Never commit credentials.
+> 🔒 **Security**: `twinbox.json` is gitignored by default for local/dev use. Never commit credentials.
 
 ### Verify & Run
 

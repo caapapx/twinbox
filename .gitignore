@@ -1,4 +1,5 @@
 .env
+twinbox.json
 .env.local
 .env.*.local
 .beads/*
