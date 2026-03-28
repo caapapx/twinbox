@@ -1,5 +1,7 @@
 # AGENTS.md
 
+本文件为仓库**协作与文档约定的完整版**。根目录 **`CLAUDE.md`** 为其摘要，供助手快速加载；二者不一致时以 **本文** 为准。
+
 ## 文档索引规则
 
 | 目录 | 用途 | 命名规则 |
@@ -23,7 +25,7 @@
 - OpenClaw 部署设计模型：`docs/ref/openclaw-deploy-model.md`
 - OpenClaw 排障与回滚：`openclaw-skill/TROUBLESHOOT.md`
 - OpenClaw 部署附录：`openclaw-skill/DEPLOY-APPENDIX.md`
-- 核心重构计划：`docs/core-refactor.md`
+- 路线与待办索引：`ROADMAP.md`
 - Daemon / Go 薄壳 / 模组化测试（**当前事实，优先于旧「暂缓 Go」表述**）：`docs/ref/daemon-and-runtime-slice.md`
 - Daemon JSON-RPC：`docs/ref/rpc-protocol.md`；Phase 产物路径约定：`docs/ref/artifact-contract.md`
 - Code root 开发者说明：`docs/ref/code-root-developer.md`
@@ -50,11 +52,11 @@
    - **可不上抬到 Read first 的情况**：纯 `docs/archive/` 深埋归档、`docs/validation/` 实例报告，只需在主题文档或子索引中链入即可
 6. **验证通过后的 Git 落地**（与「只描述已完成」区分）：在完成本次任务约定校验且**明确成功**时，代理**应当**提交；在环境允许且用户未禁止时**应当**推送。
    - **高置信度门槛**：已对变更范围跑过约定检查（例如相关 `pytest`、或任务指定的 smoke/脚本），失败已处理或已说明为何不跑
+   - **变更粒度**：优先按**可独立验收的一整块任务**（一个逻辑完整的修复或功能）组织提交；避免把互不相关的改动塞进同一 commit，也避免仅为「小步」而把同一任务拆成大量无意义碎提交。与「评测/任务是否以单个 commit 为粒度」无关——仓库关心的是**语义完整 + 可验证**，而非 commit 个数本身
    - **提交**：`git add` 仅包含本次任务相关改动；提交信息遵守 `type: short description`；推送前用 `git status` 确认无意外未提交文件
-   - **推送**：具备 `git` 写权限与网络、且用户**未**要求「勿推送 / 仅本地 / draft」时，执行 `git push` 到当前跟踪的远程分支（本仓库约定为 `master`）
+   - **推送**：具备 `git` 写权限与网络、且用户**未**要求「勿推送 / 仅本地 / draft」时，执行 `git push` 到**当前分支已设置的上游**（如 `origin/dev-go`）；合并入仓库主线后，主分支通常为 `master`
    - **环境受限**：沙箱禁用网络、无凭据、或推送被拒时，说明原因并保留本地 commit，由用户手动 `git push`
    - **禁止**：对共享分支 `git push --force`；非用户明确要求不擅自 `git commit --no-verify` / 绕过 hook
 7. **Skill 与 OpenClaw 同步约束**：当新增或修改 CLI 命令、核心功能（如新增参数、修改规则逻辑）或 OpenClaw Tool (`register-twinbox-tools.mjs`) 时，**必须**执行以下同步操作：
    - 更新 `SKILL.md`（以及 `.agents/skills/twinbox/SKILL.md` 等相关副本）中对应的说明、参数和示例。
-   - 将最新的 `SKILL.md` 同步到 OpenClaw 目录：`cp SKILL.md ~/.openclaw/skills/twinbox/SKILL.md`
    - 重新加载 OpenClaw 网关以使 Tool 变更生效：`openclaw gateway restart`
