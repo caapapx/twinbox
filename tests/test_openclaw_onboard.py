@@ -598,6 +598,65 @@ def test_run_openclaw_onboard_v2_collects_llm_inputs_before_validation_progress(
     assert model_index < progress_index
 
 
+def test_run_openclaw_onboard_v2_collects_mailbox_inputs_before_validation_progress(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
+    (repo / "openclaw-skill").mkdir()
+    (repo / "openclaw-skill" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    openclaw_home = tmp_path / ".openclaw"
+    openclaw_home.mkdir()
+
+    monkeypatch.setenv("TWINBOX_STATE_ROOT", str(state_root))
+    monkeypatch.setenv("TWINBOX_CODE_ROOT", str(repo))
+    monkeypatch.setattr("twinbox_core.openclaw_onboard.shutil.which", lambda _bin: "/usr/bin/openclaw")
+    monkeypatch.setattr("twinbox_core.mailbox_detect.detect_to_env", _fake_detect_to_env)
+    monkeypatch.setattr("twinbox_core.mailbox.run_preflight", _fake_run_preflight)
+    monkeypatch.setattr(
+        "twinbox_core.openclaw_onboard.run_openclaw_deploy",
+        lambda **_: OpenClawDeployReport(ok=True, steps=[]),
+    )
+
+    prompter = _FakePrompter(
+        select_values=[
+            "continue",
+            "quickstart",
+            "auto",
+            "openai",
+            "yes",
+            "apply",
+        ],
+        text_values=[
+            "user@example.com",
+            "test-model",
+            "https://example.com/v1/chat/completions",
+        ],
+        secret_values=["mail-secret", "llm-secret"],
+    )
+
+    report = run_openclaw_onboard_v2(
+        code_root=repo,
+        openclaw_home=openclaw_home,
+        prompter=prompter,
+    )
+
+    assert report.ok is True
+    mailbox_text_index = next(index for index, event in enumerate(prompter.events) if event[0] == "text")
+    mailbox_secret_index = next(index for index, event in enumerate(prompter.events) if event[0] == "secret")
+    mailbox_progress_index = next(
+        index
+        for index, event in enumerate(prompter.events)
+        if event[0] == "progress" and event[1] == "Checking mailbox settings"
+    )
+    assert mailbox_text_index < mailbox_progress_index
+    assert mailbox_secret_index < mailbox_progress_index
+
+
 def test_run_openclaw_onboard_v2_times_out_llm_validation(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -656,6 +715,62 @@ def test_run_openclaw_onboard_v2_times_out_llm_validation(
     assert report.ok is False
     assert "timed out" in report.error.lower()
     assert ("progress.fail", "LLM validation timed out") in prompter.events
+
+
+def test_run_openclaw_onboard_v2_times_out_mailbox_validation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
+    (repo / "openclaw-skill").mkdir()
+    (repo / "openclaw-skill" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    openclaw_home = tmp_path / ".openclaw"
+    openclaw_home.mkdir()
+
+    monkeypatch.setenv("TWINBOX_STATE_ROOT", str(state_root))
+    monkeypatch.setenv("TWINBOX_CODE_ROOT", str(repo))
+    monkeypatch.setattr("twinbox_core.openclaw_onboard.shutil.which", lambda _bin: "/usr/bin/openclaw")
+    monkeypatch.setattr("twinbox_core.mailbox_detect.detect_to_env", _fake_detect_to_env)
+
+    def slow_mailbox_apply_runner(**kwargs):
+        import time
+
+        time.sleep(0.05)
+        return True, {
+            "prompted": True,
+            "configured": True,
+            "missing_required": [],
+            "status": "ok",
+            "login_stage": "mailbox-connected",
+            "mail_address": kwargs["updates"]["MAIL_ADDRESS"],
+            "env_file_path": str(kwargs["env_file"]),
+        }, kwargs["dotenv"] | kwargs["updates"]
+
+    prompter = _FakePrompter(
+        select_values=[
+            "continue",
+            "quickstart",
+            "auto",
+        ],
+        text_values=["user@example.com"],
+        secret_values=["mail-secret"],
+    )
+
+    report = run_openclaw_onboard_v2(
+        code_root=repo,
+        openclaw_home=openclaw_home,
+        prompter=prompter,
+        mailbox_apply_runner=slow_mailbox_apply_runner,
+        mailbox_validation_timeout_seconds=0.01,
+    )
+
+    assert report.ok is False
+    assert "timed out" in report.error.lower()
+    assert ("progress.fail", "Mailbox validation timed out") in prompter.events
 
 
 def test_run_openclaw_onboard_v2_allows_llm_skip_and_returns_incomplete_handoff(
