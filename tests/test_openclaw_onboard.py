@@ -6,9 +6,11 @@ import io
 import json
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from twinbox_core.llm import LLMError
 from twinbox_core.onboarding import OnboardingState, load_state, save_state
 from twinbox_core.openclaw_deploy_types import OpenClawDeployReport
 from twinbox_core.openclaw_onboard import (
@@ -646,6 +648,32 @@ def test_console_journey_prompter_secret_accepts_backspace_while_masking_in_tty(
     assert value == "ac"
     plain = _strip_ansi(stream.getvalue())
     assert "Mailbox app password: **" in plain
+
+
+def test_console_journey_prompter_text_keeps_default_without_echoing_value() -> None:
+    stream = _TTYBuffer()
+    answers = iter(["", "other-model"])
+    prompter = ConsoleJourneyPrompter(stream=stream, input_fn=lambda p: next(answers))
+
+    kept = prompter.text("Model ID", default="astron-code-latest")
+    assert kept == "astron-code-latest"
+
+    overridden = prompter.text("Model ID", default="astron-code-latest")
+    assert overridden == "other-model"
+
+    plain = _strip_ansi(stream.getvalue())
+    assert "Default:" not in plain
+    assert "astron-code-latest" not in plain
+    assert "[astron-code-latest]" not in plain
+
+
+def test_console_journey_prompter_text_normalizes_multiline_default() -> None:
+    stream = _TTYBuffer()
+    answers = iter([""])
+    prompter = ConsoleJourneyPrompter(stream=stream, input_fn=lambda _p: next(answers))
+
+    kept = prompter.text("Model ID", default="astron-\ncode-latest")
+    assert kept == "astron-code-latest"
 
 
 def test_run_openclaw_onboard_v2_requires_explicit_steps_even_with_existing_values(
@@ -1291,6 +1319,125 @@ def test_run_openclaw_onboard_v2_hides_use_current_llm_when_only_api_key_exists(
         "Skip for now",
     ]
     assert report.ok is False
+
+
+def test_run_openclaw_onboard_v2_validates_existing_llm_before_continue(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    _write_ready_env(state_root)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
+    (repo / "openclaw-skill").mkdir()
+    (repo / "openclaw-skill" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    openclaw_home = tmp_path / ".openclaw"
+    openclaw_home.mkdir()
+
+    monkeypatch.setenv("TWINBOX_STATE_ROOT", str(state_root))
+    monkeypatch.setenv("TWINBOX_CODE_ROOT", str(repo))
+    monkeypatch.setattr("twinbox_core.openclaw_onboard.shutil.which", lambda _bin: "/usr/bin/openclaw")
+    monkeypatch.setattr("twinbox_core.mailbox.run_preflight", _fake_run_preflight)
+    monkeypatch.setattr(
+        "twinbox_core.openclaw_onboard.run_openclaw_deploy",
+        lambda **_: OpenClawDeployReport(ok=True, steps=[]),
+    )
+
+    validated: list[Path] = []
+
+    def fake_validate_existing(env_file: Path, env: dict[str, str]) -> object:
+        del env
+        validated.append(env_file)
+        return SimpleNamespace(
+            backend="openai",
+            model="test-model",
+            url="https://example.com/v1/chat/completions",
+        )
+
+    monkeypatch.setattr("twinbox_core.openclaw_onboard.resolve_backend", fake_validate_existing)
+
+    prompter = _FakePrompter(
+        select_values=[
+            "continue",
+            "quickstart",
+            "use_existing",
+            "use_existing",
+            "yes",
+            "apply",
+        ],
+    )
+
+    report = run_openclaw_onboard_v2(
+        code_root=repo,
+        openclaw_home=openclaw_home,
+        prompter=prompter,
+    )
+
+    assert report.ok is True
+    assert validated == [state_root / ".env", state_root / ".env"]
+    assert ("progress", "Validating LLM configuration") in prompter.events
+    assert ("progress.finish", "LLM configuration validated") in prompter.events
+    assert "llm_setup" in report.onboarding["completed_stages"]
+
+
+def test_run_openclaw_onboard_v2_stops_when_existing_llm_validation_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    _write_ready_env(state_root)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
+    (repo / "openclaw-skill").mkdir()
+    (repo / "openclaw-skill" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    openclaw_home = tmp_path / ".openclaw"
+    openclaw_home.mkdir()
+
+    monkeypatch.setenv("TWINBOX_STATE_ROOT", str(state_root))
+    monkeypatch.setenv("TWINBOX_CODE_ROOT", str(repo))
+    monkeypatch.setattr("twinbox_core.openclaw_onboard.shutil.which", lambda _bin: "/usr/bin/openclaw")
+    monkeypatch.setattr("twinbox_core.mailbox.run_preflight", _fake_run_preflight)
+    monkeypatch.setattr(
+        "twinbox_core.openclaw_onboard.run_openclaw_deploy",
+        lambda **_: OpenClawDeployReport(ok=True, steps=[]),
+    )
+
+    def fake_validate_existing(*, env_file: Path, env: dict[str, str]) -> object:
+        del env_file, env
+        raise LLMError("Existing LLM config is invalid")
+
+    monkeypatch.setattr("twinbox_core.openclaw_onboard.resolve_backend", fake_validate_existing)
+
+    prompter = _FakePrompter(
+        select_values=[
+            "continue",
+            "quickstart",
+            "use_existing",
+            "use_existing",
+        ],
+    )
+
+    report = run_openclaw_onboard_v2(
+        code_root=repo,
+        openclaw_home=openclaw_home,
+        prompter=prompter,
+    )
+
+    assert report.ok is False
+    assert "llm_setup" not in report.onboarding["completed_stages"]
+    assert report.onboarding["current_stage"] == "llm_setup"
+    assert ("progress", "Validating LLM configuration") in prompter.events
+    assert ("progress.fail", "Existing LLM config is invalid") in prompter.events
+    assert not any(
+        event[0] == "select" and "Twinbox tools integration" in event[1].get("prompt", "")
+        for event in prompter.events
+    )
+    recovery_bodies = [e[1]["body"] for e in prompter.events if e[0] == "note" and e[1]["title"] == "Recovery"]
+    assert any("existing llm config is invalid" in body.lower() for body in recovery_bodies)
 
 
 def test_run_openclaw_onboard_v2_ctrl_c_returns_cancelled_report(
