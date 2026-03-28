@@ -650,6 +650,19 @@ def test_console_journey_prompter_secret_accepts_backspace_while_masking_in_tty(
     assert "Mailbox app password: **" in plain
 
 
+def test_console_journey_prompter_secret_caps_inline_mask_length_in_tty() -> None:
+    stream = _TTYBuffer()
+    keys = iter(list("super-long-secret-value") + ["ENTER"])
+    prompter = ConsoleJourneyPrompter(stream=stream, key_reader=lambda: next(keys))
+
+    value = prompter.secret("API key", allow_empty=True)
+
+    assert value == "super-long-secret-value"
+    plain = _strip_ansi(stream.getvalue())
+    assert "API key (press Enter to keep current value): ********" in plain
+    assert "API key (press Enter to keep current value): *********" not in plain
+
+
 def test_console_journey_prompter_text_keeps_default_without_echoing_value() -> None:
     stream = _TTYBuffer()
     answers = iter(["", "other-model"])
