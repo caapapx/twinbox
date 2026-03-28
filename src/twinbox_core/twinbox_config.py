@@ -130,6 +130,40 @@ def config_from_env(env: dict[str, str]) -> dict[str, Any]:
     return config
 
 
+def _first_llm_str(llm: dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        raw = llm.get(key)
+        if raw is None:
+            continue
+        s = str(raw).strip()
+        if s:
+            return s
+    return ""
+
+
+def _normalized_openai_llm_fields(llm: dict[str, Any]) -> tuple[str, str, str]:
+    """Map vendor / console export keys into canonical OpenAI-compat triple."""
+    api_key = _first_llm_str(
+        llm,
+        "api_key",
+        "APIKey",
+        "apiKey",
+        "apikey",
+    )
+    model = _first_llm_str(llm, "model", "modelId", "model_id")
+    api_url = _first_llm_str(
+        llm,
+        "api_url",
+        "apiUrl",
+        "openai_url",
+        "openaiUrl",
+        "base_url",
+        "baseURL",
+        "baseUrl",
+    )
+    return api_key, model, api_url
+
+
 def env_from_twinbox_config(config: dict[str, Any]) -> dict[str, str]:
     env: dict[str, str] = {}
     mailbox = config.get("mailbox") if isinstance(config.get("mailbox"), dict) else {}
@@ -154,18 +188,23 @@ def env_from_twinbox_config(config: dict[str, Any]) -> dict[str, str]:
         env.update({key: value for key, value in mapping.items() if value not in ("", None)})
 
     llm = config.get("llm") if isinstance(config.get("llm"), dict) else {}
-    provider = str(llm.get("provider", "") or "").strip()
+    provider = str(llm.get("provider", "") or "").strip().lower()
+    oa_key, oa_model, oa_url = _normalized_openai_llm_fields(llm)
+    if provider not in ("openai", "anthropic") and oa_key and oa_model and oa_url:
+        provider = "openai"
     if provider == "anthropic":
         mapping = {
-            "ANTHROPIC_API_KEY": llm.get("api_key", ""),
-            "ANTHROPIC_MODEL": llm.get("model", ""),
-            "ANTHROPIC_BASE_URL": llm.get("api_url", ""),
+            "ANTHROPIC_API_KEY": _first_llm_str(llm, "api_key", "APIKey", "apiKey"),
+            "ANTHROPIC_MODEL": _first_llm_str(llm, "model", "modelId", "model_id"),
+            "ANTHROPIC_BASE_URL": _first_llm_str(
+                llm, "api_url", "apiUrl", "base_url", "baseURL", "baseUrl"
+            ),
         }
     elif provider == "openai":
         mapping = {
-            "LLM_API_KEY": llm.get("api_key", ""),
-            "LLM_MODEL": llm.get("model", ""),
-            "LLM_API_URL": llm.get("api_url", ""),
+            "LLM_API_KEY": oa_key,
+            "LLM_MODEL": oa_model,
+            "LLM_API_URL": oa_url,
         }
     else:
         mapping = {}
