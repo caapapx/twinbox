@@ -334,7 +334,7 @@ def test_run_openclaw_onboard_v2_console_prompter_prints_english_shell(
     assert "Thread-level email intelligence" in out
     assert "TwinBox setup" in out
     assert out.count("│") >= 4
-    assert "├" in out
+    assert "┐" in out and "└" in out
     assert "Security" in out
     assert "Choose onboarding flow" in out
     assert "Mailbox" in out
@@ -498,7 +498,11 @@ def test_console_journey_prompter_journey_rail_prefixes_connected_boxes() -> Non
     plain = _strip_ansi(stream.getvalue())
     lines = [ln for ln in plain.splitlines() if ln.strip()]
     assert lines[0] == "│"
-    assert plain.count("├") == 2
+    assert plain.count("├") == 0
+    tops = [ln for ln in plain.splitlines() if ln.endswith("┐") and not ln.startswith("│")]
+    assert len(tops) == 2
+    assert tops[0].startswith("◇")
+    assert tops[1].startswith("◆")
     assert "└" in plain and "┘" in plain
     assert "◇" in plain
     assert "◆" in plain
