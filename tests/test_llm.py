@@ -8,10 +8,13 @@ is insufficient.
 from __future__ import annotations
 
 import json
+from io import BytesIO
+import urllib.error
 
 import pytest
 
-from twinbox_core.llm import clean_json_text, normalize_openai_chat_completions_url, resolve_backend
+from twinbox_core import llm as llm_module
+from twinbox_core.llm import BackendConfig, clean_json_text, normalize_openai_chat_completions_url, resolve_backend, validate_backend
 
 
 class TestNormalizeOpenAIChatUrl:
@@ -72,6 +75,35 @@ class TestResolveBackend:
                     "LLM_API_KEY": "k",
                 }
             )
+
+
+class TestValidateBackend:
+    def test_http_error_includes_response_body(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        backend = BackendConfig(
+            backend="openai",
+            model="test-model",
+            url="https://example.com/v1/chat/completions",
+            api_key="test-key",
+            timeout=5,
+            retries=0,
+        )
+        err = urllib.error.HTTPError(
+            url=backend.url,
+            code=401,
+            msg="Unauthorized",
+            hdrs=None,
+            fp=BytesIO(b'{"error":"Invalid authorization header"}'),
+        )
+
+        def _raise_once(*args, **kwargs):
+            raise err
+
+        monkeypatch.setattr(llm_module, "_request_once", _raise_once)
+        ok, message = validate_backend(backend)
+        assert ok is False
+        assert "HTTP Error 401: Unauthorized" in message
+        assert "response body" in message
+        assert "Invalid authorization header" in message
 
 
 class TestCleanJsonText:

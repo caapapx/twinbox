@@ -136,7 +136,18 @@ def validate_backend(config: BackendConfig) -> tuple[bool, str]:
         return (True, "")
     except LLMError as exc:
         return (False, str(exc))
-    except (TimeoutError, urllib.error.URLError, urllib.error.HTTPError) as exc:
+    except urllib.error.HTTPError as exc:
+        body = ""
+        try:
+            payload = exc.read()
+            if payload:
+                body = payload.decode("utf-8", errors="replace").strip()
+        except Exception:
+            body = ""
+        if body:
+            return (False, f"Network error: {exc}; response body: {body}")
+        return (False, f"Network error: {exc}")
+    except (TimeoutError, urllib.error.URLError) as exc:
         return (False, f"Network error: {exc}")
     except Exception as exc:
         return (False, f"Unexpected error: {exc}")
