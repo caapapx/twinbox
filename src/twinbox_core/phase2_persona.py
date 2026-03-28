@@ -9,6 +9,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from twinbox_core.llm import LLMError, call_llm, clean_json_text, resolve_backend
+from twinbox_core.prompt_fragments import (
+    base_human_context_rules,
+    confidence_calibration_note,
+    persona_fewshot,
+)
 from twinbox_core.renderer import render_phase2_outputs
 
 
@@ -23,8 +28,8 @@ class Phase2RunConfig:
     model_override: str | None
 
 
-def build_prompt(context_text: str) -> str:
-    return """You are an enterprise email analyst. Based on the mailbox statistics and email samples below, infer the mailbox owner's profile and their company's business profile.
+def build_prompt(context_text: str) -> tuple[str, str]:
+    system = """You are an enterprise email analyst. Based on the mailbox statistics and email samples below, infer the mailbox owner's profile and their company's business profile.
 
 ## Your task
 
@@ -55,20 +60,14 @@ Produce a JSON object with exactly this structure:
 
 ## Rules
 1. Generate 3-5 persona hypotheses and 2-4 business hypotheses
-2. Confidence must reflect actual certainty — do NOT default to 0.85+
-3. Every evidence item must reference a concrete number, sender, thread, or intent from the input
-4. Do not invent data not present in the input
-5. confirmation_questions: max 7, each should resolve one ambiguity
-6. If human_context is provided in the input, use it to refine your hypotheses:
-   - Human-provided facts OVERRIDE email-only inference when they conflict
-   - Mark evidence source: "mail_evidence" for email data, "user_declared_rule" or "user_confirmed_fact" for human context
-   - If human context contradicts email evidence, flag the conflict in the evidence array
-   - Periodic tasks from manual_habits should appear in relevant hypotheses
-   - If `onboarding_profile_notes` is non-null in human_context, treat it as user-declared role/habits/preferences from Twinbox conversational onboarding; align persona hypotheses and cite "user_confirmed_fact" / onboarding_notes in evidence
-7. Output ONLY the JSON object. No markdown fences, no explanation.
-
-## Mailbox data:
-""" + context_text
+2. Every evidence item must reference a concrete number, sender, thread, or intent from the input
+3. Do not invent data not present in the input
+4. confirmation_questions: max 7, each should resolve one ambiguity
+5. """ + base_human_context_rules() + """
+6. Output ONLY the JSON object. No markdown fences, no explanation.
+""" + confidence_calibration_note() + persona_fewshot()
+    user = "## Mailbox data:\n" + context_text
+    return system, user
 
 
 def _load_object(path: Path) -> dict[str, object]:
@@ -91,10 +90,14 @@ def run_phase2_persona(config: Phase2RunConfig) -> dict[str, object]:
     config.doc_dir.mkdir(parents=True, exist_ok=True)
     config.diagram_dir.mkdir(parents=True, exist_ok=True)
 
-    prompt = build_prompt(config.context_path.read_text(encoding="utf-8"))
+    system, user = build_prompt(config.context_path.read_text(encoding="utf-8"))
     if config.dry_run:
-        print("=== PROMPT (first 200 lines) ===")
-        for line in prompt.splitlines()[:200]:
+        print("=== SYSTEM PROMPT (first 200 lines) ===")
+        for line in system.splitlines()[:200]:
+            print(line)
+        print("...")
+        print("=== USER PROMPT (first 80 lines) ===")
+        for line in user.splitlines()[:80]:
             print(line)
         print("...")
         print("=== DRY RUN, no LLM call ===")
@@ -106,8 +109,9 @@ def run_phase2_persona(config: Phase2RunConfig) -> dict[str, object]:
     print("Calling LLM for persona + business inference...")
     response = _parse_response(
         call_llm(
-            prompt,
+            user,
             max_tokens=4096,
+            system_prompt=system,
             env_file=config.env_file,
             model_override=config.model_override,
         )

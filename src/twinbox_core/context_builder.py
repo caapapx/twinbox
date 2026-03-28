@@ -430,6 +430,9 @@ def _build_human_context(state_root: Path) -> dict[str, object]:
     if isinstance(raw_notes, str) and raw_notes.strip():
         onboarding_notes = raw_notes.strip()
 
+    calibration_raw = _read_text_if_exists(runtime_context / "instance-calibration-notes.md")
+    has_calibration = bool(calibration_raw)
+
     return {
         "facts_raw": facts_raw,
         "habits_raw": habits_raw,
@@ -437,7 +440,8 @@ def _build_human_context(state_root: Path) -> dict[str, object]:
         "habits_items": habits_items,
         "has_facts": len(facts_items) > 0,
         "has_habits": len(habits_items) > 0,
-        "has_calibration": False,
+        "has_calibration": has_calibration,
+        "calibration_notes": calibration_raw,
         "onboarding_profile_notes": onboarding_notes,
         "has_onboarding_profile_notes": bool(onboarding_notes),
     }
@@ -538,6 +542,8 @@ def run_phase2_loading(state_root: Path) -> dict[str, object]:
             "has_habits": human_context["has_habits"],
             "manual_facts_raw": human_context["facts_raw"] if human_context["has_facts"] else None,
             "manual_habits_raw": human_context["habits_raw"] if human_context["has_habits"] else None,
+            "has_calibration": human_context["has_calibration"],
+            "calibration_notes": human_context["calibration_notes"] if human_context["has_calibration"] else None,
             "has_onboarding_profile_notes": human_context["has_onboarding_profile_notes"],
             "onboarding_profile_notes": human_context["onboarding_profile_notes"] or None,
         },
@@ -667,6 +673,8 @@ def run_phase3_loading(state_root: Path) -> dict[str, object]:
             "has_habits": human_context["has_habits"],
             "manual_facts_raw": human_context["facts_raw"] if human_context["has_facts"] else None,
             "manual_habits_raw": human_context["habits_raw"] if human_context["has_habits"] else None,
+            "has_calibration": human_context["has_calibration"],
+            "calibration_notes": human_context["calibration_notes"] if human_context["has_calibration"] else None,
             "has_onboarding_profile_notes": human_context["has_onboarding_profile_notes"],
             "onboarding_profile_notes": human_context["onboarding_profile_notes"] or None,
         },

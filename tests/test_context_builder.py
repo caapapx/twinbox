@@ -84,6 +84,19 @@ class ContextBuilderTest(unittest.TestCase):
             self.assertTrue(output["human_context"]["has_facts"])
             self.assertEqual(context["top_contacts"][0]["key"], "alice@example.com")
 
+    def test_phase2_loading_includes_calibration_notes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_phase1_inputs(root)
+            run_phase2_loading(root)
+            output = json.loads(
+                (root / "runtime/validation/phase-2/context-pack.json").read_text(encoding="utf-8")
+            )
+            hc = output["human_context"]
+            self.assertTrue(hc["has_calibration"])
+            self.assertIsNotNone(hc["calibration_notes"])
+            self.assertIn("calibration note is long enough", hc["calibration_notes"])
+
     def test_phase2_loading_includes_onboarding_profile_notes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

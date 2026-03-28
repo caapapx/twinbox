@@ -67,7 +67,7 @@ class Phase3LifecycleTest(unittest.TestCase):
             ), mock.patch(
                 "twinbox_core.phase3_lifecycle.call_llm",
                 return_value=json.dumps(llm_response, ensure_ascii=False),
-            ):
+            ) as llm_mock:
                 run_phase3_lifecycle(
                     Phase3RunConfig(
                         context_path=context_path,
@@ -79,6 +79,12 @@ class Phase3LifecycleTest(unittest.TestCase):
                         model_override=None,
                     )
                 )
+
+            llm_kwargs = llm_mock.call_args.kwargs
+            self.assertIsInstance(llm_kwargs.get("system_prompt"), str)
+            self.assertGreater(len(llm_kwargs["system_prompt"]), 0)
+            self.assertIn("lifecycle", llm_kwargs["system_prompt"].lower())
+            self.assertIn("onboarding_profile_notes", llm_kwargs["system_prompt"])
 
             self.assertIn("资源申请审批流", (output_dir / "lifecycle-model.yaml").read_text(encoding="utf-8"))
             self.assertIn("LF1-S1", (output_dir / "thread-stage-samples.json").read_text(encoding="utf-8"))

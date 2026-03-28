@@ -411,6 +411,9 @@ def _project_pending_queue() -> QueueView:
             thread_id = f"[CC] {thread_id}"
         elif role == "group_only":
             thread_id = f"[GRP] {thread_id}"
+        why = item.get("why", "") or ""
+        if role in ("cc_only", "indirect", "group_only"):
+            why = f"{why}  ⚠️ 你不是主要收件人，请确认是否真的需要你处理".strip()
         items.append(ThreadCard(
             thread_id=thread_id,
             state=f"{item.get('flow', 'UNKNOWN')}/pending_reply",
@@ -419,7 +422,7 @@ def _project_pending_queue() -> QueueView:
             confidence=0.8,  # Default confidence for pending replies
             evidence_refs=[item.get("evidence_source", "")],
             context_refs=[],
-            why=item.get("why", ""),
+            why=why,
         ))
 
     return QueueView(

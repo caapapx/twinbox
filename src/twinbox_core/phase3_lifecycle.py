@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from twinbox_core.llm import LLMError, call_llm, clean_json_text, resolve_backend
+from twinbox_core.prompt_fragments import base_human_context_rules, confidence_calibration_note
 from twinbox_core.renderer import render_phase3_outputs
 
 
@@ -23,8 +24,8 @@ class Phase3RunConfig:
     model_override: str | None
 
 
-def build_prompt(context_text: str) -> str:
-    return """You are an enterprise email workflow analyst. Based on the mailbox data, persona hypotheses, and thread summaries below, build a thread-level lifecycle model.
+def build_prompt(context_text: str) -> tuple[str, str]:
+    system = """You are an enterprise email workflow analyst. Based on the mailbox data, persona hypotheses, and thread summaries below, build a thread-level lifecycle model.
 
 ## Your task
 
@@ -75,15 +76,11 @@ Produce a JSON object with this structure:
 2. Each flow must have at least 4 stages with entry/exit signals.
 3. thread_stage_samples: classify each of the top_threads into a flow+stage. If a thread does not fit any flow, mark flow as "UNMODELED".
 4. Every evidence and signal must reference concrete thread_keys, subjects, or patterns from the input.
-5. If human_context is provided:
-   - Use manual_facts to correct owner_guess and waiting_on
-   - Use manual_habits to inject periodic tasks as a separate flow or stage
-   - Mark evidence source: "mail_evidence" vs "user_declared_rule"
-6. Confidence must reflect actual certainty.
-7. Output ONLY the JSON object. No markdown, no explanation.
-
-## Mailbox data:
-""" + context_text
+5. """ + base_human_context_rules() + """
+6. Output ONLY the JSON object. No markdown, no explanation.
+""" + confidence_calibration_note()
+    user = "## Mailbox data:\n" + context_text
+    return system, user
 
 
 def _load_object(path: Path) -> dict[str, object]:
@@ -106,9 +103,10 @@ def run_phase3_lifecycle(config: Phase3RunConfig) -> dict[str, object]:
     config.doc_dir.mkdir(parents=True, exist_ok=True)
     config.diagram_dir.mkdir(parents=True, exist_ok=True)
 
-    prompt = build_prompt(config.context_path.read_text(encoding="utf-8"))
+    system, user = build_prompt(config.context_path.read_text(encoding="utf-8"))
     if config.dry_run:
-        print(f"=== PROMPT length: {len(prompt)} chars ===")
+        print(f"=== SYSTEM length: {len(system)} chars ===")
+        print(f"=== USER length: {len(user)} chars ===")
         print("=== DRY RUN ===")
         return {"dry_run": True}
 
@@ -118,8 +116,9 @@ def run_phase3_lifecycle(config: Phase3RunConfig) -> dict[str, object]:
     print("Calling LLM for lifecycle modeling...")
     response = _parse_response(
         call_llm(
-            prompt,
+            user,
             max_tokens=8192,
+            system_prompt=system,
             env_file=config.env_file,
             model_override=config.model_override,
         )

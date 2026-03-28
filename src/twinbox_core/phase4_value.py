@@ -12,10 +12,20 @@ from datetime import datetime
 from pathlib import Path
 
 from twinbox_core.llm import LLMError, call_llm, clean_json_text, resolve_backend
+from twinbox_core.prompt_fragments import (
+    base_human_context_rules,
+    calibration_rules,
+    material_rules,
+    urgent_fewshot,
+)
 from twinbox_core.renderer import render_phase4_outputs
 
+PHASE4_MAILBOX_USER_PREFIX = "## Mailbox data:\n"
 
-FULL_PROMPT = """You are an enterprise email assistant producing daily actionable outputs for a mailbox owner. Based on the thread data, lifecycle model, and persona below, generate value outputs.
+
+def phase4_full_system_prompt() -> str:
+    return (
+        """You are an enterprise email assistant producing daily actionable outputs for a mailbox owner. Based on the thread data, lifecycle model, and persona below, generate value outputs.
 
 ## Your task
 
@@ -82,22 +92,25 @@ Produce a JSON object with this structure:
 3. sla_risks: threads that are stalled, overdue, or have deployment failures.
 4. weekly_brief: summarize the lookback window, not just today.
 5. Use lifecycle_flow and lifecycle_stage from the thread data to inform your assessment.
-6. If human_context is provided:
-   - manual_facts override owner/waiting_on guesses
-   - manual_habits inject periodic tasks into daily_urgent or weekly_brief
-   - calibration_notes are hard relevance constraints for what the mailbox owner actually cares about this week
-   - material_extracts_notes: user-uploaded materials with intent metadata
-     * intent=reference: reference data for ranking/judgment; if marked synthetic, isolate to material_summary
-     * intent=template_hint: user's expected output format reference; if relevant data exists, organize output in similar structure; ignore synthetic markers
-   - Do not invent threads; materials guide structure/priority, not content
-   - Mark evidence_source accordingly
-7. Do NOT invent threads not in the input. Every thread_key must come from the data.
-8. Output ONLY the JSON object. No markdown, no explanation.
-
-## Mailbox data:
+6. """
+        + base_human_context_rules()
+        + """
+7. """
+        + calibration_rules()
+        + """
+8. """
+        + material_rules()
+        + """
+9. Mark evidence_source accordingly for items you output.
+10. Do NOT invent threads not in the input. Every thread_key must come from the data.
+11. Output ONLY the JSON object. No markdown, no explanation.
 """
+    )
 
-URGENT_PROMPT = """You are an enterprise email assistant. Based on the thread data below, produce a JSON object with exactly two keys:
+
+def phase4_urgent_system_prompt() -> str:
+    return (
+        """You are an enterprise email assistant. Based on the thread data below, produce a JSON object with exactly two keys:
 
 {
   "daily_urgent": [
@@ -113,13 +126,21 @@ Rules:
 2. pending_replies: only threads where mailbox owner must respond/approve
 3. Use lifecycle_flow/stage from thread data
 4. If human_context has manual_facts, override owner/waiting_on guesses
-5. Every thread_key must come from input data. Output ONLY JSON.
-6. recipient_role field: "direct" means the mailbox owner is in the To field; any other value ("cc_only", "group_only", "indirect") means the owner is NOT a primary recipient. Non-direct threads are lower priority — assign them a lower urgency_score accordingly.
-
-Mailbox data:
+5. """
+        + base_human_context_rules()
+        + """
+6. """
+        + calibration_rules()
+        + urgent_fewshot()
+        + """
+7. Every thread_key must come from input data. Output ONLY JSON.
 """
+    )
 
-SLA_PROMPT = """You are an enterprise email assistant scanning for SLA risks. Produce a JSON object:
+
+def phase4_sla_system_prompt() -> str:
+    return (
+        """You are an enterprise email assistant scanning for SLA risks. Produce a JSON object:
 
 {
   "sla_risks": [
@@ -130,12 +151,17 @@ SLA_PROMPT = """You are an enterprise email assistant scanning for SLA risks. Pr
 Rules:
 1. Include threads that are stalled, overdue, or have deployment failures
 2. Use lifecycle_flow/stage from thread data to assess risk
-3. Every thread_key must come from input data. Output ONLY JSON.
-
-Mailbox data:
+3. """
+        + base_human_context_rules()
+        + """
+4. Every thread_key must come from input data. Output ONLY JSON.
 """
+    )
 
-BRIEF_PROMPT = """You are an enterprise email assistant producing a weekly brief. Produce a JSON object:
+
+def phase4_brief_system_prompt() -> str:
+    return (
+        """You are an enterprise email assistant producing a weekly brief. Produce a JSON object:
 
 {
   "weekly_brief": {
@@ -164,18 +190,29 @@ Rules:
 2. Use lifecycle flows to group threads
 3. top_actions: the 3 most important things to do this week
 4. rhythm_observation: patterns in email activity timing/volume
-5. Treat human_context.manual_facts_raw and human_context.calibration_notes as hard prioritization constraints, not just background
-6. Prefer threads that reduce missed follow-up, surface items waiting on the owner, or unblock project delivery; demote broadcast/admin/HR/training content unless it clearly needs owner action this week
-7. If human_context.material_extracts_notes is present, check the intent tag in each material's comment:
-   - intent=reference: populate material_summary field; if marked synthetic, do NOT use as factual evidence
-   - intent=template_hint: do NOT generate material_summary; instead use the material's structure as a format guide to organize relevant thread data in flow_summary or other sections; ignore synthetic markers
-8. If some material rows (intent=reference only) cannot be mapped to mailbox thread_keys, keep them in material_summary instead of forcing them into action_now/backlog
-9. If some material rows cannot be mapped to mailbox thread_keys, keep them in material_summary instead of forcing them into action_now/backlog
-10. When a material column contains raw date ranges, preserve the raw ranges or summarize coverage counts; do not invent derived durations unless the counting basis is explicit
-11. Output ONLY JSON.
-
-Mailbox data:
+5. """
+        + base_human_context_rules()
+        + """
+6. """
+        + calibration_rules()
+        + """
+7. """
+        + material_rules()
+        + """
+8. Prefer threads that reduce missed follow-up, surface items waiting on the owner, or unblock project delivery; demote broadcast/admin/HR/training content unless it clearly needs owner action this week
+9. If some material rows (intent=reference only) cannot be mapped to mailbox thread_keys, keep them in material_summary instead of forcing them into action_now/backlog
+10. If some material rows cannot be mapped to mailbox thread_keys, keep them in material_summary instead of forcing them into action_now/backlog
+11. When a material column contains raw date ranges, preserve the raw ranges or summarize coverage counts; do not invent derived durations unless the counting basis is explicit
+12. Output ONLY JSON.
 """
+    )
+
+
+# Back-compat for tests and callers expecting a single string (system + mailbox header only; no JSON payload).
+FULL_PROMPT = phase4_full_system_prompt() + PHASE4_MAILBOX_USER_PREFIX
+URGENT_PROMPT = phase4_urgent_system_prompt() + PHASE4_MAILBOX_USER_PREFIX
+SLA_PROMPT = phase4_sla_system_prompt() + PHASE4_MAILBOX_USER_PREFIX
+BRIEF_PROMPT = phase4_brief_system_prompt() + PHASE4_MAILBOX_USER_PREFIX
 
 
 @dataclass(frozen=True)
@@ -557,6 +594,13 @@ def _load_object(path: Path) -> dict[str, object]:
     return parsed
 
 
+def _filter_skip_threads(context: dict[str, object]) -> None:
+    if "threads" in context and isinstance(context["threads"], list):
+        filtered_threads = [t for t in context["threads"] if isinstance(t, dict) and not t.get("skip_phase4")]
+        context["threads"] = filtered_threads
+        context["thread_candidates"] = len(filtered_threads)
+
+
 def _parse_response(raw: str, expected_key: str | None = None) -> dict[str, object]:
     try:
         parsed = json.loads(clean_json_text(raw))
@@ -623,17 +667,19 @@ def _resolve_model(env_file: Path | None, model_override: str | None) -> str:
 
 def _call_with_prompt(
     *,
-    prompt_prefix: str,
+    system_prompt: str,
+    user_prefix: str,
     context_path: Path,
     env_file: Path | None,
     model_override: str | None,
     max_tokens: int,
 ) -> dict[str, object]:
-    prompt = prompt_prefix + context_path.read_text(encoding="utf-8")
+    user_content = user_prefix + context_path.read_text(encoding="utf-8")
     return _parse_response(
         call_llm(
-            prompt,
+            user_content,
             max_tokens=max_tokens,
+            system_prompt=system_prompt,
             env_file=env_file,
             model_override=model_override,
         )
@@ -646,16 +692,17 @@ def _apply_recipient_role_weights(
 ) -> dict[str, object]:
     """Apply urgency multiplier for non-direct threads.
 
-    Loads recipient_role from context top_threads. Multipliers:
-    - cc_only: 0.6, indirect: 0.6, group_only: 0.4
-    Threads with waiting_on_me=true that are non-direct get a warning in why.
+    Loads recipient_role from context ``threads`` (Phase 4 pack), else ``top_threads``, else Phase 3 pack.
+    Multipliers: cc_only/indirect 0.6, group_only 0.4.
     """
     try:
         context = _load_object(context_path)
     except Exception:
         return response
 
-    top_threads = context.get("top_threads", []) if isinstance(context, dict) else []
+    top_threads = context.get("threads", []) if isinstance(context, dict) else []
+    if not isinstance(top_threads, list) or not top_threads:
+        top_threads = context.get("top_threads", []) if isinstance(context, dict) else []
     if not isinstance(top_threads, list) or not top_threads:
         phase3_context_path = context_path.parent.parent / "phase-3" / "context-pack.json"
         try:
@@ -669,7 +716,6 @@ def _apply_recipient_role_weights(
         "indirect": 0.6,
         "group_only": 0.4,
     }
-    NON_DIRECT_WARNING = "⚠️ 你不是主要收件人，请确认是否真的需要你处理"
 
     role_map: dict[str, str] = {}
     for thread in top_threads:
@@ -706,32 +752,37 @@ def _apply_recipient_role_weights(
             role = role_map.get(tkey)
             if role is not None:
                 item["recipient_role"] = role
-                why = str(item.get("why", "") or "")
-                if NON_DIRECT_WARNING not in why:
-                    item["why"] = f"{why}  {NON_DIRECT_WARNING}".strip()
 
     return response
 
 
 def run_single(config: Phase4RunConfig) -> dict[str, object]:
+    context = _load_object(config.context_path)
+    had_threads = "threads" in context and isinstance(context["threads"], list)
+    _filter_skip_threads(context)
+    filtered_text = (
+        json.dumps(context, ensure_ascii=False)
+        if had_threads
+        else config.context_path.read_text(encoding="utf-8")
+    )
+
     if config.dry_run:
-        prompt = FULL_PROMPT + config.context_path.read_text(encoding="utf-8")
-        print(f"=== PROMPT length: {len(prompt)} chars ===")
+        system_prompt = phase4_full_system_prompt()
+        user_blob = PHASE4_MAILBOX_USER_PREFIX + filtered_text
+        print(f"=== SYSTEM length: {len(system_prompt)} chars ===")
+        print(f"=== USER length: {len(user_blob)} chars ===")
+        thread_count = len(context["threads"]) if had_threads else 0
+        print(f"=== threads after filter: {thread_count} ===")
         print("=== DRY RUN ===")
         return {"dry_run": True}
 
+    config.output_dir.mkdir(parents=True, exist_ok=True)
     backend = resolve_backend(env_file=config.env_file)
     model_name = config.model_override or backend.model
-    context = _load_object(config.context_path)
-    
-    # Pre-filter threads based on routing rules
-    if "threads" in context and isinstance(context["threads"], list):
-        filtered_threads = [t for t in context["threads"] if not t.get("skip_phase4")]
-        context["threads"] = filtered_threads
-        context["thread_candidates"] = len(filtered_threads)
-        # Temporarily write filtered context for LLM
+
+    if had_threads:
         filtered_context_path = config.output_dir / "context-pack-filtered-single.json"
-        filtered_context_path.write_text(json.dumps(context, ensure_ascii=False), encoding="utf-8")
+        filtered_context_path.write_text(filtered_text, encoding="utf-8")
         prompt_context_path = filtered_context_path
     else:
         prompt_context_path = config.context_path
@@ -739,7 +790,8 @@ def run_single(config: Phase4RunConfig) -> dict[str, object]:
     print(f"LLM backend: {backend.backend} ({backend.model})")
     print("Calling LLM for daily value outputs...")
     response = _call_with_prompt(
-        prompt_prefix=FULL_PROMPT,
+        system_prompt=phase4_full_system_prompt(),
+        user_prefix=PHASE4_MAILBOX_USER_PREFIX,
         context_path=prompt_context_path,
         env_file=config.env_file,
         model_override=config.model_override,
@@ -771,12 +823,11 @@ def run_subtask(
     model_override: str | None,
 ) -> dict[str, object]:
     context = _load_object(context_path)
-    
-    # Pre-filter threads based on routing rules
-    if "threads" in context and isinstance(context["threads"], list):
-        filtered_threads = [t for t in context["threads"] if not t.get("skip_phase4")]
-        context["threads"] = filtered_threads
-        context["thread_candidates"] = len(filtered_threads)
+    had_threads = "threads" in context and isinstance(context["threads"], list)
+    _filter_skip_threads(context)
+
+    if had_threads:
+        output_dir.mkdir(parents=True, exist_ok=True)
         filtered_context_path = output_dir / f"context-pack-filtered-{kind}.json"
         filtered_context_path.write_text(json.dumps(context, ensure_ascii=False), encoding="utf-8")
         prompt_context_path = filtered_context_path
@@ -788,7 +839,8 @@ def run_subtask(
 
     if kind == "urgent":
         response = _call_with_prompt(
-            prompt_prefix=URGENT_PROMPT,
+            system_prompt=phase4_urgent_system_prompt(),
+            user_prefix=PHASE4_MAILBOX_USER_PREFIX,
             context_path=prompt_context_path,
             env_file=env_file,
             model_override=model_override,
@@ -799,7 +851,8 @@ def run_subtask(
         label = "urgent+pending"
     elif kind == "sla":
         response = _call_with_prompt(
-            prompt_prefix=SLA_PROMPT,
+            system_prompt=phase4_sla_system_prompt(),
+            user_prefix=PHASE4_MAILBOX_USER_PREFIX,
             context_path=prompt_context_path,
             env_file=env_file,
             model_override=model_override,
@@ -809,7 +862,8 @@ def run_subtask(
         label = "sla-risks"
     elif kind == "brief":
         response = _call_with_prompt(
-            prompt_prefix=BRIEF_PROMPT,
+            system_prompt=phase4_brief_system_prompt(),
+            user_prefix=PHASE4_MAILBOX_USER_PREFIX,
             context_path=prompt_context_path,
             env_file=env_file,
             model_override=model_override,

@@ -4,16 +4,30 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 from twinbox_core.phase4_value import (
+    PHASE4_MAILBOX_USER_PREFIX,
+    URGENT_PROMPT,
+    Phase4RunConfig,
     _apply_recipient_role_weights,
+    _call_with_prompt,
     _ensure_material_summary,
     derive_material_summary,
     merge_phase4_outputs,
+    phase4_brief_system_prompt,
+    phase4_urgent_system_prompt,
+    run_single,
+    run_subtask,
 )
 
 
 class Phase4ValueTest(unittest.TestCase):
+    def test_urgent_prompt_excludes_recipient_role_scoring_rule(self) -> None:
+        self.assertNotIn("recipient_role", URGENT_PROMPT)
+
     def test_derive_material_summary_covers_all_columns(self) -> None:
         context = {
             "human_context": {
@@ -193,7 +207,7 @@ class Phase4ValueTest(unittest.TestCase):
             self.assertEqual(direct_urgent["urgency_score"], 80)
             self.assertNotIn("recipient_role", direct_urgent)
             self.assertEqual(cc_pending["recipient_role"], "cc_only")
-            self.assertIn("⚠️ 你不是主要收件人", cc_pending["why"])
+            self.assertNotIn("⚠️ 你不是主要收件人", cc_pending["why"])
             self.assertNotIn("recipient_role", direct_pending)
 
     def test_apply_recipient_role_weights_downweights_group_only_threads(self) -> None:
@@ -223,7 +237,26 @@ class Phase4ValueTest(unittest.TestCase):
             self.assertEqual(group_urgent["urgency_score"], 36)  # 90 * 0.4
             self.assertEqual(group_urgent["recipient_role"], "group_only")
             self.assertEqual(group_pending["recipient_role"], "group_only")
-            self.assertIn("⚠️ 你不是主要收件人", group_pending["why"])
+            self.assertNotIn("⚠️ 你不是主要收件人", group_pending["why"])
+
+    def test_apply_recipient_role_weights_reads_phase4_threads_key(self) -> None:
+        response = {
+            "daily_urgent": [
+                {"thread_key": "cc-thread", "urgency_score": 50, "why": "x"},
+            ],
+            "pending_replies": [],
+        }
+        context = {
+            "threads": [
+                {"thread_key": "cc-thread", "recipient_role": "cc_only"},
+            ]
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            context_path = Path(tmp) / "context-pack.json"
+            context_path.write_text(json.dumps(context, ensure_ascii=False), encoding="utf-8")
+            weighted = _apply_recipient_role_weights(response, context_path)
+            self.assertEqual(weighted["daily_urgent"][0]["urgency_score"], 30)
+            self.assertEqual(weighted["daily_urgent"][0]["recipient_role"], "cc_only")
 
     def test_apply_recipient_role_weights_falls_back_to_phase3_context_pack(self) -> None:
         response = {
@@ -259,6 +292,179 @@ class Phase4ValueTest(unittest.TestCase):
 
             self.assertEqual(weighted["daily_urgent"][0]["recipient_role"], "group_only")
             self.assertEqual(weighted["pending_replies"][0]["recipient_role"], "group_only")
+
+
+def _minimal_full_phase4_llm_json() -> str:
+    return json.dumps(
+        {
+            "daily_urgent": [
+                {
+                    "thread_key": "cc-thread",
+                    "flow": "LF1",
+                    "stage": "S1",
+                    "urgency_score": 100,
+                    "reason_code": "waiting_on_me",
+                    "why": "需要处理",
+                    "action_hint": "回复",
+                    "owner": "o",
+                    "waiting_on": "w",
+                    "evidence_source": "mail_evidence",
+                }
+            ],
+            "pending_replies": [],
+            "sla_risks": [],
+            "weekly_brief": {
+                "period": "p",
+                "total_threads_in_window": 0,
+                "action_now": [],
+                "backlog": [],
+                "important_changes": [],
+                "flow_summary": [],
+                "top_actions": [],
+                "rhythm_observation": "r",
+            },
+        },
+        ensure_ascii=False,
+    )
+
+
+def test_run_single_applies_recipient_role_weights(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    context = {
+        "threads": [{"thread_key": "cc-thread", "recipient_role": "cc_only"}],
+        "human_context": {},
+    }
+    ctx_path = tmp_path / "context-pack.json"
+    ctx_path.write_text(json.dumps(context, ensure_ascii=False), encoding="utf-8")
+    out = tmp_path / "phase-4-out"
+    doc = tmp_path / "docs"
+
+    monkeypatch.setattr("twinbox_core.phase4_value.call_llm", lambda *a, **k: _minimal_full_phase4_llm_json())
+    monkeypatch.setattr(
+        "twinbox_core.phase4_value.resolve_backend",
+        lambda **k: SimpleNamespace(backend="stub", model="stub-model"),
+    )
+    monkeypatch.setattr("twinbox_core.phase4_value.render_phase4_outputs", lambda **k: None)
+
+    cfg = Phase4RunConfig(
+        context_path=ctx_path,
+        output_dir=out,
+        doc_dir=doc,
+        dry_run=False,
+        env_file=None,
+        model_override="stub-model",
+        max_tokens=1024,
+    )
+    result = run_single(cfg)
+    assert result["daily_urgent"][0]["urgency_score"] == 60
+    assert result["daily_urgent"][0]["recipient_role"] == "cc_only"
+
+
+def test_run_subtask_urgent_applies_recipient_role_weights(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    context = {
+        "threads": [{"thread_key": "cc-thread", "recipient_role": "cc_only"}],
+        "human_context": {},
+    }
+    ctx_path = tmp_path / "context-pack.json"
+    ctx_path.write_text(json.dumps(context, ensure_ascii=False), encoding="utf-8")
+    out = tmp_path / "phase-4-out"
+    out.mkdir(parents=True)
+
+    urgent_json = json.dumps(
+        {
+            "daily_urgent": [
+                {
+                    "thread_key": "cc-thread",
+                    "flow": "LF1",
+                    "stage": "S1",
+                    "urgency_score": 100,
+                    "reason_code": "waiting_on_me",
+                    "why": "需要处理",
+                    "action_hint": "回复",
+                    "owner": "o",
+                    "waiting_on": "w",
+                    "evidence_source": "mail_evidence",
+                }
+            ],
+            "pending_replies": [],
+        },
+        ensure_ascii=False,
+    )
+    monkeypatch.setattr("twinbox_core.phase4_value.call_llm", lambda *a, **k: urgent_json)
+    monkeypatch.setattr(
+        "twinbox_core.phase4_value.resolve_backend",
+        lambda **k: SimpleNamespace(backend="stub", model="stub-model"),
+    )
+
+    result = run_subtask(
+        kind="urgent",
+        context_path=ctx_path,
+        output_dir=out,
+        env_file=None,
+        model_override="stub-model",
+    )
+    assert result["daily_urgent"][0]["urgency_score"] == 60
+    assert result["daily_urgent"][0]["recipient_role"] == "cc_only"
+
+
+def test_call_with_prompt_passes_system_prompt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_llm(
+        prompt: str,
+        max_tokens: int = 4096,
+        system_prompt: str | None = None,
+        **kwargs: object,
+    ) -> str:
+        captured["system_prompt"] = system_prompt
+        captured["user_head"] = prompt[:80]
+        return '{"daily_urgent":[],"pending_replies":[]}'
+
+    monkeypatch.setattr("twinbox_core.phase4_value.call_llm", fake_llm)
+    ctx_path = tmp_path / "ctx.json"
+    ctx_path.write_text('{"threads":[]}', encoding="utf-8")
+
+    _call_with_prompt(
+        system_prompt=phase4_urgent_system_prompt(),
+        user_prefix=PHASE4_MAILBOX_USER_PREFIX,
+        context_path=ctx_path,
+        env_file=None,
+        model_override=None,
+        max_tokens=256,
+    )
+
+    sys_p = captured["system_prompt"]
+    assert isinstance(sys_p, str) and len(sys_p) > 0
+    urgent = phase4_urgent_system_prompt()
+    brief = phase4_brief_system_prompt()
+    assert "calibration_notes" in urgent
+    assert "template_hint" not in urgent
+    assert "template_hint" in brief
+    assert "0.85" not in urgent
+    assert "Confidence must reflect actual certainty" not in urgent
+
+
+def test_dry_run_sees_filtered_threads(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    context = {
+        "threads": [
+            {"thread_key": "keep-me", "recipient_role": "direct", "skip_phase4": False},
+            {"thread_key": "skip-me", "recipient_role": "direct", "skip_phase4": True},
+        ],
+        "human_context": {},
+    }
+    ctx_path = tmp_path / "context-pack.json"
+    ctx_path.write_text(json.dumps(context, ensure_ascii=False), encoding="utf-8")
+    cfg = Phase4RunConfig(
+        context_path=ctx_path,
+        output_dir=tmp_path / "out",
+        doc_dir=tmp_path / "doc",
+        dry_run=True,
+        env_file=None,
+        model_override=None,
+        max_tokens=1024,
+    )
+    run_single(cfg)
+    captured = capsys.readouterr().out
+    assert "threads after filter: 1" in captured
 
 
 if __name__ == "__main__":

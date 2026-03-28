@@ -57,7 +57,7 @@ class Phase2PersonaTest(unittest.TestCase):
             ), mock.patch(
                 "twinbox_core.phase2_persona.call_llm",
                 return_value=json.dumps(llm_response, ensure_ascii=False),
-            ):
+            ) as llm_mock:
                 run_phase2_persona(
                     Phase2RunConfig(
                         context_path=context_path,
@@ -69,6 +69,12 @@ class Phase2PersonaTest(unittest.TestCase):
                         model_override=None,
                     )
                 )
+
+            llm_kwargs = llm_mock.call_args.kwargs
+            self.assertIsInstance(llm_kwargs.get("system_prompt"), str)
+            self.assertGreater(len(llm_kwargs["system_prompt"]), 0)
+            self.assertIn("enterprise email analyst", llm_kwargs["system_prompt"])
+            self.assertIn("onboarding_profile_notes", llm_kwargs["system_prompt"])
 
             self.assertIn("负责项目交付推进", (output_dir / "persona-hypotheses.yaml").read_text(encoding="utf-8"))
             self.assertIn("生成周报", (output_dir / "business-hypotheses.yaml").read_text(encoding="utf-8"))

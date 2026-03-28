@@ -13,6 +13,7 @@ from typing import Any
 from .artifacts import generated_at
 from .context_builder import _normalize_thread, run_phase2_loading, run_phase3_loading
 from .mailbox import build_effective_env, find_himalaya_binary, render_himalaya_config, resolve_mailbox_paths
+from .onboarding import load_state
 from .paths import resolve_state_root
 from .routing_rules import apply_routing_rules
 
@@ -499,6 +500,16 @@ def run_phase4_loading(
     has_habits = bool(habits_raw and habits_raw != "habits: []")
     has_material_extracts = len(material_bundle.strip()) > 50
 
+    ob_state = load_state(state_root)
+    raw_notes = ob_state.profile_data.get("notes") if isinstance(ob_state.profile_data, dict) else None
+    onboarding_notes = raw_notes.strip() if isinstance(raw_notes, str) and raw_notes.strip() else ""
+
+    cal_path = runtime_context / "instance-calibration-notes.md"
+    calibration_raw = (
+        cal_path.read_text(encoding="utf-8").strip() if cal_path.is_file() else ""
+    )
+    has_calibration = bool(calibration_raw)
+
     context = {
         "generated_at": generated_at(),
         "lookback_days": lookback_days,
@@ -524,6 +535,10 @@ def run_phase4_loading(
             "manual_facts_raw": facts_raw if has_facts else None,
             "manual_habits_raw": habits_raw if has_habits else None,
             "material_extracts_notes": material_bundle if has_material_extracts else None,
+            "has_onboarding_profile_notes": bool(onboarding_notes),
+            "onboarding_profile_notes": onboarding_notes or None,
+            "has_calibration": has_calibration,
+            "calibration_notes": calibration_raw if has_calibration else None,
         },
     }
     output_path = _write_json(phase4_dir / "context-pack.json", context)
