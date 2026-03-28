@@ -84,6 +84,35 @@ class ContextBuilderTest(unittest.TestCase):
             self.assertTrue(output["human_context"]["has_facts"])
             self.assertEqual(context["top_contacts"][0]["key"], "alice@example.com")
 
+    def test_phase2_loading_includes_onboarding_profile_notes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_phase1_inputs(root)
+            (root / "runtime").mkdir(parents=True, exist_ok=True)
+            (root / "runtime/onboarding-state.json").write_text(
+                json.dumps(
+                    {
+                        "current_stage": "material_import",
+                        "completed_stages": ["profile_setup"],
+                        "profile_data": {"notes": "  engineer; checks mail at 9:30  "},
+                        "mailbox_config": {},
+                        "materials": [],
+                        "routing_rules": [],
+                        "push_enabled": False,
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            run_phase2_loading(root)
+            output = json.loads(
+                (root / "runtime/validation/phase-2/context-pack.json").read_text(encoding="utf-8")
+            )
+            hc = output["human_context"]
+            self.assertTrue(hc["has_onboarding_profile_notes"])
+            self.assertEqual(hc["onboarding_profile_notes"], "engineer; checks mail at 9:30")
+
     def test_phase3_loading_writes_context_pack(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

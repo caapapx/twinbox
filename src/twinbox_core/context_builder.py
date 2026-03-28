@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .mailbox import load_env_file
+from .onboarding import load_state
 
 
 class ContextBuilderError(RuntimeError):
@@ -423,6 +424,12 @@ def _build_human_context(state_root: Path) -> dict[str, object]:
     facts_items = _parse_yaml_simple_items(facts_raw)
     habits_items = _parse_yaml_simple_items(habits_raw)
 
+    onboarding_notes = ""
+    ob_state = load_state(state_root)
+    raw_notes = ob_state.profile_data.get("notes") if isinstance(ob_state.profile_data, dict) else None
+    if isinstance(raw_notes, str) and raw_notes.strip():
+        onboarding_notes = raw_notes.strip()
+
     return {
         "facts_raw": facts_raw,
         "habits_raw": habits_raw,
@@ -431,6 +438,8 @@ def _build_human_context(state_root: Path) -> dict[str, object]:
         "has_facts": len(facts_items) > 0,
         "has_habits": len(habits_items) > 0,
         "has_calibration": False,
+        "onboarding_profile_notes": onboarding_notes,
+        "has_onboarding_profile_notes": bool(onboarding_notes),
     }
 
 
@@ -529,6 +538,8 @@ def run_phase2_loading(state_root: Path) -> dict[str, object]:
             "has_habits": human_context["has_habits"],
             "manual_facts_raw": human_context["facts_raw"] if human_context["has_facts"] else None,
             "manual_habits_raw": human_context["habits_raw"] if human_context["has_habits"] else None,
+            "has_onboarding_profile_notes": human_context["has_onboarding_profile_notes"],
+            "onboarding_profile_notes": human_context["onboarding_profile_notes"] or None,
         },
     }
 
@@ -543,7 +554,8 @@ def run_phase2_loading(state_root: Path) -> dict[str, object]:
         "  human_context: "
         f"facts={len(human_context['facts_items'])} "
         f"habits={len(human_context['habits_items'])} "
-        f"calibration={'yes' if human_context['has_calibration'] else 'no'}"
+        f"calibration={'yes' if human_context['has_calibration'] else 'no'} "
+        f"onboarding_notes={'yes' if human_context['has_onboarding_profile_notes'] else 'no'}"
     )
     print(f"  -> {output_path}")
     return context
@@ -655,6 +667,8 @@ def run_phase3_loading(state_root: Path) -> dict[str, object]:
             "has_habits": human_context["has_habits"],
             "manual_facts_raw": human_context["facts_raw"] if human_context["has_facts"] else None,
             "manual_habits_raw": human_context["habits_raw"] if human_context["has_habits"] else None,
+            "has_onboarding_profile_notes": human_context["has_onboarding_profile_notes"],
+            "onboarding_profile_notes": human_context["onboarding_profile_notes"] or None,
         },
     }
 
@@ -667,7 +681,8 @@ def run_phase3_loading(state_root: Path) -> dict[str, object]:
         "  human_context: "
         f"facts={'yes' if human_context['has_facts'] else 'no'} "
         f"habits={'yes' if human_context['has_habits'] else 'no'} "
-        f"calibration={'yes' if human_context['has_calibration'] else 'no'}"
+        f"calibration={'yes' if human_context['has_calibration'] else 'no'} "
+        f"onboarding_notes={'yes' if human_context['has_onboarding_profile_notes'] else 'no'}"
     )
     print(f"  -> {output_path}")
     return context

@@ -64,6 +64,7 @@ Produce a JSON object with exactly this structure:
    - Mark evidence source: "mail_evidence" for email data, "user_declared_rule" or "user_confirmed_fact" for human context
    - If human context contradicts email evidence, flag the conflict in the evidence array
    - Periodic tasks from manual_habits should appear in relevant hypotheses
+   - If `onboarding_profile_notes` is non-null in human_context, treat it as user-declared role/habits/preferences from Twinbox conversational onboarding; align persona hypotheses and cite "user_confirmed_fact" / onboarding_notes in evidence
 7. Output ONLY the JSON object. No markdown fences, no explanation.
 
 ## Mailbox data:
