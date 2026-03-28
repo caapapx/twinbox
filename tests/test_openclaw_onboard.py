@@ -298,7 +298,7 @@ def test_console_journey_prompter_select_shows_descriptions_and_reprompts() -> N
         "Choose onboarding flow",
         options=[
             {"value": "quickstart", "label": "Quickstart", "description": "Use the recommended path with fewer decisions."},
-            {"value": "advanced", "label": "Advanced", "description": "Review fragment and host wiring details first."},
+            {"value": "manual", "label": "Manual", "description": "Configure port, network, Tailscale, and auth options."},
         ],
         default="quickstart",
     )
@@ -306,7 +306,7 @@ def test_console_journey_prompter_select_shows_descriptions_and_reprompts() -> N
     out = stream.getvalue()
     assert choice == "quickstart"
     assert "Use the recommended path with fewer decisions." in out
-    assert "Review fragment and host wiring details first." in out
+    assert "Configure port, network, Tailscale, and auth options." in out
     assert "Enter choice" in out
     assert "Invalid choice" in out
 
@@ -320,16 +320,18 @@ def test_console_journey_prompter_select_supports_arrow_navigation() -> None:
         "Choose onboarding flow",
         options=[
             {"value": "quickstart", "label": "Quickstart", "description": "Use the recommended path with fewer decisions."},
-            {"value": "advanced", "label": "Advanced", "description": "Review fragment and host wiring details first."},
+            {"value": "manual", "label": "Manual", "description": "Configure port, network, Tailscale, and auth options."},
         ],
         default="quickstart",
     )
 
     out = stream.getvalue()
-    assert choice == "advanced"
+    assert choice == "manual"
     assert "Use ↑/↓ to move" in out
     assert "Press Enter to confirm" in out
-    assert "› Advanced" in out
+    assert "› Manual" in out
+    assert "[Recommended]" not in out
+    assert "(Configure port, network, Tailscale, and auth options.)" in out
 
 
 def test_console_journey_prompter_select_supports_horizontal_radio_layout() -> None:
@@ -340,7 +342,7 @@ def test_console_journey_prompter_select_supports_horizontal_radio_layout() -> N
     choice = prompter.select(
         "Continue?",
         options=[
-            {"value": "yes", "label": "Yes (Recommended)"},
+            {"value": "yes", "label": "Yes"},
             {"value": "no", "label": "No"},
         ],
         default="yes",
@@ -350,7 +352,7 @@ def test_console_journey_prompter_select_supports_horizontal_radio_layout() -> N
     out = stream.getvalue()
     assert choice == "no"
     assert "Use ←/→ to move" in out
-    assert "○ Yes (Recommended)" in out or "● Yes (Recommended)" in out
+    assert "○ Yes" in out or "● Yes" in out
     assert "● No" in out
 
 
@@ -379,7 +381,7 @@ def test_console_journey_prompter_select_clears_lines_before_rerender() -> None:
         "Choose onboarding flow",
         options=[
             {"value": "quickstart", "label": "Quickstart", "description": "Use the recommended path with fewer decisions."},
-            {"value": "advanced", "label": "Advanced", "description": "Review fragment and host wiring details first."},
+            {"value": "manual", "label": "Manual", "description": "Configure port, network, Tailscale, and auth options."},
         ],
         default="quickstart",
     )
