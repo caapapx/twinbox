@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 import re
 from pathlib import Path
 
@@ -56,6 +57,41 @@ def _write_ready_env(state_root: Path) -> None:
                 "LLM_MODEL=test-model",
                 "LLM_API_URL=https://example.com/v1/chat/completions",
             ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_ready_twinbox_config(state_root: Path) -> None:
+    (state_root / "twinbox.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "mailbox": {
+                    "email": "user@example.com",
+                    "imap": {
+                        "host": "imap.example.com",
+                        "port": "993",
+                        "login": "user@example.com",
+                        "password": "secret-pass",
+                    },
+                    "smtp": {
+                        "host": "smtp.example.com",
+                        "port": "465",
+                        "login": "user@example.com",
+                        "password": "secret-pass",
+                    },
+                },
+                "llm": {
+                    "provider": "openai",
+                    "model": "test-model",
+                    "api_url": "https://example.com/v1/chat/completions",
+                    "api_key": "sk-test",
+                },
+            },
+            ensure_ascii=False,
+            indent=2,
         )
         + "\n",
         encoding="utf-8",
@@ -572,6 +608,54 @@ def test_run_openclaw_onboard_v2_requires_explicit_steps_even_with_existing_valu
     assert "LLM: test-model" in apply_note["body"]
     assert any(event[0] == "note" and event[1]["title"] == "Apply setup" for event in prompter.events)
     assert any(event[0] == "outro" and "twinbox agent" in str(event[1]) for event in prompter.events)
+
+
+def test_run_openclaw_onboard_v2_reads_existing_values_from_twinbox_json(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    _write_ready_twinbox_config(state_root)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
+    (repo / "openclaw-skill").mkdir()
+    (repo / "openclaw-skill" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    openclaw_home = tmp_path / ".openclaw"
+    openclaw_home.mkdir()
+
+    monkeypatch.setenv("TWINBOX_STATE_ROOT", str(state_root))
+    monkeypatch.setenv("TWINBOX_CODE_ROOT", str(repo))
+    monkeypatch.setattr("twinbox_core.openclaw_onboard.shutil.which", lambda _bin: "/usr/bin/openclaw")
+    monkeypatch.setattr("twinbox_core.mailbox.run_preflight", _fake_run_preflight)
+    monkeypatch.setattr(
+        "twinbox_core.openclaw_onboard.run_openclaw_deploy",
+        lambda **_: OpenClawDeployReport(ok=True, steps=[]),
+    )
+
+    prompter = _FakePrompter(
+        select_values=[
+            "continue",
+            "quickstart",
+            "use_existing",
+            "use_existing",
+            "yes",
+            "apply",
+        ],
+    )
+    report = run_openclaw_onboard_v2(
+        code_root=repo,
+        openclaw_home=openclaw_home,
+        prompter=prompter,
+    )
+
+    assert report.ok is True
+    apply_note = next(
+        event[1] for event in prompter.events if event[0] == "note" and event[1]["title"] == "Apply setup"
+    )
+    assert "Mailbox: user@example.com" in apply_note["body"]
+    assert "LLM: test-model" in apply_note["body"]
 
 
 def test_run_openclaw_onboard_v2_collects_llm_inputs_before_validation_progress(

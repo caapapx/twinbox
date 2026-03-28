@@ -126,7 +126,7 @@ STAGE_PROMPTS = {
         "推荐方式（由 agent 调用 `twinbox_config_set_llm` 插件工具，或在宿主机执行）：\n"
         "  TWINBOX_SETUP_API_KEY=<your_key> twinbox config set-llm --provider openai --model MODEL --api-url URL --json\n"
         "  TWINBOX_SETUP_API_KEY=<your_key> twinbox config set-llm --provider anthropic --model MODEL --api-url URL --json\n\n"
-        "配置写入 state root/.env，不会泄露到命令行参数。Twinbox 不再内置默认模型或默认 API URL。"
+        "配置写入 state root/twinbox.json，不会泄露到命令行参数。Twinbox 不再内置默认模型或默认 API URL。"
     ),
     "profile_setup": "Phase 2 of 2 · 个人画像设置\n继续完成 Twinbox onboarding。请告诉我您的职位、工作习惯和偏好，帮助我更好地理解邮件优先级。",
     "material_import": "Phase 2 of 2 · 上下文材料导入\n继续完成 Twinbox onboarding。您可以上传项目文档、团队信息等材料，帮助我理解业务背景。",

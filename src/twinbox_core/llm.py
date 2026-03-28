@@ -34,8 +34,6 @@ def load_env_file(path: str | os.PathLike[str] | None) -> dict[str, str]:
     if not path:
         return {}
     env_path = Path(path).expanduser()
-    if not env_path.is_file():
-        return {}
     return _load_env_file(env_path)
 
 

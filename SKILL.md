@@ -69,8 +69,11 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 | "某个事情进展如何" / progress on a topic | `twinbox task progress QUERY --json` |
 | Mailbox status / env diagnosis | `twinbox task mailbox-status --json` |
 | Auto-detect email server config | `twinbox mailbox detect EMAIL --json` |
-| 配置邮箱凭据（自动探测 + 写入 .env）| `twinbox mailbox setup --email EMAIL --json`（密码从 `TWINBOX_SETUP_IMAP_PASS` 注入）或 OpenClaw 工具 `twinbox_mailbox_setup` |
-| 配置 LLM API（写入 .env）| `twinbox config set-llm --provider openai|anthropic --model MODEL --api-url URL --json`（key 从 `TWINBOX_SETUP_API_KEY` 注入；必须显式传 model 和 api-url，Twinbox 不再内置默认 LLM 配置）或 OpenClaw 工具 `twinbox_config_set_llm` |
+| 查看当前单配置文件 | `twinbox config show --json` |
+| 配置邮箱凭据（自动探测或显式主机参数，写入 `twinbox.json`）| `twinbox mailbox setup --email EMAIL --json` 或 `twinbox config mailbox-set --email EMAIL --json`（密码从 `TWINBOX_SETUP_IMAP_PASS` 注入）或 OpenClaw 工具 `twinbox_mailbox_setup` |
+| 配置 LLM API（写入 `twinbox.json`）| `twinbox config set-llm --provider openai|anthropic --model MODEL --api-url URL --json`（key 从 `TWINBOX_SETUP_API_KEY` 注入；必须显式传 model 和 api-url，Twinbox 不再内置默认 LLM 配置）或 OpenClaw 工具 `twinbox_config_set_llm` |
+| 配置 Twinbox integration 默认值 | `twinbox config integration-set --use-fragment yes|no [--fragment-path PATH] --json` |
+| 配置 OpenClaw 默认值 | `twinbox config openclaw-set [--home PATH] [--bin NAME] [--strict|--no-strict] [--sync-env|--no-sync-env] [--restart-gateway|--no-restart-gateway] --json` |
 | OpenClaw 安装总向导（唯一公开向导入口；OpenClaw 风格显式步骤向导：Security、Quickstart/Manual、Mailbox、LLM、Twinbox tools integration、Apply setup + 更强 handoff；已有 Mailbox/LLM 值会先进入 `Existing config detected` / `Config handling`，LLM 覆盖输入顺序为 `API URL -> API key -> Model ID`） | `twinbox onboard openclaw --json` |
 | OpenClaw 宿主接线高级入口（roots + `openclaw.json` + 按 OS/CPU 的 `himalaya` 检查/内置 Linux 解压 + SKILL 真源在 state root + 对 `~/.openclaw/.../SKILL.md` 软链或复制 + 可选重启 Gateway）| `twinbox deploy openclaw --json`（高级/脚本化入口；`--dry-run`；`--no-restart`；`--no-env-sync`；`--strict`；可选 `--fragment` / `--no-fragment` 合并 `openclaw-skill/openclaw.fragment.json`） |
 | 撤销上述宿主接线（不删 `~/.twinbox`；非全量卸载）| `twinbox deploy openclaw --rollback --json`（可选 `--remove-config` 删 `~/.config/twinbox`） |
@@ -119,7 +122,7 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 
 - Prefer a dedicated `twinbox` agent/session for Twinbox work; keep `main` for general chat
 - After skill or env changes, use a fresh Twinbox session; `skillsSnapshot` can freeze old injection results
-- Hosted env should come from `skills.entries.twinbox.env`; `state root/.env` is a local fallback, not the primary hosted config source
+- Hosted env should come from `skills.entries.twinbox.env`; `state root/twinbox.json` is the Twinbox config source, and any legacy `.env` is only a migration fallback
 - If `plugin-twinbox-task` is enabled, prefer an absolute `twinboxBin` pointing to `scripts/twinbox`; if unset, keep `cwd` accurate so the plugin can auto-detect `<cwd>/scripts/twinbox` instead of relying on Gateway PATH
 - Treat OpenClaw schedule execution as a Twinbox-managed bridge cron concern; current default definitions come from `config/schedules.yaml`, not skill metadata
 - The currently verified refresh path is `openclaw cron -> system-event -> host bridge/poller -> twinbox-orchestrate schedule --job ...`
@@ -157,7 +160,7 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 
 - `mailbox-connected` means read-only IMAP preflight succeeded
 - `status=warn` with `smtp_skipped_read_only` is acceptable for preflight
-- OpenClaw-native deployments should inject mailbox env into process env via `skills.entries.twinbox.env`; `state root/.env` is a local fallback, not the preferred hosted config source
+- OpenClaw-native deployments should inject mailbox env into process env via `skills.entries.twinbox.env`; `state root/twinbox.json` is the Twinbox config source, and any legacy `.env` is only a migration fallback
 - If Twinbox stops appearing in answers after a deploy, check env gating first, then session-level `skillsSnapshot`
 - If Twinbox commands fail, first verify env, mounted repo root, `runtime/bin/himalaya` (on Linux x86_64/aarch64, twinbox can extract a bundled `himalaya` there on first preflight), and Python dependencies on the OpenClaw host
 

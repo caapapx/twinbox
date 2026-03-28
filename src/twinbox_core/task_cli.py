@@ -1048,9 +1048,38 @@ def cmd_mailbox_detect(args: argparse.Namespace) -> int:
 
 
 def cmd_mailbox_setup(args: argparse.Namespace) -> int:
-    """Configure mailbox credentials via env var injection and write .env."""
+    """Configure mailbox credentials via env var injection and write twinbox.json."""
+    return cmd_config_mailbox_set(args)
+
+
+def cmd_config_show(args: argparse.Namespace) -> int:
+    """Show the single-source Twinbox configuration."""
+    from .twinbox_config import config_path_for_state_root, load_config_or_legacy, load_masked_twinbox_config, save_twinbox_config
+
+    state_root = _state_root()
+    config_path = config_path_for_state_root(state_root)
+    if config_path.exists():
+        payload = load_masked_twinbox_config(config_path)
+    else:
+        payload = load_config_or_legacy(state_root / ".env")
+        save_twinbox_config(config_path, payload)
+        payload = load_masked_twinbox_config(config_path)
+    payload["config_file_path"] = str(config_path)
+
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(f"Twinbox config: {config_path}")
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_config_mailbox_set(args: argparse.Namespace) -> int:
+    """Configure mailbox settings into the single-source Twinbox config."""
     from .env_writer import mask_secret, merge_env_file, write_env_file
+    from .mailbox import resolve_mailbox_paths, run_preflight
     from .mailbox_detect import detect_to_env
+    from .twinbox_config import config_path_for_state_root
 
     imap_pass = os.environ.get("TWINBOX_SETUP_IMAP_PASS", "").strip()
     if not imap_pass:
@@ -1065,80 +1094,79 @@ def cmd_mailbox_setup(args: argparse.Namespace) -> int:
         return 2
 
     smtp_pass = os.environ.get("TWINBOX_SETUP_SMTP_PASS", "").strip() or imap_pass
-
-    detected = detect_to_env(args.email, verbose=False)
-    if detected is None:
-        if args.json:
-            print(json.dumps({
-                "status": "fail",
-                "error_code": "detection_failed",
-                "email": args.email,
-                "actionable_hint": "Could not auto-detect IMAP/SMTP servers. Try a known email provider.",
-            }, ensure_ascii=False, indent=2))
-        else:
-            print(f"错误: 无法自动探测 {args.email} 的服务器配置", file=sys.stderr)
-        return 1
+    imap_host = getattr(args, "imap_host", "")
+    imap_port = getattr(args, "imap_port", "")
+    imap_encryption = getattr(args, "imap_encryption", "")
+    smtp_host = getattr(args, "smtp_host", "")
+    smtp_port = getattr(args, "smtp_port", "")
+    smtp_encryption = getattr(args, "smtp_encryption", "")
+    detected = None
+    if not imap_host or not smtp_host:
+        detected = detect_to_env(args.email, verbose=False)
+        if detected is None:
+            if args.json:
+                print(json.dumps({
+                    "status": "fail",
+                    "error_code": "detect_failed",
+                    "actionable_hint": f"Could not auto-detect mailbox servers for {args.email}.",
+                }, ensure_ascii=False, indent=2))
+            else:
+                print(f"错误: 无法自动探测邮箱服务器: {args.email}", file=sys.stderr)
+            return 1
 
     imap_login = args.imap_login or args.email
     smtp_login = args.smtp_login or args.email
-
     updates: dict[str, str] = {
         "MAIL_ADDRESS": args.email,
-        "IMAP_HOST": detected["IMAP_HOST"],
-        "IMAP_PORT": detected["IMAP_PORT"],
-        "IMAP_ENCRYPTION": detected["IMAP_ENCRYPTION"],
+        "IMAP_HOST": imap_host or detected["IMAP_HOST"],
+        "IMAP_PORT": imap_port or detected["IMAP_PORT"],
+        "IMAP_ENCRYPTION": imap_encryption or detected["IMAP_ENCRYPTION"],
         "IMAP_LOGIN": imap_login,
         "IMAP_PASS": imap_pass,
-        "SMTP_HOST": detected["SMTP_HOST"],
-        "SMTP_PORT": detected["SMTP_PORT"],
-        "SMTP_ENCRYPTION": detected["SMTP_ENCRYPTION"],
+        "SMTP_HOST": smtp_host or detected["SMTP_HOST"],
+        "SMTP_PORT": smtp_port or detected["SMTP_PORT"],
+        "SMTP_ENCRYPTION": smtp_encryption or detected["SMTP_ENCRYPTION"],
         "SMTP_LOGIN": smtp_login,
         "SMTP_PASS": smtp_pass,
     }
 
-    from .mailbox import resolve_mailbox_paths, run_preflight
-
     paths = resolve_mailbox_paths(state_root=args.state_root)
     merged = merge_env_file(paths.env_file, updates)
     write_env_file(paths.env_file, merged)
-
     exit_code, preflight = run_preflight(state_root=args.state_root)
-
-    mailbox_config_masked = {
-        "MAIL_ADDRESS": args.email,
-        "IMAP_HOST": detected["IMAP_HOST"],
-        "IMAP_PORT": detected["IMAP_PORT"],
-        "IMAP_ENCRYPTION": detected["IMAP_ENCRYPTION"],
-        "IMAP_LOGIN": imap_login,
-        "IMAP_PASS": mask_secret(imap_pass),
-        "SMTP_HOST": detected["SMTP_HOST"],
-        "SMTP_PORT": detected["SMTP_PORT"],
-        "SMTP_ENCRYPTION": detected["SMTP_ENCRYPTION"],
-        "SMTP_LOGIN": smtp_login,
-        "SMTP_PASS": mask_secret(smtp_pass),
-    }
 
     output = {
         "status": "ok" if exit_code == 0 else "warn",
-        "env_file_path": str(paths.env_file),
-        "mailbox_config": mailbox_config_masked,
+        "config_file_path": str(config_path_for_state_root(paths.state_root)),
+        "mailbox_config": {
+            "MAIL_ADDRESS": args.email,
+            "IMAP_HOST": updates["IMAP_HOST"],
+            "IMAP_PORT": updates["IMAP_PORT"],
+            "IMAP_ENCRYPTION": updates["IMAP_ENCRYPTION"],
+            "IMAP_LOGIN": imap_login,
+            "IMAP_PASS": mask_secret(imap_pass),
+            "SMTP_HOST": updates["SMTP_HOST"],
+            "SMTP_PORT": updates["SMTP_PORT"],
+            "SMTP_ENCRYPTION": updates["SMTP_ENCRYPTION"],
+            "SMTP_LOGIN": smtp_login,
+            "SMTP_PASS": mask_secret(smtp_pass),
+        },
         "preflight_result": preflight,
     }
-
     if args.json:
         print(json.dumps(output, ensure_ascii=False, indent=2))
     else:
-        print(f"✅ 邮箱配置已写入: {paths.env_file}")
-        print(f"  IMAP: {detected['IMAP_HOST']}:{detected['IMAP_PORT']} ({detected['IMAP_ENCRYPTION']})")
-        print(f"  SMTP: {detected['SMTP_HOST']}:{detected['SMTP_PORT']} ({detected['SMTP_ENCRYPTION']})")
-        print(f"  Preflight: {preflight.get('status', 'unknown')}")
+        print(f"✅ Mailbox config written: {config_path_for_state_root(paths.state_root)}")
+        print(f"  IMAP: {updates['IMAP_HOST']}:{updates['IMAP_PORT']} ({updates['IMAP_ENCRYPTION']})")
+        print(f"  SMTP: {updates['SMTP_HOST']}:{updates['SMTP_PORT']} ({updates['SMTP_ENCRYPTION']})")
     return exit_code
 
 
 def cmd_config_set_llm(args: argparse.Namespace) -> int:
-    """Configure LLM API key and write .env."""
+    """Configure LLM API key and write twinbox.json."""
     from .env_writer import mask_secret, merge_env_file, write_env_file
     from .llm import resolve_backend, LLMError
+    from .twinbox_config import config_path_for_state_root
 
     api_key = os.environ.get("TWINBOX_SETUP_API_KEY", "").strip()
     if not api_key:
@@ -1210,7 +1238,7 @@ def cmd_config_set_llm(args: argparse.Namespace) -> int:
         "model": resolved_model,
         "api_url": api_url_display,
         "api_key_masked": mask_secret(api_key),
-        "env_file_path": str(env_file),
+        "config_file_path": str(config_path_for_state_root(state_root)),
         "backend_validated": backend_ok,
     }
 
@@ -1218,41 +1246,106 @@ def cmd_config_set_llm(args: argparse.Namespace) -> int:
         print(json.dumps(output, ensure_ascii=False, indent=2))
     else:
         status_icon = "✅" if backend_ok else "⚠️"
-        print(f"{status_icon} LLM 配置已写入: {env_file}")
+        print(f"{status_icon} LLM 配置已写入: {config_path_for_state_root(state_root)}")
         print(f"  Provider: {args.provider}")
         print(f"  Model: {resolved_model}")
         print(f"  API Key: {mask_secret(api_key)}")
     return 0 if backend_ok else 1
 
 
+def cmd_config_set_integration(args: argparse.Namespace) -> int:
+    """Persist Twinbox integration preferences into twinbox.json."""
+    from .twinbox_config import config_path_for_state_root, load_twinbox_config, save_twinbox_config
+
+    state_root = _state_root()
+    config_path = config_path_for_state_root(state_root)
+    payload = load_twinbox_config(config_path)
+    integration = payload.get("integration", {}) if isinstance(payload.get("integration"), dict) else {}
+    if args.fragment_path:
+        integration["fragment_path"] = str(Path(args.fragment_path).expanduser())
+    if args.use_fragment:
+        integration["use_fragment"] = args.use_fragment == "yes"
+    payload["integration"] = integration
+    save_twinbox_config(config_path, payload)
+    result = {"status": "ok", "config_file_path": str(config_path), "integration": integration}
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(f"✅ Integration config written: {config_path}")
+    return 0
+
+
+def cmd_config_set_openclaw(args: argparse.Namespace) -> int:
+    """Persist OpenClaw defaults into twinbox.json."""
+    from .twinbox_config import config_path_for_state_root, load_twinbox_config, save_twinbox_config
+
+    state_root = _state_root()
+    config_path = config_path_for_state_root(state_root)
+    payload = load_twinbox_config(config_path)
+    openclaw_cfg = payload.get("openclaw", {}) if isinstance(payload.get("openclaw"), dict) else {}
+    if args.home:
+        openclaw_cfg["home"] = str(Path(args.home).expanduser())
+    if args.bin:
+        openclaw_cfg["bin"] = args.bin
+    if args.strict:
+        openclaw_cfg["strict"] = True
+    if args.no_strict:
+        openclaw_cfg["strict"] = False
+    if args.sync_env:
+        openclaw_cfg["sync_env_from_dotenv"] = True
+    if args.no_sync_env:
+        openclaw_cfg["sync_env_from_dotenv"] = False
+    if args.restart_gateway:
+        openclaw_cfg["restart_gateway"] = True
+    if args.no_restart_gateway:
+        openclaw_cfg["restart_gateway"] = False
+    payload["openclaw"] = openclaw_cfg
+    save_twinbox_config(config_path, payload)
+    result = {"status": "ok", "config_file_path": str(config_path), "openclaw": openclaw_cfg}
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(f"✅ OpenClaw defaults written: {config_path}")
+    return 0
+
+
 def cmd_deploy_openclaw(args: argparse.Namespace) -> int:
     """Host-side OpenClaw wiring (SKILL sync, openclaw.json, roots, gateway)."""
     from twinbox_core.openclaw_deploy import run_openclaw_deploy, run_openclaw_rollback
+    from twinbox_core.twinbox_config import config_path_for_state_root, load_twinbox_config
+
+    state_root = _state_root()
+    config = load_twinbox_config(config_path_for_state_root(state_root))
+    openclaw_defaults = config.get("openclaw", {}) if isinstance(config.get("openclaw"), dict) else {}
+    integration_defaults = config.get("integration", {}) if isinstance(config.get("integration"), dict) else {}
 
     code_root = Path(args.repo_root).expanduser() if args.repo_root else None
-    openclaw_home = Path(args.openclaw_home).expanduser() if args.openclaw_home else None
+    configured_home = str(openclaw_defaults.get("home", "") or "").strip()
+    openclaw_home = Path(args.openclaw_home).expanduser() if args.openclaw_home else (Path(configured_home).expanduser() if configured_home else None)
+    openclaw_bin = args.openclaw_bin or str(openclaw_defaults.get("bin", "") or "openclaw")
     if args.rollback:
         report = run_openclaw_rollback(
             code_root=code_root,
             openclaw_home=openclaw_home,
             dry_run=args.dry_run,
-            restart_gateway=not args.no_restart,
+            restart_gateway=(not args.no_restart) if args.no_restart else bool(openclaw_defaults.get("restart_gateway", True)),
             remove_config=args.remove_config,
-            openclaw_bin=args.openclaw_bin,
+            openclaw_bin=openclaw_bin,
         )
         label = "Rollback"
     else:
-        frag = Path(args.fragment).expanduser() if args.fragment.strip() else None
+        fragment_value = args.fragment.strip() or str(integration_defaults.get("fragment_path", "") or "").strip()
+        frag = Path(fragment_value).expanduser() if fragment_value else None
         report = run_openclaw_deploy(
             code_root=code_root,
             openclaw_home=openclaw_home,
             dry_run=args.dry_run,
-            restart_gateway=not args.no_restart,
-            sync_env_from_dotenv=not args.no_env_sync,
-            strict=args.strict,
+            restart_gateway=(not args.no_restart) if args.no_restart else bool(openclaw_defaults.get("restart_gateway", True)),
+            sync_env_from_dotenv=(not args.no_env_sync) if args.no_env_sync else bool(openclaw_defaults.get("sync_env_from_dotenv", True)),
+            strict=args.strict or bool(openclaw_defaults.get("strict", False)),
             fragment_path=frag,
-            no_fragment=args.no_fragment,
-            openclaw_bin=args.openclaw_bin,
+            no_fragment=args.no_fragment or integration_defaults.get("use_fragment") is False,
+            openclaw_bin=openclaw_bin,
         )
         label = "Deploy"
     if args.json:
@@ -2623,7 +2716,7 @@ def _build_parser() -> argparse.ArgumentParser:
     mailbox_detect.add_argument("email", help="Email address to detect servers for")
     mailbox_detect.add_argument("--json", action="store_true", help="Output as JSON")
 
-    mailbox_setup = mailbox_sub.add_parser("setup", help="Auto-detect + write .env (password from TWINBOX_SETUP_IMAP_PASS)")
+    mailbox_setup = mailbox_sub.add_parser("setup", help="Auto-detect + write twinbox.json (password from TWINBOX_SETUP_IMAP_PASS)")
     mailbox_setup.add_argument("--email", required=True, help="Email address to configure")
     mailbox_setup.add_argument("--imap-login", default="", help="Override IMAP login (default: email)")
     mailbox_setup.add_argument("--smtp-login", default="", help="Override SMTP login (default: email)")
@@ -2634,11 +2727,43 @@ def _build_parser() -> argparse.ArgumentParser:
     config_parser = subparsers.add_parser("config", help="Configuration management")
     config_sub = config_parser.add_subparsers(dest="config_command", required=True)
 
+    config_show = config_sub.add_parser("show", help="Show the single-source Twinbox config")
+    config_show.add_argument("--json", action="store_true", help="Output as JSON")
+
     config_set_llm = config_sub.add_parser("set-llm", help="Configure LLM API (key from TWINBOX_SETUP_API_KEY)")
     config_set_llm.add_argument("--provider", default="openai", choices=["openai", "anthropic"], help="LLM provider")
     config_set_llm.add_argument("--model", default="", help="Model ID override")
     config_set_llm.add_argument("--api-url", default="", help="API URL override")
     config_set_llm.add_argument("--json", action="store_true", help="Output as JSON")
+
+    config_mailbox_set = config_sub.add_parser("mailbox-set", help="Configure mailbox settings into twinbox.json")
+    config_mailbox_set.add_argument("--email", required=True, help="Email address to configure")
+    config_mailbox_set.add_argument("--imap-login", default="", help="Override IMAP login (default: email)")
+    config_mailbox_set.add_argument("--smtp-login", default="", help="Override SMTP login (default: email)")
+    config_mailbox_set.add_argument("--imap-host", default="", help="Override IMAP host (default: auto-detect)")
+    config_mailbox_set.add_argument("--imap-port", default="", help="Override IMAP port (default: auto-detect)")
+    config_mailbox_set.add_argument("--imap-encryption", default="", help="Override IMAP encryption (default: auto-detect)")
+    config_mailbox_set.add_argument("--smtp-host", default="", help="Override SMTP host (default: auto-detect)")
+    config_mailbox_set.add_argument("--smtp-port", default="", help="Override SMTP port (default: auto-detect)")
+    config_mailbox_set.add_argument("--smtp-encryption", default="", help="Override SMTP encryption (default: auto-detect)")
+    config_mailbox_set.add_argument("--state-root", help="Override twinbox state root")
+    config_mailbox_set.add_argument("--json", action="store_true", help="Output as JSON")
+
+    config_integration_set = config_sub.add_parser("integration-set", help="Configure integration defaults in twinbox.json")
+    config_integration_set.add_argument("--fragment-path", default="", help="Fragment path to prefer")
+    config_integration_set.add_argument("--use-fragment", default="", choices=["yes", "no"], help="Default fragment usage")
+    config_integration_set.add_argument("--json", action="store_true", help="Output as JSON")
+
+    config_openclaw_set = config_sub.add_parser("openclaw-set", help="Configure OpenClaw defaults in twinbox.json")
+    config_openclaw_set.add_argument("--home", default="", help="Default OpenClaw home")
+    config_openclaw_set.add_argument("--bin", default="", help="Default openclaw executable")
+    config_openclaw_set.add_argument("--strict", action="store_true", help="Default deploy strict mode on")
+    config_openclaw_set.add_argument("--no-strict", action="store_true", help="Default deploy strict mode off")
+    config_openclaw_set.add_argument("--sync-env", action="store_true", help="Default deploy env sync on")
+    config_openclaw_set.add_argument("--no-sync-env", action="store_true", help="Default deploy env sync off")
+    config_openclaw_set.add_argument("--restart-gateway", action="store_true", help="Default gateway restart on")
+    config_openclaw_set.add_argument("--no-restart-gateway", action="store_true", help="Default gateway restart off")
+    config_openclaw_set.add_argument("--json", action="store_true", help="Output as JSON")
 
     deploy_parser = subparsers.add_parser(
         "deploy",
@@ -2684,12 +2809,12 @@ def _build_parser() -> argparse.ArgumentParser:
     dep_oc.add_argument(
         "--no-env-sync",
         action="store_true",
-        help="Only set skills.entries.twinbox.enabled; do not copy mailbox keys from state .env",
+        help="Only set skills.entries.twinbox.enabled; do not copy mailbox keys from the Twinbox config",
     )
     dep_oc.add_argument(
         "--strict",
         action="store_true",
-        help="With env sync (default): fail if state .env lacks any OpenClaw-required mail key "
+        help="With env sync (default): fail if the Twinbox config lacks any OpenClaw-required mail key "
         "(SKILL.md requires.env); skips writing openclaw.json / later steps",
     )
     dep_oc.add_argument(
@@ -3017,8 +3142,16 @@ def main(argv: list[str] | None = None) -> int:
             elif args.mailbox_command == "setup":
                 return cmd_mailbox_setup(args)
         elif args.command == "config":
+            if args.config_command == "show":
+                return cmd_config_show(args)
             if args.config_command == "set-llm":
                 return cmd_config_set_llm(args)
+            if args.config_command == "mailbox-set":
+                return cmd_config_mailbox_set(args)
+            if args.config_command == "integration-set":
+                return cmd_config_set_integration(args)
+            if args.config_command == "openclaw-set":
+                return cmd_config_set_openclaw(args)
         elif args.command == "deploy":
             if args.deploy_command == "openclaw":
                 return cmd_deploy_openclaw(args)

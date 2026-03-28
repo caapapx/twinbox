@@ -6,6 +6,13 @@ import os
 import tempfile
 from pathlib import Path
 
+from .twinbox_config import (
+    config_path_for_env_file,
+    env_from_twinbox_config,
+    load_config_or_legacy,
+    write_env_as_twinbox_config,
+)
+
 
 def mask_secret(value: str) -> str:
     """Mask a secret value for display.
@@ -27,6 +34,11 @@ def load_env_file(path: Path) -> dict[str, str]:
     - single/double quoted values
     - KEY=VALUE without quotes
     """
+    if path.name == ".env":
+        config_path = config_path_for_env_file(path)
+        if config_path.exists():
+            return env_from_twinbox_config(load_config_or_legacy(path))
+
     if not path.exists():
         return {}
 
@@ -66,6 +78,10 @@ def write_env_file(path: Path, env: dict[str, str]) -> None:
     - File is written via tmp+rename for atomicity.
     - chmod 0600 applied.
     """
+    if path.name == ".env":
+        write_env_as_twinbox_config(path, env)
+        return
+
     lines: list[str] = []
     for key, value in env.items():
         # Quote values that contain spaces, quotes, or shell metacharacters

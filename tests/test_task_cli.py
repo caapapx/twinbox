@@ -667,9 +667,70 @@ class TestQueueDigestThreadCli:
 
         assert payload["status"] == "ok"
         assert payload["mailbox_config"]["IMAP_HOST"] == "imap.example.com"
-        env_text = (tmp_path / ".env").read_text(encoding="utf-8")
-        assert "IMAP_HOST=imap.example.com" in env_text
-        assert "IMAP_PASS=secret-pass" in env_text
+        assert payload["config_file_path"] == str(tmp_path / "twinbox.json")
+        config_payload = json.loads((tmp_path / "twinbox.json").read_text(encoding="utf-8"))
+        assert config_payload["mailbox"]["imap"]["host"] == "imap.example.com"
+        assert config_payload["mailbox"]["imap"]["password"] == "secret-pass"
+        assert not (tmp_path / ".env").exists()
+
+    def test_config_set_llm_json_writes_twinbox_json(self, monkeypatch, tmp_path, capsys):
+        monkeypatch.setenv("TWINBOX_STATE_ROOT", str(tmp_path))
+        monkeypatch.setenv("TWINBOX_SETUP_API_KEY", "sk-test")
+
+        assert main(
+            [
+                "config",
+                "set-llm",
+                "--provider",
+                "openai",
+                "--api-url",
+                "https://example.com/v1/chat/completions",
+                "--model",
+                "gpt-test",
+                "--json",
+            ]
+        ) == 0
+        payload = json.loads(capsys.readouterr().out)
+
+        assert payload["status"] == "ok"
+        assert payload["config_file_path"] == str(tmp_path / "twinbox.json")
+        config_payload = json.loads((tmp_path / "twinbox.json").read_text(encoding="utf-8"))
+        assert config_payload["llm"]["provider"] == "openai"
+        assert config_payload["llm"]["api_url"] == "https://example.com/v1/chat/completions"
+        assert config_payload["llm"]["model"] == "gpt-test"
+        assert config_payload["llm"]["api_key"] == "sk-test"
+        assert not (tmp_path / ".env").exists()
+
+    def test_config_show_json_reads_single_twinbox_config(self, monkeypatch, tmp_path, capsys):
+        monkeypatch.setenv("TWINBOX_STATE_ROOT", str(tmp_path))
+        (tmp_path / "twinbox.json").write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "mailbox": {
+                        "email": "user@example.com",
+                        "imap": {"host": "imap.example.com", "port": "993", "login": "user@example.com"},
+                        "smtp": {"host": "smtp.example.com", "port": "465", "login": "user@example.com"},
+                    },
+                    "llm": {
+                        "provider": "openai",
+                        "model": "gpt-test",
+                        "api_url": "https://example.com/v1/chat/completions",
+                        "api_key": "sk-test",
+                    },
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        assert main(["config", "show", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["config_file_path"] == str(tmp_path / "twinbox.json")
+        assert payload["mailbox"]["email"] == "user@example.com"
+        assert payload["llm"]["provider"] == "openai"
+        assert payload["llm"]["api_key_masked"].startswith("***")
 
     def test_digest_daily_json_schema(self, phase4_root, capsys):
         """Daily digest JSON must include digest_type, sections, generated_at, stale."""
