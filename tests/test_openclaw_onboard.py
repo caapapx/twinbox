@@ -337,12 +337,14 @@ def test_console_journey_prompter_select_supports_arrow_navigation() -> None:
     )
 
     out = stream.getvalue()
+    plain = _strip_ansi(out)
     assert choice == "manual"
-    assert "Use ↑/↓ to move" in out
-    assert "Press Enter to confirm" in out
-    assert "› Manual (Configure port, network, Tailscale, and auth options.)" in out
-    assert "[Recommended]" not in out
-    assert "\n  (Configure port, network, Tailscale, and auth options.)" not in out
+    assert "Use ↑/↓ to move" in plain
+    assert "Press Enter to confirm" in plain
+    assert "● Manual (Configure port, network, Tailscale, and auth options.)" in plain
+    assert "○ Quickstart" in plain
+    assert "[Recommended]" not in plain
+    assert "\n  (Configure port, network, Tailscale, and auth options.)" not in plain
 
 
 def test_console_journey_prompter_select_supports_horizontal_radio_layout() -> None:
@@ -594,6 +596,66 @@ def test_run_openclaw_onboard_v2_collects_llm_inputs_before_validation_progress(
     )
     assert api_key_index < progress_index
     assert model_index < progress_index
+
+
+def test_run_openclaw_onboard_v2_times_out_llm_validation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    _write_ready_env(state_root)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
+    (repo / "openclaw-skill").mkdir()
+    (repo / "openclaw-skill" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    openclaw_home = tmp_path / ".openclaw"
+    openclaw_home.mkdir()
+
+    monkeypatch.setenv("TWINBOX_STATE_ROOT", str(state_root))
+    monkeypatch.setenv("TWINBOX_CODE_ROOT", str(repo))
+    monkeypatch.setattr("twinbox_core.openclaw_onboard.shutil.which", lambda _bin: "/usr/bin/openclaw")
+    monkeypatch.setattr("twinbox_core.mailbox.run_preflight", _fake_run_preflight)
+    monkeypatch.setattr(
+        "twinbox_core.openclaw_onboard.run_openclaw_deploy",
+        lambda **_: OpenClawDeployReport(ok=True, steps=[]),
+    )
+
+    def slow_llm_update_runner(**kwargs):
+        import time
+
+        time.sleep(0.05)
+        return True, {
+            "prompted": True,
+            "configured": True,
+            "backend": "openai",
+            "model": "test-model",
+            "url": "https://example.com/v1/chat/completions",
+        }, kwargs["dotenv"]
+
+    prompter = _FakePrompter(
+        select_values=[
+            "continue",
+            "quickstart",
+            "use_current_mailbox",
+            "openai",
+        ],
+        secret_values=["new-key"],
+        text_values=["test-model", "https://example.com/v1/chat/completions"],
+    )
+
+    report = run_openclaw_onboard_v2(
+        code_root=repo,
+        openclaw_home=openclaw_home,
+        prompter=prompter,
+        llm_update_runner=slow_llm_update_runner,
+        llm_validation_timeout_seconds=0.01,
+    )
+
+    assert report.ok is False
+    assert "timed out" in report.error.lower()
+    assert ("progress.fail", "LLM validation timed out") in prompter.events
 
 
 def test_run_openclaw_onboard_v2_allows_llm_skip_and_returns_incomplete_handoff(
