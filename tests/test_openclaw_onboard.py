@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import re
 from pathlib import Path
 
 import pytest
@@ -208,6 +209,10 @@ class _TTYBuffer(io.StringIO):
         return True
 
 
+def _strip_ansi(text: str) -> str:
+    return re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text)
+
+
 def test_run_openclaw_onboard_v2_console_prompter_prints_english_shell(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -277,6 +282,62 @@ def test_console_journey_prompter_select_shows_descriptions_and_reprompts() -> N
     assert "Review fragment and host wiring details first." in out
     assert "Enter choice" in out
     assert "Invalid choice" in out
+
+
+def test_console_journey_prompter_select_supports_arrow_navigation() -> None:
+    stream = _TTYBuffer()
+    keys = iter(["DOWN", "ENTER"])
+    prompter = ConsoleJourneyPrompter(stream=stream, key_reader=lambda: next(keys))
+
+    choice = prompter.select(
+        "Choose onboarding flow",
+        options=[
+            {"value": "quickstart", "label": "Quickstart", "description": "Use the recommended path with fewer decisions."},
+            {"value": "advanced", "label": "Advanced", "description": "Review fragment and host wiring details first."},
+        ],
+        default="quickstart",
+    )
+
+    out = stream.getvalue()
+    assert choice == "advanced"
+    assert "Use ↑/↓ to move" in out
+    assert "Press Enter to confirm" in out
+    assert "› Advanced" in out
+
+
+def test_console_journey_prompter_note_wraps_to_terminal_width() -> None:
+    stream = _TTYBuffer()
+    prompter = ConsoleJourneyPrompter(stream=stream, width=48)
+
+    prompter.note(
+        "Phase 1 of 2",
+        "This wizard verifies host wiring first, then hands you off to the twinbox agent for profile, materials, rules, and notifications.",
+    )
+
+    plain = _strip_ansi(stream.getvalue())
+    lines = [line for line in plain.splitlines() if line]
+    assert max(len(line) for line in lines) <= 50
+    assert "hands you off to the twinbox agent" in plain
+    assert plain.count("│") >= 3
+
+
+def test_console_journey_prompter_select_clears_lines_before_rerender() -> None:
+    stream = _TTYBuffer()
+    keys = iter(["DOWN", "ENTER"])
+    prompter = ConsoleJourneyPrompter(stream=stream, key_reader=lambda: next(keys), width=48)
+
+    _ = prompter.select(
+        "Choose onboarding flow",
+        options=[
+            {"value": "quickstart", "label": "Quickstart", "description": "Use the recommended path with fewer decisions."},
+            {"value": "advanced", "label": "Advanced", "description": "Review fragment and host wiring details first."},
+        ],
+        default="quickstart",
+    )
+
+    out = stream.getvalue()
+    assert "\033[2K" in out
+    assert "\033[" in out
 
 
 def test_console_journey_prompter_progress_renders_tty_spinner_frames() -> None:
