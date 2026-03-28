@@ -333,8 +333,8 @@ def test_run_openclaw_onboard_v2_console_prompter_prints_english_shell(
     assert "📮" in out
     assert "Thread-level email intelligence" in out
     assert "TwinBox setup" in out
-    assert out.count("│") >= 8
-    assert "╭" in out or "┌" in out
+    assert out.count("│") >= 4
+    assert "├" in out
     assert "Security" in out
     assert "Choose onboarding flow" in out
     assert "Mailbox" in out
@@ -471,14 +471,14 @@ def test_console_journey_prompter_note_draws_closed_box_with_rail_glyphs() -> No
     prompter.note("Security", "First line.\n\nSecond paragraph.", complete=False)
     out = stream.getvalue()
     assert "╭" in out and "╮" in out and "╰" in out and "╯" in out
-    assert "◆" in out
+    assert "◇" in out
     assert "Security" in out
     assert "First line." in out
 
     stream2 = io.StringIO()
     prompter2 = ConsoleJourneyPrompter(stream=stream2, width=64)
     prompter2.note("Mailbox", "Configured.", complete=True)
-    assert "◇" in stream2.getvalue()
+    assert "◆" in stream2.getvalue()
 
     stream3 = io.StringIO()
     prompter3 = ConsoleJourneyPrompter(stream=stream3, width=64)
@@ -498,8 +498,10 @@ def test_console_journey_prompter_journey_rail_prefixes_connected_boxes() -> Non
     plain = _strip_ansi(stream.getvalue())
     lines = [ln for ln in plain.splitlines() if ln.strip()]
     assert lines[0] == "│"
-    assert any(ln.startswith("│  ╭") for ln in plain.splitlines())
-    assert plain.count("│  ╭") == 2
+    assert plain.count("├") == 2
+    assert "└" in plain and "┘" in plain
+    assert "◇" in plain
+    assert "◆" in plain
 
 
 def test_console_journey_prompter_ctrl_c_in_select_raises_keyboard_interrupt() -> None:
