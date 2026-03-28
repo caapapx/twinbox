@@ -382,6 +382,7 @@ def test_console_journey_prompter_select_supports_arrow_navigation() -> None:
     assert "○ Quickstart" in plain
     assert "[Recommended]" not in plain
     assert "\n  (Configure port, network, Tailscale, and auth options.)" not in plain
+    assert "\033[0;90m (Configure port, network, Tailscale, and auth options.)\033[0m" in out
 
 
 def test_console_journey_prompter_select_supports_horizontal_radio_layout() -> None:
@@ -400,10 +401,31 @@ def test_console_journey_prompter_select_supports_horizontal_radio_layout() -> N
     )
 
     out = stream.getvalue()
+    plain = _strip_ansi(out)
     assert choice == "no"
     assert "Use ←/→ to move" in out
-    assert "○ Yes" in out
-    assert "● No" in out
+    assert "○ Yes" in plain
+    assert "● No" in plain
+
+
+def test_console_journey_prompter_horizontal_layout_dims_parenthetical_labels() -> None:
+    stream = _TTYBuffer()
+    keys = iter(["ENTER"])
+    prompter = ConsoleJourneyPrompter(stream=stream, key_reader=lambda: next(keys))
+
+    choice = prompter.select(
+        "Continue?",
+        options=[
+            {"value": "yes", "label": "Yes (Recommended)", "selected_glyph": "●", "unselected_glyph": "○"},
+            {"value": "no", "label": "No", "selected_glyph": "●", "unselected_glyph": "○"},
+        ],
+        default="yes",
+        layout="horizontal",
+    )
+
+    out = stream.getvalue()
+    assert choice == "yes"
+    assert "\033[0;90m (Recommended)\033[0m" in out
 
 
 def test_console_journey_prompter_vertical_select_clears_previous_taller_frame() -> None:
@@ -539,6 +561,42 @@ def test_console_journey_prompter_progress_renders_tty_spinner_frames() -> None:
     assert "⠋" in out or "⠙" in out or "⠹" in out
     assert "\r" in out
     assert "OK: Host wiring verified and onboarding handoff prepared" in out
+
+
+def test_console_journey_prompter_secret_masks_input_while_typing_in_tty() -> None:
+    stream = _TTYBuffer()
+    keys = iter(["s", "e", "c", "r", "e", "t", "ENTER"])
+    prompter = ConsoleJourneyPrompter(stream=stream, key_reader=lambda: next(keys))
+
+    value = prompter.secret("API key")
+
+    assert value == "secret"
+    plain = _strip_ansi(stream.getvalue())
+    assert "API key: ******" in plain
+
+
+def test_console_journey_prompter_secret_dims_parenthetical_prompt_suffix() -> None:
+    stream = _TTYBuffer()
+    keys = iter(["ENTER"])
+    prompter = ConsoleJourneyPrompter(stream=stream, key_reader=lambda: next(keys))
+
+    value = prompter.secret("Mailbox app password", allow_empty=True)
+
+    assert value == ""
+    out = stream.getvalue()
+    assert "\033[0;90m (press Enter to keep current value)\033[0m" in out
+
+
+def test_console_journey_prompter_secret_accepts_backspace_while_masking_in_tty() -> None:
+    stream = _TTYBuffer()
+    keys = iter(["a", "b", "BACKSPACE", "c", "ENTER"])
+    prompter = ConsoleJourneyPrompter(stream=stream, key_reader=lambda: next(keys))
+
+    value = prompter.secret("Mailbox app password")
+
+    assert value == "ac"
+    plain = _strip_ansi(stream.getvalue())
+    assert "Mailbox app password: **" in plain
 
 
 def test_run_openclaw_onboard_v2_requires_explicit_steps_even_with_existing_values(
@@ -678,6 +736,7 @@ def test_run_openclaw_onboard_v2_collects_llm_inputs_before_validation_progress(
     monkeypatch.setenv("TWINBOX_CODE_ROOT", str(repo))
     monkeypatch.setattr("twinbox_core.openclaw_onboard.shutil.which", lambda _bin: "/usr/bin/openclaw")
     monkeypatch.setattr("twinbox_core.mailbox.run_preflight", _fake_run_preflight)
+    monkeypatch.setattr("twinbox_core.llm.validate_backend", lambda _backend: (True, ""))
     monkeypatch.setattr(
         "twinbox_core.openclaw_onboard.run_openclaw_deploy",
         lambda **_: OpenClawDeployReport(ok=True, steps=[]),
@@ -748,6 +807,7 @@ def test_run_openclaw_onboard_v2_collects_mailbox_inputs_before_validation_progr
     monkeypatch.setattr("twinbox_core.openclaw_onboard.shutil.which", lambda _bin: "/usr/bin/openclaw")
     monkeypatch.setattr("twinbox_core.mailbox_detect.detect_to_env", _fake_detect_to_env)
     monkeypatch.setattr("twinbox_core.mailbox.run_preflight", _fake_run_preflight)
+    monkeypatch.setattr("twinbox_core.llm.validate_backend", lambda _backend: (True, ""))
     monkeypatch.setattr(
         "twinbox_core.openclaw_onboard.run_openclaw_deploy",
         lambda **_: OpenClawDeployReport(ok=True, steps=[]),
@@ -786,6 +846,63 @@ def test_run_openclaw_onboard_v2_collects_mailbox_inputs_before_validation_progr
     )
     assert mailbox_text_index < mailbox_progress_index
     assert mailbox_secret_index < mailbox_progress_index
+
+
+def test_run_openclaw_onboard_v2_starts_detection_progress_before_mailbox_auto_detect(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
+    (repo / "openclaw-skill").mkdir()
+    (repo / "openclaw-skill" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    openclaw_home = tmp_path / ".openclaw"
+    openclaw_home.mkdir()
+
+    monkeypatch.setenv("TWINBOX_STATE_ROOT", str(state_root))
+    monkeypatch.setenv("TWINBOX_CODE_ROOT", str(repo))
+    monkeypatch.setattr("twinbox_core.openclaw_onboard.shutil.which", lambda _bin: "/usr/bin/openclaw")
+    monkeypatch.setattr("twinbox_core.mailbox.run_preflight", _fake_run_preflight)
+    monkeypatch.setattr("twinbox_core.llm.validate_backend", lambda _backend: (True, ""))
+    monkeypatch.setattr(
+        "twinbox_core.openclaw_onboard.run_openclaw_deploy",
+        lambda **_: OpenClawDeployReport(ok=True, steps=[]),
+    )
+
+    prompter = _FakePrompter(
+        select_values=["continue", "quickstart", "auto", "openai", "yes", "apply"],
+        text_values=[
+            "user@example.com",
+            "test-model",
+            "https://example.com/v1/chat/completions",
+        ],
+        secret_values=["mail-secret", "llm-secret"],
+    )
+
+    def fake_detect_to_env(email: str, *, verbose: bool) -> dict[str, str]:
+        del email, verbose
+        prompter.events.append(("detect", "mailbox"))
+        return _fake_detect_to_env("user@example.com", verbose=False)
+
+    monkeypatch.setattr("twinbox_core.mailbox_detect.detect_to_env", fake_detect_to_env)
+
+    report = run_openclaw_onboard_v2(
+        code_root=repo,
+        openclaw_home=openclaw_home,
+        prompter=prompter,
+    )
+
+    assert report.ok is True
+    detect_progress_index = next(
+        index
+        for index, event in enumerate(prompter.events)
+        if event[0] == "progress" and event[1] == "Detecting mailbox settings"
+    )
+    detect_call_index = next(index for index, event in enumerate(prompter.events) if event[0] == "detect")
+    assert detect_progress_index < detect_call_index
 
 
 def test_run_openclaw_onboard_v2_times_out_llm_validation(

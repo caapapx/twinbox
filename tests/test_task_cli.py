@@ -673,6 +673,87 @@ class TestQueueDigestThreadCli:
         assert config_payload["mailbox"]["imap"]["password"] == "secret-pass"
         assert not (tmp_path / ".env").exists()
 
+    def test_mailbox_setup_prompts_for_password_when_env_missing(
+        self, monkeypatch, tmp_path, capsys
+    ):
+        monkeypatch.setenv("TWINBOX_STATE_ROOT", str(tmp_path))
+        monkeypatch.delenv("TWINBOX_SETUP_IMAP_PASS", raising=False)
+        monkeypatch.setattr("twinbox_core.task_cli._can_prompt_for_secret", lambda: True, raising=False)
+        monkeypatch.setattr(
+            "twinbox_core.task_cli._prompt_for_secret_value",
+            lambda _prompt: "secret-pass",
+            raising=False,
+        )
+        monkeypatch.setattr(
+            "twinbox_core.mailbox_detect.detect_to_env",
+            lambda email, verbose=False: {
+                "IMAP_HOST": "imap.example.com",
+                "IMAP_PORT": "993",
+                "IMAP_ENCRYPTION": "tls",
+                "SMTP_HOST": "smtp.example.com",
+                "SMTP_PORT": "465",
+                "SMTP_ENCRYPTION": "tls",
+            },
+        )
+        monkeypatch.setattr(
+            "twinbox_core.mailbox.run_preflight",
+            lambda state_root=None: (0, {"status": "ok"}),
+        )
+
+        assert main(["mailbox", "setup", "--email", "user@example.com", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+
+        assert payload["status"] == "ok"
+        config_payload = json.loads((tmp_path / "twinbox.json").read_text(encoding="utf-8"))
+        assert config_payload["mailbox"]["imap"]["password"] == "secret-pass"
+
+    def test_mailbox_setup_reports_detection_and_validation_progress_in_terminal(
+        self, monkeypatch, tmp_path, capsys
+    ):
+        monkeypatch.setenv("TWINBOX_STATE_ROOT", str(tmp_path))
+        monkeypatch.setenv("TWINBOX_SETUP_IMAP_PASS", "secret-pass")
+        events: list[tuple[str, str]] = []
+
+        class _Progress:
+            def __init__(self, title: str) -> None:
+                events.append(("progress", title))
+
+            def update(self, message: str) -> None:
+                events.append(("update", message))
+
+            def finish(self, message: str) -> None:
+                events.append(("finish", message))
+
+            def fail(self, message: str) -> None:
+                events.append(("fail", message))
+
+        monkeypatch.setattr(
+            "twinbox_core.task_cli._create_cli_progress",
+            lambda title, enabled=True: _Progress(title),
+            raising=False,
+        )
+        monkeypatch.setattr(
+            "twinbox_core.mailbox_detect.detect_to_env",
+            lambda email, verbose=False: {
+                "IMAP_HOST": "imap.example.com",
+                "IMAP_PORT": "993",
+                "IMAP_ENCRYPTION": "tls",
+                "SMTP_HOST": "smtp.example.com",
+                "SMTP_PORT": "465",
+                "SMTP_ENCRYPTION": "tls",
+            },
+        )
+        monkeypatch.setattr(
+            "twinbox_core.mailbox.run_preflight",
+            lambda state_root=None: (0, {"status": "ok"}),
+        )
+
+        assert main(["mailbox", "setup", "--email", "user@example.com"]) == 0
+        _ = capsys.readouterr()
+
+        assert ("progress", "Detecting mailbox settings") in events
+        assert ("progress", "Checking mailbox settings") in events
+
     def test_config_set_llm_json_writes_twinbox_json(self, monkeypatch, tmp_path, capsys):
         monkeypatch.setenv("TWINBOX_STATE_ROOT", str(tmp_path))
         monkeypatch.setenv("TWINBOX_SETUP_API_KEY", "sk-test")
@@ -700,6 +781,75 @@ class TestQueueDigestThreadCli:
         assert config_payload["llm"]["model"] == "gpt-test"
         assert config_payload["llm"]["api_key"] == "sk-test"
         assert not (tmp_path / ".env").exists()
+
+    def test_config_set_llm_prompts_for_api_key_when_env_missing(self, monkeypatch, tmp_path, capsys):
+        monkeypatch.setenv("TWINBOX_STATE_ROOT", str(tmp_path))
+        monkeypatch.delenv("TWINBOX_SETUP_API_KEY", raising=False)
+        monkeypatch.setattr("twinbox_core.task_cli._can_prompt_for_secret", lambda: True, raising=False)
+        monkeypatch.setattr(
+            "twinbox_core.task_cli._prompt_for_secret_value",
+            lambda _prompt: "sk-test",
+            raising=False,
+        )
+
+        assert main(
+            [
+                "config",
+                "set-llm",
+                "--provider",
+                "openai",
+                "--api-url",
+                "https://example.com/v1/chat/completions",
+                "--model",
+                "gpt-test",
+                "--json",
+            ]
+        ) == 0
+        payload = json.loads(capsys.readouterr().out)
+
+        assert payload["status"] == "ok"
+        config_payload = json.loads((tmp_path / "twinbox.json").read_text(encoding="utf-8"))
+        assert config_payload["llm"]["api_key"] == "sk-test"
+
+    def test_config_set_llm_reports_validation_progress_in_terminal(self, monkeypatch, tmp_path, capsys):
+        monkeypatch.setenv("TWINBOX_STATE_ROOT", str(tmp_path))
+        monkeypatch.setenv("TWINBOX_SETUP_API_KEY", "sk-test")
+        events: list[tuple[str, str]] = []
+
+        class _Progress:
+            def __init__(self, title: str) -> None:
+                events.append(("progress", title))
+
+            def update(self, message: str) -> None:
+                events.append(("update", message))
+
+            def finish(self, message: str) -> None:
+                events.append(("finish", message))
+
+            def fail(self, message: str) -> None:
+                events.append(("fail", message))
+
+        monkeypatch.setattr(
+            "twinbox_core.task_cli._create_cli_progress",
+            lambda title, enabled=True: _Progress(title),
+            raising=False,
+        )
+
+        assert main(
+            [
+                "config",
+                "set-llm",
+                "--provider",
+                "openai",
+                "--api-url",
+                "https://example.com/v1/chat/completions",
+                "--model",
+                "gpt-test",
+            ]
+        ) == 0
+        _ = capsys.readouterr()
+
+        assert ("progress", "Validating LLM configuration") in events
 
     def test_config_show_json_reads_single_twinbox_config(self, monkeypatch, tmp_path, capsys):
         monkeypatch.setenv("TWINBOX_STATE_ROOT", str(tmp_path))

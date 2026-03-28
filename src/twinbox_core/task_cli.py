@@ -173,6 +173,40 @@ def _state_root() -> Path:
     return resolve_state_root(Path.cwd())
 
 
+def _can_prompt_for_secret() -> bool:
+    return (
+        hasattr(sys.stdin, "isatty")
+        and sys.stdin.isatty()
+        and hasattr(sys.stdout, "isatty")
+        and sys.stdout.isatty()
+    )
+
+
+def _prompt_for_secret_value(prompt: str) -> str:
+    from .openclaw_onboard import ConsoleJourneyPrompter
+
+    return ConsoleJourneyPrompter().secret(prompt)
+
+
+def _create_cli_progress(title: str, enabled: bool = True):
+    class _NoopProgress:
+        def update(self, message: str) -> None:
+            del message
+
+        def finish(self, message: str) -> None:
+            del message
+
+        def fail(self, message: str) -> None:
+            del message
+
+    if not enabled or not hasattr(sys.stdout, "isatty") or not sys.stdout.isatty():
+        return _NoopProgress()
+
+    from .openclaw_onboard import ConsoleJourneyPrompter
+
+    return ConsoleJourneyPrompter().progress(title)
+
+
 def _strip_thread_display_prefix(thread_id: str) -> str:
     return re.sub(r"^\[(?:CC|GRP)\]\s*", "", str(thread_id or "").strip(), flags=re.IGNORECASE)
 
@@ -1082,6 +1116,8 @@ def cmd_config_mailbox_set(args: argparse.Namespace) -> int:
     from .twinbox_config import config_path_for_state_root
 
     imap_pass = os.environ.get("TWINBOX_SETUP_IMAP_PASS", "").strip()
+    if not imap_pass and _can_prompt_for_secret():
+        imap_pass = _prompt_for_secret_value("Mailbox app password").strip()
     if not imap_pass:
         if args.json:
             print(json.dumps({
@@ -1102,8 +1138,10 @@ def cmd_config_mailbox_set(args: argparse.Namespace) -> int:
     smtp_encryption = getattr(args, "smtp_encryption", "")
     detected = None
     if not imap_host or not smtp_host:
+        detect_progress = _create_cli_progress("Detecting mailbox settings", enabled=not args.json)
         detected = detect_to_env(args.email, verbose=False)
         if detected is None:
+            detect_progress.fail(f"Could not auto-detect mailbox servers for {args.email}")
             if args.json:
                 print(json.dumps({
                     "status": "fail",
@@ -1113,6 +1151,7 @@ def cmd_config_mailbox_set(args: argparse.Namespace) -> int:
             else:
                 print(f"错误: 无法自动探测邮箱服务器: {args.email}", file=sys.stderr)
             return 1
+        detect_progress.finish("Mailbox settings detected")
 
     imap_login = args.imap_login or args.email
     smtp_login = args.smtp_login or args.email
@@ -1133,7 +1172,12 @@ def cmd_config_mailbox_set(args: argparse.Namespace) -> int:
     paths = resolve_mailbox_paths(state_root=args.state_root)
     merged = merge_env_file(paths.env_file, updates)
     write_env_file(paths.env_file, merged)
+    preflight_progress = _create_cli_progress("Checking mailbox settings", enabled=not args.json)
     exit_code, preflight = run_preflight(state_root=args.state_root)
+    if exit_code == 0:
+        preflight_progress.finish("Mailbox settings validated")
+    else:
+        preflight_progress.fail("Mailbox validation did not pass")
 
     output = {
         "status": "ok" if exit_code == 0 else "warn",
@@ -1169,6 +1213,8 @@ def cmd_config_set_llm(args: argparse.Namespace) -> int:
     from .twinbox_config import config_path_for_state_root
 
     api_key = os.environ.get("TWINBOX_SETUP_API_KEY", "").strip()
+    if not api_key and _can_prompt_for_secret():
+        api_key = _prompt_for_secret_value("LLM API key").strip()
     if not api_key:
         if args.json:
             print(json.dumps({
@@ -1220,16 +1266,19 @@ def cmd_config_set_llm(args: argparse.Namespace) -> int:
 
     # Validate by resolving backend from the merged env (not process env)
     from .llm import load_env_file as llm_load_env_file, merged_env
+    validation_progress = _create_cli_progress("Validating LLM configuration", enabled=not args.json)
     try:
         from .llm import resolve_backend
         cfg = resolve_backend(env_file=env_file, env={})
         backend_ok = True
         resolved_model = cfg.model
         resolved_url = cfg.url
+        validation_progress.finish("LLM configuration validated")
     except LLMError as exc:
         backend_ok = False
         resolved_model = args.model or ""
         resolved_url = args.api_url or ""
+        validation_progress.fail(str(exc))
 
     api_url_display = resolved_url or args.api_url or ""
     output = {
