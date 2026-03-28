@@ -320,7 +320,8 @@ def test_run_openclaw_onboard_v2_console_prompter_prints_english_shell(
         "twinbox_core.openclaw_onboard.run_openclaw_deploy",
         lambda **_: OpenClawDeployReport(ok=True, steps=[]),
     )
-    answers = iter(["", "", "", "1", "", ""])
+    # Security defaults to No; must explicitly choose Yes (1 / continue) to proceed.
+    answers = iter(["continue", "", "", "1", "", ""])
     monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
 
     _ = run_openclaw_onboard_v2(
