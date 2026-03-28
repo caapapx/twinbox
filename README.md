@@ -74,7 +74,7 @@ The two are **not interchangeable**: Option B alone does not configure OpenClaw.
 - [The Four Phases](#the-four-phases)
 - [Architecture](#architecture)
 - [FAQ](#faq)
-- [Roadmap](#current-focus--roadmap)
+- [Roadmap](#current-focus--roadmap) · [Full backlog](ROADMAP.md)
 
 ---
 
@@ -329,6 +329,7 @@ Each phase: deterministic `Loading` → LLM `Thinking`.
 ```
 twinbox/
 ├── 📄 README.md                 # This file
+├── 🗺️  ROADMAP.md               # Backlog index (P0–P3); replaces old plan files
 ├── 📋 SKILL.md                  # OpenClaw manifest
 ├── ⚙️  pyproject.toml           # Python package
 ├── 🐍 src/twinbox_core/         # Core implementation
@@ -390,7 +391,7 @@ A: Not yet by default. Phases 1–4 are strictly read-only. Draft generation and
 
 **Q: What about privacy?**
 
-A: Your mail never leaves your infrastructure unless you configure an external LLM API. Even then, only thread metadata and sampled bodies are sent—not your entire mailbox. Fully local LLM support is on the roadmap.
+A: Your mail never leaves your infrastructure unless you configure an external LLM API. Even then, only thread metadata and sampled bodies are sent—not your entire mailbox. Fully local LLM as a first-class deployment mode is backlog (see [ROADMAP.md](ROADMAP.md) P3).
 
 **Q: How do I update my context (materials, habits)?**
 
@@ -405,6 +406,8 @@ twinbox context upsert-fact --id "customer-tier:acme" --type "tier" --content "e
 twinbox-orchestrate run --phase 4
 ```
 
+Today you still choose when to re-orchestrate; automatic rerun after every context-only change is not fully wired yet ([ROADMAP.md](ROADMAP.md) P0).
+
 **Q: Can I run this in CI/CD?**
 
 A: Yes. All outputs are files you can diff. The preflight command returns structured JSON with exit codes suitable for CI gates.
@@ -417,62 +420,63 @@ A: Use [Start here](#start-here) **Option A**, then **[openclaw-skill/DEPLOY.md]
 
 ## Current Focus & Roadmap
 
-> Last updated: 2026-03-29
+> **Canonical backlog** (ordering, sources, P0–P3 detail): **[ROADMAP.md](ROADMAP.md)**.  
+> Last aligned with that file: 2026-03-29
 
-### ✅ Shipped
+### Shipped (summary)
 
-**Core Pipeline**
-- [x] `twinbox-orchestrate` + Phase 1–4 Python core (Loading / Thinking)
+**Core pipeline**
+- [x] `twinbox-orchestrate` + Phase 1–4 Python core (Loading / Thinking); phase 1/4 loading orchestration in Python (shell shims where noted in [daemon-and-runtime-slice.md](docs/ref/daemon-and-runtime-slice.md))
 - [x] Task-facing CLI (`twinbox task … --json`) — 45+ commands
-- [x] JSON-RPC daemon (`twinbox daemon …`) — Unix socket, `cli_invoke`, logs — see [daemon-and-runtime-slice.md](docs/ref/daemon-and-runtime-slice.md)
-- [x] Incremental daytime sync (UID watermark + fallback)
+- [x] JSON-RPC daemon (`twinbox daemon …`) — Unix socket, `cli_invoke`, logs
+- [x] Incremental daytime sync (UID watermark + fallback) and merge into Phase 1 context; `nightly-full` keeps full rescan for reconciliation
 - [x] Activity pulse / daytime-slice view (`twinbox digest pulse`)
+- [x] Phase 2–4 prompts: composable fragments, system/user split; Phase 4 loading includes onboarding profile notes and optional `runtime/context/instance-calibration-notes.md` when present; `recipient_role` scoring separated from display warnings
 
-**Mailbox & Onboarding**
+**Mailbox & onboarding**
 - [x] IMAP read-only preflight with structured JSON output
 - [x] Mailbox auto-detection (`twinbox mailbox detect`)
-- [x] Onboarding flow (`twinbox onboarding start/status/next`)
+- [x] Onboarding (`twinbox onboarding start/status/next`); OpenClaw host journey + `twinbox onboard openclaw`; single `twinbox.json` config source; LLM can be imported from OpenClaw during setup
 - [x] Push subscription system (`twinbox push subscribe/unsubscribe`)
 
-**Queue & Context Management**
-- [x] Queue dismiss/complete/restore with persistence
+**Queue & context**
+- [x] Queue dismiss/complete/restore with persistence and fingerprint-based reactivation
 - [x] Schedule overrides (`twinbox schedule update/reset`)
 - [x] Material import with intent (reference vs template_hint)
 - [x] Semantic routing rules (`twinbox rule list/add/remove/test`)
 - [x] Recipient role handling (direct/cc_only/group_only/indirect)
 - [x] Unread-only filtering (`--unread-only`)
 
-**OpenClaw Integration**
+**OpenClaw integration**
 - [x] SKILL.md manifest with `metadata.openclaw`
-- [x] Guided host path: `twinbox onboard openclaw` + scripted `twinbox deploy openclaw` (rollback, fragment merge, SKILL symlink to state root)
-- [x] OpenClaw schedule tools (sync to platform cron)
-- [x] OpenClaw queue tools (complete/dismiss via tools)
+- [x] `twinbox deploy openclaw` / `twinbox onboard openclaw` — tested deploy steps, rollback, JSON fragment merge, canonical **SKILL.md** under state root + symlink under `~/.openclaw/skills/twinbox/` when possible; bundled Himalaya for common Linux arches on deploy
+- [x] OpenClaw schedule tools (sync to platform cron) and queue tools (complete/dismiss)
 - [x] Optional plugin (`openclaw-skill/plugin-twinbox-task`) for deterministic `twinbox task …` from Gateway
 
-### 🚧 In Progress
+**Runtime & packaging**
+- [x] Vendor sync (`twinbox vendor install|status`), Go thin client (`cmd/twinbox-go/`) with HTTP/archive install path; `TWINBOX_HOME` + `--profile` for shared vendor — see [daemon-and-runtime-slice.md](docs/ref/daemon-and-runtime-slice.md)
 
-**Platform Verification**
-- [ ] OpenClaw native `preflightCommand` auto-execution verification
-- [ ] `metadata.openclaw.schedules` auto-import validation
-- [ ] Hosted session isolation for `twinbox` agent
+### Backlog (summary — see ROADMAP.md)
 
-**Reliability & Extensions**
-- [ ] Subscription registry for multi-channel delivery
-- [ ] Stale artifact fallback with automatic retry
-- [ ] Runtime archive snapshots (nightly/weekly/failure)
+**P0 — Product contracts**
+- [ ] Context updates (`import-material`, `upsert-fact`, profile) should drive a real pipeline rerun (not only messages); `context refresh` must invoke work, not just hints
+- [ ] `twinbox review approve|reject` and `twinbox action apply` with explicit confirmation
+- [ ] Keep root **SKILL.md** thin: happy paths via `twinbox task …`, minimal phase jargon for readers
 
-### 📋 Planned
+**P1 — OpenClaw & host**
+- [ ] Verify and document whether OpenClaw auto-runs `preflightCommand` and how `metadata.openclaw.schedules` is consumed on real builds
+- [ ] Better session isolation for the dedicated `twinbox` agent
+- [ ] Subscription registry, stale-artifact fallback + ownership, production host hardening, runtime archive snapshots
+- [ ] Track A (`.claude/skills/twinbox`) polish and eval parity with hosted smoke
 
-**Automation Layers**
-- [ ] Draft generation with approval gates
-- [ ] Context refresh triggering actual rerun
+**P2 — Engineering**
+- [ ] One LLM boundary across all phase “thinking” transports (extend `llm.py` usage)
+- [ ] Dedup Phase 4 render/merge where still split; stronger attention-budget-driven phase gates in tests
+- [ ] Phase-4 eval baselines optional; **in-repo** verification is local `pytest` (no GitHub Actions workflow in tree)
 
-**Review & Audit**
-- [ ] Structured audit trail (`runtime/audit/`)
-- [ ] Action template registry
-- [ ] Review surface UI/CLI
-
-Consolidated backlog and shipped history: [ROADMAP.md](ROADMAP.md)
+**P3 — Automation & audit** (Phases 1–4 stay read-only until gates exist)
+- [ ] Draft generation with approval gates; structured audit trail; action template registry; review UI/CLI
+- [ ] Fully local LLM as optional deployment mode
 
 ---
 
