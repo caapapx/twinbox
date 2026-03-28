@@ -63,6 +63,27 @@ def _write_ready_env(state_root: Path) -> None:
     )
 
 
+def _write_mailbox_only_env(state_root: Path) -> None:
+    """Mailbox complete, no LLM_* keys (LLM menu from scratch)."""
+    (state_root / ".env").write_text(
+        "\n".join(
+            [
+                "MAIL_ADDRESS=user@example.com",
+                "IMAP_HOST=imap.example.com",
+                "IMAP_PORT=993",
+                "IMAP_LOGIN=user@example.com",
+                "IMAP_PASS=secret-pass",
+                "SMTP_HOST=smtp.example.com",
+                "SMTP_PORT=465",
+                "SMTP_LOGIN=user@example.com",
+                "SMTP_PASS=secret-pass",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def _write_ready_twinbox_config(state_root: Path) -> None:
     (state_root / "twinbox.json").write_text(
         json.dumps(
@@ -500,14 +521,16 @@ def test_console_journey_prompter_journey_rail_prefixes_connected_boxes() -> Non
     lines = plain.splitlines()
     assert lines
     assert "" not in lines
-    assert all(ln.startswith("│") for ln in lines)
+    assert lines[0] == "│"
+    assert lines[5] == "│"
     tops = [ln for ln in lines if ln.endswith("┐")]
     assert len(tops) == 2
-    assert tops[0].startswith("│  ◇")
+    assert tops[0].startswith("◇")
     assert "Step one" in tops[0]
-    assert tops[1].startswith("│  ◆")
+    assert tops[1].startswith("◆")
     assert "Step two" in tops[1]
-    assert any(ln.startswith("│  └") for ln in lines)
+    assert any(ln.startswith("│ ") for ln in lines[1:5])
+    assert any(ln.startswith("└") for ln in lines)
 
 
 def test_console_journey_prompter_ctrl_c_in_select_raises_keyboard_interrupt() -> None:
@@ -946,7 +969,7 @@ def test_run_openclaw_onboard_v2_times_out_llm_validation(
 ) -> None:
     state_root = tmp_path / "state"
     state_root.mkdir()
-    _write_ready_env(state_root)
+    _write_mailbox_only_env(state_root)
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
@@ -980,11 +1003,14 @@ def test_run_openclaw_onboard_v2_times_out_llm_validation(
         select_values=[
             "continue",
             "quickstart",
-            "use_current_mailbox",
+            "use_existing",
             "openai",
+            "skip",
+            "yes",
+            "apply",
         ],
         secret_values=["new-key"],
-        text_values=["test-model", "https://example.com/v1/chat/completions"],
+        text_values=["https://example.com/v1/chat/completions", "test-model"],
     )
 
     report = run_openclaw_onboard_v2(
@@ -996,18 +1022,19 @@ def test_run_openclaw_onboard_v2_times_out_llm_validation(
     )
 
     assert report.ok is False
-    assert "timed out" in report.error.lower()
     assert ("progress.fail", "LLM validation timed out") in prompter.events
+    recovery_bodies = [e[1]["body"] for e in prompter.events if e[0] == "note" and e[1]["title"] == "Recovery"]
+    assert any("timed out" in b.lower() for b in recovery_bodies)
 
 
-def test_run_openclaw_onboard_v2_stops_when_llm_validation_fails(
+def test_run_openclaw_onboard_v2_llm_validation_failure_returns_to_llm_menu(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """401 or other validation errors must not fall through to integration / deploy."""
+    """401 or other validation errors show Recovery then Choose LLM setup again (not hard exit)."""
     state_root = tmp_path / "state"
     state_root.mkdir()
-    _write_ready_env(state_root)
+    _write_mailbox_only_env(state_root)
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
@@ -1044,8 +1071,8 @@ def test_run_openclaw_onboard_v2_stops_when_llm_validation_fails(
             "continue",
             "quickstart",
             "use_existing",
-            "update",
             "openai",
+            "skip",
             "yes",
             "apply",
         ],
@@ -1061,12 +1088,14 @@ def test_run_openclaw_onboard_v2_stops_when_llm_validation_fails(
     )
 
     assert report.ok is False
-    assert "401" in (report.error or "") or "Unauthorized" in (report.error or "")
-    assert not any(
+    choose_llm = [e for e in prompter.events if e[0] == "select" and e[1]["prompt"] == "Choose LLM setup"]
+    assert len(choose_llm) == 2
+    assert any(
         event[0] == "select" and "Twinbox tools integration" in event[1].get("prompt", "")
         for event in prompter.events
     )
-    assert any(event[0] == "note" and event[1]["title"] == "Recovery" for event in prompter.events)
+    recovery_bodies = [e[1]["body"] for e in prompter.events if e[0] == "note" and e[1]["title"] == "Recovery"]
+    assert any("401" in b or "Unauthorized" in b for b in recovery_bodies)
 
 
 def test_run_openclaw_onboard_v2_times_out_mailbox_validation(

@@ -9,7 +9,6 @@ import re
 import sys
 import time
 import urllib.error
-import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -98,27 +97,25 @@ def resolve_backend(
 
     raise LLMError(
         "No LLM backend configured. "
-        "OpenAI-compatible (POST .../chat/completions + Bearer): set LLM_API_KEY, LLM_MODEL, and LLM_API_URL "
-        "(base URLs such as https://host/v2 are extended with /chat/completions automatically). "
+        "OpenAI-compatible (HTTP POST to …/chat/completions + Bearer): set LLM_API_KEY, LLM_MODEL, and LLM_API_URL "
+        "(base URL such as …/v2 is accepted; /chat/completions is appended when missing). "
         "Anthropic native (/v1/messages + x-api-key): set ANTHROPIC_API_KEY, ANTHROPIC_MODEL, and ANTHROPIC_BASE_URL."
     )
 
 
 def normalize_openai_chat_completions_url(url: str) -> str:
-    """Return a POST URL for OpenAI-style chat.
+    """If `url` is an OpenAI-compatible base (e.g. …/v1 or …/v2) without a path, append /chat/completions.
 
-    Many providers (e.g. some OpenAI-compatible providers) document only the API **root** (``.../v2``); clients
-    are expected to call ``{root}/chat/completions``. Twinbox used to POST to the raw ``LLM_API_URL``,
-    which caused 401/404 on roots without that suffix.
+    Providers such as Some MaaS document only the base ``…/v2``; clients must POST to …/v2/chat/completions.
+    Bare bases often return 401 from the gateway when hit directly.
     """
-    raw = (url or "").strip()
-    if not raw:
-        return raw
-    parsed = urllib.parse.urlparse(raw)
-    path = (parsed.path or "").rstrip("/")
-    if path.endswith("chat/completions"):
-        return raw
-    return f"{raw.rstrip('/')}/chat/completions"
+    u = url.strip()
+    if not u:
+        return url
+    lower = u.lower()
+    if "chat/completions" in lower:
+        return u
+    return u.rstrip("/") + "/chat/completions"
 
 
 def backend_summary(config: BackendConfig) -> str:
@@ -161,9 +158,9 @@ def _request_once(
         if system_prompt:
             payload["messages"].append({"role": "system", "content": system_prompt})
         payload["messages"].append({"role": "user", "content": prompt})
-        chat_url = normalize_openai_chat_completions_url(config.url)
+        request_url = normalize_openai_chat_completions_url(config.url)
         request = urllib.request.Request(
-            chat_url,
+            request_url,
             data=json.dumps(payload).encode("utf-8"),
             headers={
                 "Content-Type": "application/json",

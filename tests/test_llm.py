@@ -14,22 +14,22 @@ import pytest
 from twinbox_core.llm import clean_json_text, normalize_openai_chat_completions_url, resolve_backend
 
 
-class TestNormalizeOpenAiChatCompletionsUrl:
-    def test_appends_chat_completions_for_base_url(self):
+class TestNormalizeOpenAIChatUrl:
+    def test_appends_chat_completions_to_v2_base(self) -> None:
         assert (
             normalize_openai_chat_completions_url("https://maas-coding-api.cn-huabei-1.xf-yun.com/v2")
             == "https://maas-coding-api.cn-huabei-1.xf-yun.com/v2/chat/completions"
         )
 
-    def test_unchanged_when_already_full_path(self):
-        u = "https://example.com/v1/chat/completions"
-        assert normalize_openai_chat_completions_url(u) == u
-
-    def test_strips_trailing_slash_before_append(self):
+    def test_trailing_slash_stripped_before_append(self) -> None:
         assert (
             normalize_openai_chat_completions_url("https://example.com/v1/")
             == "https://example.com/v1/chat/completions"
         )
+
+    def test_unchanged_when_already_has_chat_completions(self) -> None:
+        u = "https://example.com/v1/chat/completions"
+        assert normalize_openai_chat_completions_url(u) == u
 
 
 class TestResolveBackend:
