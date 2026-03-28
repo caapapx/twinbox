@@ -93,7 +93,7 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 | Start onboarding flow | `twinbox onboarding start --json`（人类可读输出会以 “Phase 2 of 2” 继续旅程） |
 | Check onboarding progress | `twinbox onboarding status --json`（人类可读输出会以 “Phase 2 of 2” 继续旅程） |
 | Advance onboarding to next stage | `twinbox onboarding next --json`（人类可读输出会以 “Phase 2 of 2” 继续旅程） |
-| User已用自然语言答完当前阶段（画像 / 材料 / 规则 / 推送等） | 先简短确认，再 **`twinbox onboarding next --json`**，然后根据 stdout 总结 `completed_stage`、`current_stage`、下一段 `prompt`（不可只调工具无正文） |
+| User已用自然语言答完当前阶段（画像 / 材料 / 规则 / 推送等） | 先简短确认，再 **`twinbox onboarding next --json`**（若是画像阶段，可加 `--profile-notes "用户原话摘要"`），然后根据 stdout 总结 `completed_stage`、`current_stage`、下一段 `prompt`（不可只调工具无正文） |
 | 后台 JSON-RPC daemon（省 Python 冷启动；可选） | `twinbox daemon start` / `stop` / `restart`；`twinbox daemon status --json`（含 `cache_stats`）。Socket：`$TWINBOX_STATE_ROOT/run/daemon.sock`。Go：`cmd/twinbox-go`（RPC 失败则 `exec` Python）；`twinbox-go install --archive …` 可从本地路径或 HTTP URL 解压 vendor tarball |
 | 多邮箱 profile（共享 vendor、独立 state） | `twinbox --profile NAME …`（`TWINBOX_STATE_ROOT=~/.twinbox/profiles/NAME/state`，`TWINBOX_HOME=~/.twinbox`） |
 | Phase loading（Python 入口） | `twinbox loading phase1` … `phase4`（全部走 Python；`scripts/phase1_loading.sh` / `phase4_loading.sh` 仅保留兼容 shim，phase1/4 仍使用 himalaya CLI 传输） |
