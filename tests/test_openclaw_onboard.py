@@ -663,6 +663,20 @@ def test_console_journey_prompter_secret_caps_inline_mask_length_in_tty() -> Non
     assert "API key (press Enter to keep current value): *********" not in plain
 
 
+def test_console_journey_prompter_secret_uses_short_prompt_on_narrow_tty() -> None:
+    stream = _TTYBuffer()
+    keys = iter(["ENTER"])
+    prompter = ConsoleJourneyPrompter(stream=stream, key_reader=lambda: next(keys), width=32)
+
+    value = prompter.secret("API key", allow_empty=True)
+
+    assert value == ""
+    plain = _strip_ansi(stream.getvalue())
+    assert "Press Enter to keep current value." in plain
+    assert "API key: " in plain
+    assert "API key (press Enter to keep current value): " not in plain
+
+
 def test_console_journey_prompter_text_keeps_default_without_echoing_value() -> None:
     stream = _TTYBuffer()
     answers = iter(["", "other-model"])
