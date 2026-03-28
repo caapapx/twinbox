@@ -190,8 +190,8 @@ class _FakePrompter:
             ("cancel", {"summary_title": summary_title, "summary_value": summary_value, "message": message})
         )
 
-    def note(self, title: str, body: str) -> None:
-        self.events.append(("note", {"title": title, "body": body}))
+    def note(self, title: str, body: str, *, complete: bool | None = None) -> None:
+        self.events.append(("note", {"title": title, "body": body, "complete": complete}))
 
     def select(
         self,
@@ -402,7 +402,8 @@ def test_console_journey_prompter_note_wraps_to_terminal_width() -> None:
     plain = _strip_ansi(stream.getvalue())
     lines = [line for line in plain.splitlines() if line]
     assert max(len(line) for line in lines) <= 50
-    assert "hands you off to the twinbox agent" in plain
+    assert "hands you off" in plain
+    assert "twinbox agent" in plain
     assert "TwinBox setup" in plain
     assert plain.count("│") >= 2
 
@@ -510,6 +511,61 @@ def test_run_openclaw_onboard_v2_requires_explicit_steps_even_with_existing_valu
     assert "LLM: kimi-k2.5" in apply_note["body"]
     assert any(event[0] == "note" and event[1]["title"] == "Apply setup" for event in prompter.events)
     assert any(event[0] == "outro" and "twinbox agent" in str(event[1]) for event in prompter.events)
+
+
+def test_run_openclaw_onboard_v2_collects_llm_inputs_before_validation_progress(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    _write_ready_env(state_root)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
+    (repo / "openclaw-skill").mkdir()
+    (repo / "openclaw-skill" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    openclaw_home = tmp_path / ".openclaw"
+    openclaw_home.mkdir()
+
+    monkeypatch.setenv("TWINBOX_STATE_ROOT", str(state_root))
+    monkeypatch.setenv("TWINBOX_CODE_ROOT", str(repo))
+    monkeypatch.setattr("twinbox_core.openclaw_onboard.shutil.which", lambda _bin: "/usr/bin/openclaw")
+    monkeypatch.setattr("twinbox_core.mailbox.run_preflight", _fake_run_preflight)
+    monkeypatch.setattr(
+        "twinbox_core.openclaw_onboard.run_openclaw_deploy",
+        lambda **_: OpenClawDeployReport(ok=True, steps=[]),
+    )
+
+    prompter = _FakePrompter(
+        select_values=[
+            "continue",
+            "quickstart",
+            "use_current_mailbox",
+            "openai",
+            "yes",
+            "apply",
+        ],
+        secret_values=[""],
+        text_values=["", ""],
+    )
+
+    report = run_openclaw_onboard_v2(
+        code_root=repo,
+        openclaw_home=openclaw_home,
+        prompter=prompter,
+    )
+
+    assert report.ok is True
+    api_key_index = next(index for index, event in enumerate(prompter.events) if event[0] == "secret")
+    model_index = next(index for index, event in enumerate(prompter.events) if event[0] == "text")
+    progress_index = next(
+        index
+        for index, event in enumerate(prompter.events)
+        if event[0] == "progress" and event[1] == "Validating LLM configuration"
+    )
+    assert api_key_index < progress_index
+    assert model_index < progress_index
 
 
 def test_run_openclaw_onboard_v2_allows_llm_skip_and_returns_incomplete_handoff(
