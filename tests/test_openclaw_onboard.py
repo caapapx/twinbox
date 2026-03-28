@@ -285,8 +285,9 @@ def test_run_openclaw_onboard_v2_console_prompter_prints_english_shell(
     )
     out = capsys.readouterr().out
 
-    assert "Twinbox OpenClaw onboarding" in out
-    assert "Phase 1 of 2" in out
+    assert "TwinBox v1" in out
+    assert "TWINBOX" in out
+    assert "TwinBox setup" in out
     assert "Security" in out
     assert "Choose onboarding flow" in out
     assert "Mailbox" in out
@@ -394,7 +395,7 @@ def test_console_journey_prompter_note_wraps_to_terminal_width() -> None:
     prompter = ConsoleJourneyPrompter(stream=stream, width=48)
 
     prompter.note(
-        "Phase 1 of 2",
+        "TwinBox setup",
         "This wizard verifies host wiring first, then hands you off to the twinbox agent for profile, materials, rules, and notifications.",
     )
 
@@ -402,7 +403,8 @@ def test_console_journey_prompter_note_wraps_to_terminal_width() -> None:
     lines = [line for line in plain.splitlines() if line]
     assert max(len(line) for line in lines) <= 50
     assert "hands you off to the twinbox agent" in plain
-    assert plain.count("│") >= 3
+    assert "TwinBox setup" in plain
+    assert plain.count("│") >= 2
 
 
 def test_console_journey_prompter_select_clears_lines_before_rerender() -> None:
@@ -487,7 +489,7 @@ def test_run_openclaw_onboard_v2_requires_explicit_steps_even_with_existing_valu
 
     assert report.ok is True
     assert [event[1]["title"] for event in prompter.events if event[0] == "note"][:5] == [
-        "Phase 1 of 2",
+        "TwinBox setup",
         "Security",
         "Mailbox",
         "LLM",
