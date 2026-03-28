@@ -9,6 +9,7 @@ import re
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -97,15 +98,51 @@ def resolve_backend(
 
     raise LLMError(
         "No LLM backend configured. "
-        "OpenAI-compatible (HTTP chat/completions + Bearer): set LLM_API_KEY, LLM_MODEL, and LLM_API_URL. "
+        "OpenAI-compatible (POST .../chat/completions + Bearer): set LLM_API_KEY, LLM_MODEL, and LLM_API_URL "
+        "(base URLs such as https://host/v2 are extended with /chat/completions automatically). "
         "Anthropic native (/v1/messages + x-api-key): set ANTHROPIC_API_KEY, ANTHROPIC_MODEL, and ANTHROPIC_BASE_URL."
     )
+
+
+def normalize_openai_chat_completions_url(url: str) -> str:
+    """Return a POST URL for OpenAI-style chat.
+
+    Many providers (e.g. some OpenAI-compatible providers) document only the API **root** (``.../v2``); clients
+    are expected to call ``{root}/chat/completions``. Twinbox used to POST to the raw ``LLM_API_URL``,
+    which caused 401/404 on roots without that suffix.
+    """
+    raw = (url or "").strip()
+    if not raw:
+        return raw
+    parsed = urllib.parse.urlparse(raw)
+    path = (parsed.path or "").rstrip("/")
+    if path.endswith("chat/completions"):
+        return raw
+    return f"{raw.rstrip('/')}/chat/completions"
 
 
 def backend_summary(config: BackendConfig) -> str:
     if config.backend == "openai":
         return f"LLM backend: OpenAI-compatible ({config.model})"
     return f"LLM backend: Anthropic API ({config.model})"
+
+
+def validate_backend(config: BackendConfig) -> tuple[bool, str]:
+    """Send a minimal test request to validate the LLM backend is reachable and configured correctly.
+
+    Returns:
+        (success: bool, error_message: str)
+    """
+    test_prompt = "ping"
+    try:
+        _request_once(test_prompt, max_tokens=10, system_prompt=None, config=config)
+        return (True, "")
+    except LLMError as exc:
+        return (False, str(exc))
+    except (TimeoutError, urllib.error.URLError, urllib.error.HTTPError) as exc:
+        return (False, f"Network error: {exc}")
+    except Exception as exc:
+        return (False, f"Unexpected error: {exc}")
 
 
 def _request_once(
@@ -124,8 +161,9 @@ def _request_once(
         if system_prompt:
             payload["messages"].append({"role": "system", "content": system_prompt})
         payload["messages"].append({"role": "user", "content": prompt})
+        chat_url = normalize_openai_chat_completions_url(config.url)
         request = urllib.request.Request(
-            config.url,
+            chat_url,
             data=json.dumps(payload).encode("utf-8"),
             headers={
                 "Content-Type": "application/json",

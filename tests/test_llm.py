@@ -11,7 +11,25 @@ import json
 
 import pytest
 
-from twinbox_core.llm import clean_json_text, resolve_backend
+from twinbox_core.llm import clean_json_text, normalize_openai_chat_completions_url, resolve_backend
+
+
+class TestNormalizeOpenAiChatCompletionsUrl:
+    def test_appends_chat_completions_for_base_url(self):
+        assert (
+            normalize_openai_chat_completions_url("https://maas-coding-api.cn-huabei-1.xf-yun.com/v2")
+            == "https://maas-coding-api.cn-huabei-1.xf-yun.com/v2/chat/completions"
+        )
+
+    def test_unchanged_when_already_full_path(self):
+        u = "https://example.com/v1/chat/completions"
+        assert normalize_openai_chat_completions_url(u) == u
+
+    def test_strips_trailing_slash_before_append(self):
+        assert (
+            normalize_openai_chat_completions_url("https://example.com/v1/")
+            == "https://example.com/v1/chat/completions"
+        )
 
 
 class TestResolveBackend:
