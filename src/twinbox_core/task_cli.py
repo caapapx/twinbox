@@ -1267,27 +1267,15 @@ def cmd_deploy_openclaw(args: argparse.Namespace) -> int:
 
 def cmd_onboard_openclaw(args: argparse.Namespace) -> int:
     """Guided OpenClaw host onboarding with handoff to conversational onboarding."""
-    from twinbox_core.openclaw_onboard import (
-        format_openclaw_onboard_report,
-        run_openclaw_onboard,
-    )
-
-    code_root = Path(args.repo_root).expanduser() if args.repo_root else None
-    openclaw_home = Path(args.openclaw_home).expanduser() if args.openclaw_home else None
-    report = run_openclaw_onboard(
-        code_root=code_root,
-        openclaw_home=openclaw_home,
-        dry_run=args.dry_run,
-        openclaw_bin=args.openclaw_bin,
-    )
-    if args.json:
-        print(json.dumps(report.to_json_dict(), ensure_ascii=False, indent=2))
-    else:
-        print(format_openclaw_onboard_report(report))
-    return 0 if report.ok else 1
+    return _cmd_onboard_openclaw_journey(args)
 
 
 def cmd_onboard_openclaw_v2(args: argparse.Namespace) -> int:
+    """Compatibility alias for the journey-style OpenClaw host onboarding shell."""
+    return _cmd_onboard_openclaw_journey(args)
+
+
+def _cmd_onboard_openclaw_journey(args: argparse.Namespace) -> int:
     """Journey-style OpenClaw host onboarding shell with stronger handoff."""
     from twinbox_core.openclaw_onboard import run_openclaw_onboard_v2
 
@@ -2754,7 +2742,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     onboard_oc_v2 = onboard_sub.add_parser(
         "openclaw-v2",
-        help="Journey-style OpenClaw onboarding shell with quickstart/advanced flows and stronger handoff",
+        help=argparse.SUPPRESS,
     )
     onboard_oc_v2.add_argument(
         "--repo-root",
