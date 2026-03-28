@@ -185,6 +185,11 @@ class _FakePrompter:
     def outro(self, text: str) -> None:
         self.events.append(("outro", text))
 
+    def cancel(self, summary_title: str, summary_value: str, message: str = "Setup cancelled.") -> None:
+        self.events.append(
+            ("cancel", {"summary_title": summary_title, "summary_value": summary_value, "message": message})
+        )
+
     def note(self, title: str, body: str) -> None:
         self.events.append(("note", {"title": title, "body": body}))
 
@@ -356,6 +361,34 @@ def test_console_journey_prompter_select_supports_horizontal_radio_layout() -> N
     assert "● No" in out
 
 
+def test_console_journey_prompter_ctrl_c_in_select_raises_keyboard_interrupt() -> None:
+    stream = _TTYBuffer()
+    keys = iter(["\x03"])
+    prompter = ConsoleJourneyPrompter(stream=stream, key_reader=lambda: next(keys))
+
+    with pytest.raises(KeyboardInterrupt):
+        prompter.select(
+            "Choose onboarding flow",
+            options=[
+                {"value": "quickstart", "label": "Quickstart", "description": "Use the recommended path with fewer decisions."},
+                {"value": "manual", "label": "Manual", "description": "Configure port, network, Tailscale, and auth options."},
+            ],
+            default="quickstart",
+        )
+
+
+def test_console_journey_prompter_cancel_prints_compact_footer() -> None:
+    stream = _TTYBuffer()
+    prompter = ConsoleJourneyPrompter(stream=stream)
+
+    prompter.cancel("Setup mode", "Manual")
+
+    plain = _strip_ansi(stream.getvalue())
+    assert "■  Setup mode" in plain
+    assert "│  Manual" in plain
+    assert "└  Setup cancelled." in plain
+
+
 def test_console_journey_prompter_note_wraps_to_terminal_width() -> None:
     stream = _TTYBuffer()
     prompter = ConsoleJourneyPrompter(stream=stream, width=48)
@@ -525,3 +558,36 @@ def test_run_openclaw_onboard_v2_allows_llm_skip_and_returns_incomplete_handoff(
     assert report.onboarding["current_stage"] == "llm_setup"
     assert "llm" in report.error.lower()
     assert "next guided conversation stage is llm_setup" in report.next_action.lower()
+
+
+def test_run_openclaw_onboard_v2_ctrl_c_returns_cancelled_report(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    _write_ready_env(state_root)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
+    openclaw_home = tmp_path / ".openclaw"
+    openclaw_home.mkdir()
+
+    monkeypatch.setenv("TWINBOX_STATE_ROOT", str(state_root))
+    monkeypatch.setenv("TWINBOX_CODE_ROOT", str(repo))
+    monkeypatch.setattr("twinbox_core.openclaw_onboard.shutil.which", lambda _bin: "/usr/bin/openclaw")
+
+    class _CtrlCPrompter(_FakePrompter):
+        def select(self, *args, **kwargs):
+            raise KeyboardInterrupt
+
+    prompter = _CtrlCPrompter()
+    report = run_openclaw_onboard_v2(
+        code_root=repo,
+        openclaw_home=openclaw_home,
+        prompter=prompter,
+    )
+
+    assert report.ok is False
+    assert report.error == "Setup cancelled."
+    assert any(event[0] == "cancel" for event in prompter.events)
