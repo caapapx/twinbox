@@ -234,6 +234,9 @@ class _FakePrompter:
     def note(self, title: str, body: str, *, complete: bool | None = None) -> None:
         self.events.append(("note", {"title": title, "body": body, "complete": complete}))
 
+    def journey_rail_begin(self) -> None:
+        self.events.append(("journey_rail_begin", None))
+
     def select(
         self,
         prompt: str,
@@ -330,6 +333,8 @@ def test_run_openclaw_onboard_v2_console_prompter_prints_english_shell(
     assert "📮" in out
     assert "Thread-level email intelligence" in out
     assert "TwinBox setup" in out
+    assert out.count("│") >= 8
+    assert "╭" in out or "┌" in out
     assert "Security" in out
     assert "Choose onboarding flow" in out
     assert "Mailbox" in out
@@ -465,7 +470,7 @@ def test_console_journey_prompter_note_draws_closed_box_with_rail_glyphs() -> No
 
     prompter.note("Security", "First line.\n\nSecond paragraph.", complete=False)
     out = stream.getvalue()
-    assert "┌" in out and "┐" in out and "└" in out and "┘" in out
+    assert "╭" in out and "╮" in out and "╰" in out and "╯" in out
     assert "◆" in out
     assert "Security" in out
     assert "First line." in out
@@ -479,9 +484,22 @@ def test_console_journey_prompter_note_draws_closed_box_with_rail_glyphs() -> No
     prompter3 = ConsoleJourneyPrompter(stream=stream3, width=64)
     prompter3.note("Intro", "No rail glyph.", complete=None)
     out3 = stream3.getvalue()
-    assert "┌" in out3
+    assert "╭" in out3
     assert "◆" not in out3 and "◇" not in out3
     assert "Intro" in out3
+
+
+def test_console_journey_prompter_journey_rail_prefixes_connected_boxes() -> None:
+    stream = io.StringIO()
+    prompter = ConsoleJourneyPrompter(stream=stream, width=72)
+    prompter.journey_rail_begin()
+    prompter.note("Step one", "Body A.", complete=False)
+    prompter.note("Step two", "Body B.", complete=True)
+    plain = _strip_ansi(stream.getvalue())
+    lines = [ln for ln in plain.splitlines() if ln.strip()]
+    assert lines[0] == "│"
+    assert any(ln.startswith("│  ╭") for ln in plain.splitlines())
+    assert plain.count("│  ╭") == 2
 
 
 def test_console_journey_prompter_ctrl_c_in_select_raises_keyboard_interrupt() -> None:
