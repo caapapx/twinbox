@@ -502,7 +502,9 @@ def test_console_journey_prompter_journey_rail_prefixes_connected_boxes() -> Non
     tops = [ln for ln in plain.splitlines() if ln.endswith("┐") and not ln.startswith("│")]
     assert len(tops) == 2
     assert tops[0].startswith("◇")
+    assert "Step one" in tops[0]
     assert tops[1].startswith("◆")
+    assert "Step two" in tops[1]
     assert "└" in plain and "┘" in plain
     assert "◇" in plain
     assert "◆" in plain
