@@ -635,7 +635,8 @@ def test_console_journey_prompter_secret_dims_parenthetical_prompt_suffix() -> N
 
     assert value == ""
     out = stream.getvalue()
-    assert "\033[0;90m (press Enter to keep current value)\033[0m" in out
+    assert "Press Enter to keep current value." in _strip_ansi(out)
+    assert "Mailbox app password: " in _strip_ansi(out)
 
 
 def test_console_journey_prompter_secret_accepts_backspace_while_masking_in_tty() -> None:
@@ -659,8 +660,9 @@ def test_console_journey_prompter_secret_caps_inline_mask_length_in_tty() -> Non
 
     assert value == "super-long-secret-value"
     plain = _strip_ansi(stream.getvalue())
-    assert "API key (press Enter to keep current value): ********" in plain
-    assert "API key (press Enter to keep current value): *********" not in plain
+    assert "Press Enter to keep current value." in plain
+    assert "API key: ********" in plain
+    assert "API key: *********" not in plain
 
 
 def test_console_journey_prompter_secret_uses_short_prompt_on_narrow_tty() -> None:
