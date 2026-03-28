@@ -675,6 +675,14 @@ def test_run_openclaw_onboard_v2_requires_explicit_steps_even_with_existing_valu
         title in note_titles
         for title in ["TwinBox setup", "Security", "Mailbox", "LLM", "Twinbox tools integration", "Apply setup"]
     )
+    twinbox_notes = [e[1] for e in prompter.events if e[0] == "note" and e[1]["title"] == "TwinBox setup"]
+    assert len(twinbox_notes) == 2
+    assert twinbox_notes[0]["complete"] is False
+    assert twinbox_notes[1]["complete"] is True
+    security_notes = [e[1] for e in prompter.events if e[0] == "note" and e[1]["title"] == "Security"]
+    assert len(security_notes) == 2
+    assert security_notes[0]["complete"] is False
+    assert security_notes[1]["complete"] is True
     config_handling_selects = [
         event[1] for event in prompter.events if event[0] == "select" and event[1]["prompt"] == "◆  Config handling"
     ]
@@ -685,11 +693,12 @@ def test_run_openclaw_onboard_v2_requires_explicit_steps_even_with_existing_valu
         "Reset",
     ]
     assert not any(event[0] == "select" and event[1]["prompt"] == "Choose LLM setup" for event in prompter.events)
-    apply_note = next(
-        event[1] for event in prompter.events if event[0] == "note" and event[1]["title"] == "Apply setup"
-    )
-    assert "LLM: test-model" in apply_note["body"]
-    assert any(event[0] == "note" and event[1]["title"] == "Apply setup" for event in prompter.events)
+    apply_notes = [e[1] for e in prompter.events if e[0] == "note" and e[1]["title"] == "Apply setup"]
+    assert len(apply_notes) == 2
+    assert apply_notes[0]["complete"] is False
+    assert apply_notes[1]["complete"] is True
+    assert "LLM: test-model" in apply_notes[0]["body"]
+    assert "LLM: test-model" in apply_notes[1]["body"]
     assert any(event[0] == "outro" and "twinbox agent" in str(event[1]) for event in prompter.events)
 
 
