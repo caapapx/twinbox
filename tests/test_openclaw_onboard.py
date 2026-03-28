@@ -246,8 +246,16 @@ class _FakePrompter:
     def intro(self, text: str) -> None:
         self.events.append(("intro", text))
 
-    def outro(self, text: str) -> None:
-        self.events.append(("outro", text))
+    def outro(
+        self,
+        text: str,
+        *,
+        paste_hint_label: str | None = None,
+        paste_hint_quote: str | None = None,
+    ) -> None:
+        self.events.append(
+            ("outro", {"text": text, "paste_hint_label": paste_hint_label, "paste_hint_quote": paste_hint_quote})
+        )
 
     def cancel(self, summary_title: str, summary_value: str, message: str = "Setup cancelled.") -> None:
         self.events.append(
@@ -364,6 +372,30 @@ def test_run_openclaw_onboard_v2_console_prompter_prints_english_shell(
     assert "Mailbox" in out
     assert "LLM" in out
     assert "Phase 2 of 2" in out
+    assert "🎉" in out
+    assert "Successfully completed host 🔗 wiring" in out
+    assert "🔗" in out
+    assert "🦞" in out
+    assert "onboarding start --json" in out
+    assert "Handoff — paste into a new twinbox session:" in out
+    plain = _strip_ansi(out)
+    assert (
+        '"Read ~/.openclaw/skills/twinbox/SKILL.md, then run twinbox onboarding start --json, and follow the prompt."'
+        in plain
+    )
+
+
+def test_console_journey_prompter_outro_handoff_quote_orange_italic_when_tty() -> None:
+    stream = _TTYBuffer()
+    prompter = ConsoleJourneyPrompter(stream=stream)
+    prompter.outro(
+        "Main success line.",
+        paste_hint_label="Handoff — paste into a new twinbox session:",
+        paste_hint_quote="Read SKILL, run twinbox onboarding start --json.",
+    )
+    out = stream.getvalue()
+    assert "\033[1;32mHandoff — paste into a new twinbox session:\033[0m" in out
+    assert '\033[1;3;38;5;208m"Read SKILL, run twinbox onboarding start --json."\033[0m' in out
 
 
 def test_console_journey_prompter_select_shows_descriptions_and_reprompts() -> None:
@@ -777,7 +809,14 @@ def test_run_openclaw_onboard_v2_requires_explicit_steps_even_with_existing_valu
     assert apply_notes[1]["complete"] is True
     assert "LLM: test-model" in apply_notes[0]["body"]
     assert "LLM: test-model" in apply_notes[1]["body"]
-    assert any(event[0] == "outro" and "twinbox agent" in str(event[1]) for event in prompter.events)
+    assert any(
+        event[0] == "outro"
+        and "twinbox agent" in event[1]["text"]
+        and event[1].get("paste_hint_quote")
+        and "onboarding start --json" in event[1]["paste_hint_quote"]
+        and event[1].get("paste_hint_label")
+        for event in prompter.events
+    )
 
 
 def test_run_openclaw_onboard_v2_reads_existing_values_from_twinbox_json(
