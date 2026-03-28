@@ -1302,6 +1302,110 @@ def cmd_config_set_llm(args: argparse.Namespace) -> int:
     return 0 if backend_ok else 1
 
 
+def cmd_config_import_llm_from_openclaw(args: argparse.Namespace) -> int:
+    """Copy default LLM from OpenClaw openclaw.json into Twinbox (.env), same as set-llm."""
+    from .env_writer import mask_secret, merge_env_file, write_env_file
+    from .llm import LLMError, resolve_backend
+    from .openclaw_llm_import import OpenClawLlmImportError, import_llm_from_openclaw_path
+    from .twinbox_config import config_path_for_state_root
+
+    state_root = _state_root()
+    env_file = state_root / ".env"
+    oc_path = Path(str(getattr(args, "openclaw_json", "") or "").strip()).expanduser()
+    if not oc_path:
+        oc_path = Path.home() / ".openclaw" / "openclaw.json"
+
+    try:
+        extracted = import_llm_from_openclaw_path(oc_path)
+    except OpenClawLlmImportError as exc:
+        if args.json:
+            print(json.dumps({
+                "status": "fail",
+                "error_code": "openclaw_import_failed",
+                "actionable_hint": str(exc),
+            }, ensure_ascii=False, indent=2))
+        else:
+            print(f"错误: {exc}", file=sys.stderr)
+        return 2
+
+    twinbox_provider = str(extracted["twinbox_provider"])
+    api_key = str(extracted["api_key"])
+    model = str(extracted["model"])
+    api_url = str(extracted["api_url"])
+
+    if getattr(args, "dry_run", False):
+        out = {
+            "status": "ok",
+            "dry_run": True,
+            "openclaw_json": str(oc_path),
+            "openclaw_model_ref": extracted.get("openclaw_model_ref", ""),
+            "would_apply": {
+                "provider": twinbox_provider,
+                "model": model,
+                "api_url": api_url,
+                "api_key_masked": mask_secret(api_key),
+            },
+        }
+        if args.json:
+            print(json.dumps(out, ensure_ascii=False, indent=2))
+        else:
+            print(
+                f"dry-run: from {oc_path}\n"
+                f"  provider={twinbox_provider} model={model} api_url={api_url}\n"
+                f"  key={mask_secret(api_key)}"
+            )
+        return 0
+
+    updates: dict[str, str] = {}
+    if twinbox_provider == "anthropic":
+        updates["ANTHROPIC_API_KEY"] = api_key
+        updates["ANTHROPIC_MODEL"] = model
+        updates["ANTHROPIC_BASE_URL"] = api_url
+    else:
+        updates["LLM_API_KEY"] = api_key
+        updates["LLM_MODEL"] = model
+        updates["LLM_API_URL"] = api_url
+
+    merged = merge_env_file(env_file, updates)
+    write_env_file(env_file, merged)
+
+    validation_progress = _create_cli_progress("Validating LLM configuration", enabled=not args.json)
+    try:
+        cfg = resolve_backend(env_file=env_file, env={})
+        backend_ok = True
+        resolved_model = cfg.model
+        resolved_url = cfg.url
+        validation_progress.finish("LLM configuration validated")
+    except LLMError as exc:
+        backend_ok = False
+        resolved_model = model
+        resolved_url = api_url
+        validation_progress.fail(str(exc))
+
+    output = {
+        "status": "ok" if backend_ok else "warn",
+        "provider": twinbox_provider,
+        "model": resolved_model,
+        "api_url": resolved_url,
+        "api_key_masked": mask_secret(api_key),
+        "config_file_path": str(config_path_for_state_root(state_root)),
+        "openclaw_json": str(oc_path),
+        "openclaw_model_ref": extracted.get("openclaw_model_ref", ""),
+        "backend_validated": backend_ok,
+    }
+
+    if args.json:
+        print(json.dumps(output, ensure_ascii=False, indent=2))
+    else:
+        status_icon = "✅" if backend_ok else "⚠️"
+        print(f"{status_icon} LLM 已从 OpenClaw 导入并写入: {config_path_for_state_root(state_root)}")
+        print(f"  来源: {oc_path}")
+        print(f"  Provider: {twinbox_provider}")
+        print(f"  Model: {resolved_model}")
+        print(f"  API Key: {mask_secret(api_key)}")
+    return 0 if backend_ok else 1
+
+
 def cmd_config_set_integration(args: argparse.Namespace) -> int:
     """Persist Twinbox integration preferences into twinbox.json."""
     from .twinbox_config import config_path_for_state_root, load_twinbox_config, save_twinbox_config
@@ -2785,6 +2889,22 @@ def _build_parser() -> argparse.ArgumentParser:
     config_set_llm.add_argument("--api-url", default="", help="API URL override")
     config_set_llm.add_argument("--json", action="store_true", help="Output as JSON")
 
+    config_import_oc_llm = config_sub.add_parser(
+        "import-llm-from-openclaw",
+        help="Copy default LLM from OpenClaw openclaw.json (same write path as set-llm)",
+    )
+    config_import_oc_llm.add_argument(
+        "--openclaw-json",
+        default="",
+        help="Path to openclaw.json (default: ~/.openclaw/openclaw.json)",
+    )
+    config_import_oc_llm.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print mapped provider/model/url without writing or validating",
+    )
+    config_import_oc_llm.add_argument("--json", action="store_true", help="Output as JSON")
+
     config_mailbox_set = config_sub.add_parser("mailbox-set", help="Configure mailbox settings into twinbox.json")
     config_mailbox_set.add_argument("--email", required=True, help="Email address to configure")
     config_mailbox_set.add_argument("--imap-login", default="", help="Override IMAP login (default: email)")
@@ -3195,6 +3315,8 @@ def main(argv: list[str] | None = None) -> int:
                 return cmd_config_show(args)
             if args.config_command == "set-llm":
                 return cmd_config_set_llm(args)
+            if args.config_command == "import-llm-from-openclaw":
+                return cmd_config_import_llm_from_openclaw(args)
             if args.config_command == "mailbox-set":
                 return cmd_config_mailbox_set(args)
             if args.config_command == "integration-set":

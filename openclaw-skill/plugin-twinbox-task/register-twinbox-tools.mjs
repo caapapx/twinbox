@@ -363,4 +363,31 @@ export function registerTwinboxTaskTools(api) {
       return formatResult(r);
     },
   });
+
+  api.registerTool({
+    name: "twinbox_config_import_llm_from_openclaw",
+    description:
+      "Copy Twinbox LLM settings from the host OpenClaw openclaw.json default model (agents.defaults.model): reads provider baseUrl + apiKey + model id. No API key param needed. Runs: twinbox config import-llm-from-openclaw --json",
+    parameters: Type.Object({
+      openclaw_json: Type.Optional(
+        Type.String({
+          description:
+            "Path to openclaw.json (default: ~/.openclaw/openclaw.json on the Gateway host)",
+        }),
+      ),
+      dry_run: Type.Optional(
+        Type.Boolean({
+          description: "If true, only print what would be applied (no write, no validation)",
+        }),
+      ),
+    }),
+    async execute(...args) {
+      const params = args.length >= 2 ? args[1] : args[0];
+      const cliArgs = ["config", "import-llm-from-openclaw", "--json"];
+      if (params.openclaw_json) cliArgs.push("--openclaw-json", params.openclaw_json);
+      if (params.dry_run) cliArgs.push("--dry-run");
+      const r = await runTwinbox(cliArgs, opts, {});
+      return formatResult(r);
+    },
+  });
 }

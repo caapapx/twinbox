@@ -64,6 +64,7 @@ test("registerTwinboxTaskTools registers expected tools and task/thread helpers 
 
   const names = tools.map((t) => t.name).sort();
   assert.deepEqual(names, [
+    "twinbox_config_import_llm_from_openclaw",
     "twinbox_config_set_llm",
     "twinbox_latest_mail",
     "twinbox_mailbox_setup",
@@ -186,4 +187,12 @@ test("registerTwinboxTaskTools registers expected tools and task/thread helpers 
   assert.match(clout.content[0].text, /set-llm/);
   assert.match(clout.content[0].text, /anthropic/);
   assert.match(clout.content[0].text, /--json/);
+
+  const importOc = tools.find((t) => t.name === "twinbox_config_import_llm_from_openclaw");
+  assert.ok(importOc);
+  const imout = await importOc.execute({ dry_run: true, openclaw_json: "/tmp/oc.json" });
+  assert.match(imout.content[0].text, /import-llm-from-openclaw/);
+  assert.match(imout.content[0].text, /--dry-run/);
+  assert.match(imout.content[0].text, /--openclaw-json/);
+  assert.match(imout.content[0].text, /--json/);
 });

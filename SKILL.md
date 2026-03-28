@@ -71,7 +71,7 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 | Auto-detect email server config | `twinbox mailbox detect EMAIL --json` |
 | 查看当前单配置文件 | `twinbox config show --json` |
 | 配置邮箱凭据（自动探测或显式主机参数，写入 `twinbox.json`）| `twinbox mailbox setup --email EMAIL --json` 或 `twinbox config mailbox-set --email EMAIL --json`（密码从 `TWINBOX_SETUP_IMAP_PASS` 注入）或 OpenClaw 工具 `twinbox_mailbox_setup` |
-| 配置 LLM API（写入 `twinbox.json`）| `twinbox config set-llm --provider openai|anthropic --model MODEL --api-url URL --json`（key 从 `TWINBOX_SETUP_API_KEY` 注入；必须显式传 model 和 api-url，Twinbox 不再内置默认 LLM 配置）或 OpenClaw 工具 `twinbox_config_set_llm` |
+| 配置 LLM API（写入 `twinbox.json`）| `twinbox config set-llm --provider openai|anthropic --model MODEL --api-url URL --json`（key 从 `TWINBOX_SETUP_API_KEY` 注入；必须显式传 model 和 api-url，Twinbox 不再内置默认 LLM 配置）或 OpenClaw 工具 `twinbox_config_set_llm`；与 OpenClaw 默认模型一致时可 `twinbox config import-llm-from-openclaw --json`（需 `openclaw.json` 内联 `apiKey`）或插件 `twinbox_config_import_llm_from_openclaw` |
 | 配置 Twinbox integration 默认值 | `twinbox config integration-set --use-fragment yes|no [--fragment-path PATH] --json` |
 | 配置 OpenClaw 默认值 | `twinbox config openclaw-set [--home PATH] [--bin NAME] [--strict|--no-strict] [--sync-env|--no-sync-env] [--restart-gateway|--no-restart-gateway] --json` |
 | OpenClaw 安装总向导（唯一公开向导入口；OpenClaw 风格显式步骤向导：Security（默认 No、须显式选 Yes 才继续）、Quickstart/Manual、Mailbox、LLM、Twinbox tools integration、Apply setup + 更强 handoff；已有 Mailbox/LLM 值会先进入 `Existing config detected` / `Config handling`，LLM 覆盖输入顺序为 `API URL -> API key -> Model ID`；选择沿用现有 LLM 配置继续时，会重新解析校验当前配置并同步 onboarding 状态） | `twinbox onboard openclaw --json` |
