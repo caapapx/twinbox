@@ -326,8 +326,9 @@ def test_run_openclaw_onboard_v2_console_prompter_prints_english_shell(
     )
     out = capsys.readouterr().out
 
-    assert "TwinBox v1" in out
-    assert "TWINBOX" in out
+    assert "twinbox" in out
+    assert "📮" in out
+    assert "Thread-level email intelligence" in out
     assert "TwinBox setup" in out
     assert "Security" in out
     assert "Choose onboarding flow" in out
