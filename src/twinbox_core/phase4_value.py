@@ -694,6 +694,7 @@ def _call_with_prompt(
 def _apply_recipient_role_weights(
     response: dict[str, object],
     context_path: Path,
+    state_root: Path | None = None,
 ) -> dict[str, object]:
     """Apply urgency multiplier for non-direct threads.
 
@@ -716,18 +717,48 @@ def _apply_recipient_role_weights(
             phase3_context = {}
         top_threads = phase3_context.get("top_threads", []) if isinstance(phase3_context, dict) else []
 
-    ROLE_WEIGHTS: dict[str, float] = {
+    role_weights: dict[str, float] = {
         "cc_only": 0.6,
         "indirect": 0.6,
         "group_only": 0.4,
     }
+    downweight_enabled = True
+    effective_state_root = state_root
+    if effective_state_root is None:
+        for parent in context_path.parents:
+            if parent.name == "runtime":
+                effective_state_root = parent.parent
+                break
+    if effective_state_root is not None:
+        try:
+            from twinbox_core.twinbox_config import config_path_for_state_root, load_twinbox_config
+
+            config = load_twinbox_config(config_path_for_state_root(effective_state_root))
+            preferences = config.get("preferences", {}) if isinstance(config.get("preferences"), dict) else {}
+            cc_downweight = (
+                preferences.get("cc_downweight", {})
+                if isinstance(preferences.get("cc_downweight"), dict)
+                else {}
+            )
+            if isinstance(cc_downweight.get("enabled"), bool):
+                downweight_enabled = cc_downweight["enabled"]
+            configured_weights = cc_downweight.get("weights", {})
+            if isinstance(configured_weights, dict):
+                for role, default in role_weights.items():
+                    value = configured_weights.get(role)
+                    if isinstance(value, (int, float)):
+                        role_weights[role] = float(value)
+                    else:
+                        role_weights[role] = default
+        except Exception:
+            pass
 
     role_map: dict[str, str] = {}
     for thread in top_threads:
         if not isinstance(thread, dict):
             continue
         role = str(thread.get("recipient_role", "") or "")
-        if role in ROLE_WEIGHTS:
+        if role in role_weights:
             key = str(thread.get("thread_key", "") or "")
             if key:
                 role_map[key] = role
@@ -744,8 +775,8 @@ def _apply_recipient_role_weights(
             role = role_map.get(tkey)
             if role is not None:
                 score = item.get("urgency_score")
-                if isinstance(score, (int, float)):
-                    item["urgency_score"] = round(score * ROLE_WEIGHTS[role])
+                if downweight_enabled and isinstance(score, (int, float)):
+                    item["urgency_score"] = round(score * role_weights[role])
                 item["recipient_role"] = role
 
     pending_replies = response.get("pending_replies", [])

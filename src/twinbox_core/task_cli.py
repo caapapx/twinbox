@@ -313,6 +313,30 @@ def _state_root() -> Path:
     return resolve_state_root(Path.cwd())
 
 
+def _set_cc_downweight_preference(state_root: Path, value: str) -> tuple[Path, dict[str, Any]]:
+    from .twinbox_config import config_path_for_state_root, load_twinbox_config, save_twinbox_config
+
+    config_path = config_path_for_state_root(state_root)
+    payload = load_twinbox_config(config_path)
+    preferences = payload.get("preferences", {}) if isinstance(payload.get("preferences"), dict) else {}
+    cc_downweight = (
+        preferences.get("cc_downweight", {})
+        if isinstance(preferences.get("cc_downweight"), dict)
+        else {}
+    )
+    existing_weights = cc_downweight.get("weights", {}) if isinstance(cc_downweight.get("weights"), dict) else {}
+    cc_downweight["enabled"] = value == "on"
+    cc_downweight["weights"] = {
+        "cc_only": float(existing_weights.get("cc_only", 0.6)),
+        "indirect": float(existing_weights.get("indirect", 0.6)),
+        "group_only": float(existing_weights.get("group_only", 0.4)),
+    }
+    preferences["cc_downweight"] = cc_downweight
+    payload["preferences"] = preferences
+    save_twinbox_config(config_path, payload)
+    return config_path, preferences
+
+
 def _can_prompt_for_secret() -> bool:
     return (
         hasattr(sys.stdin, "isatty")
@@ -1591,6 +1615,18 @@ def cmd_config_set_openclaw(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_config_set_preferences(args: argparse.Namespace) -> int:
+    """Persist Twinbox preferences into twinbox.json."""
+    state_root = _state_root()
+    config_path, preferences = _set_cc_downweight_preference(state_root, args.cc_downweight)
+    result = {"status": "ok", "config_file_path": str(config_path), "preferences": preferences}
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(f"✅ Preferences written: {config_path}")
+    return 0
+
+
 def cmd_deploy_openclaw(args: argparse.Namespace) -> int:
     """Host-side OpenClaw wiring (SKILL sync, openclaw.json, roots, gateway)."""
     from twinbox_core.openclaw_deploy import run_openclaw_deploy, run_openclaw_rollback
@@ -1740,6 +1776,7 @@ def cmd_onboarding_next(args: argparse.Namespace) -> int:
     if completed_stage == "profile_setup":
         profile_notes = getattr(args, "profile_notes", None)
         calibration_notes = getattr(args, "calibration_notes", None)
+        cc_downweight = getattr(args, "cc_downweight", None)
         if profile_notes is not None or calibration_notes is not None:
             update_human_context_store(
                 state_root,
@@ -1748,6 +1785,8 @@ def cmd_onboarding_next(args: argparse.Namespace) -> int:
             )
             state.profile_data.pop("notes", None)
             state.profile_data.pop("calibration", None)
+        if cc_downweight:
+            _set_cc_downweight_preference(state_root, cc_downweight)
         
     complete_stage(state, state.current_stage)
     save_state(state_root, state)
@@ -3053,6 +3092,10 @@ def _build_parser() -> argparse.ArgumentParser:
     config_openclaw_set.add_argument("--no-restart-gateway", action="store_true", help="Default gateway restart off")
     config_openclaw_set.add_argument("--json", action="store_true", help="Output as JSON")
 
+    config_preferences_set = config_sub.add_parser("set-preferences", help="Configure Twinbox preferences in twinbox.json")
+    config_preferences_set.add_argument("--cc-downweight", required=True, choices=["on", "off"], help="Enable or disable CC/group score downweighting")
+    config_preferences_set.add_argument("--json", action="store_true", help="Output as JSON")
+
     deploy_parser = subparsers.add_parser(
         "deploy",
         help="Host-side deployment helpers (OpenClaw wiring)",
@@ -3195,6 +3238,11 @@ def _build_parser() -> argparse.ArgumentParser:
     onboarding_next.add_argument(
         "--calibration-notes",
         help="Save weekly focus/ignore guidance during profile_setup stage",
+    )
+    onboarding_next.add_argument(
+        "--cc-downweight",
+        choices=["on", "off"],
+        help="Persist CC/group score downweight preference during profile_setup stage",
     )
 
     # push commands
@@ -3447,6 +3495,8 @@ def main(argv: list[str] | None = None) -> int:
                 return cmd_config_set_integration(args)
             if args.config_command == "openclaw-set":
                 return cmd_config_set_openclaw(args)
+            if args.config_command == "set-preferences":
+                return cmd_config_set_preferences(args)
         elif args.command == "deploy":
             if args.deploy_command == "openclaw":
                 return cmd_deploy_openclaw(args)

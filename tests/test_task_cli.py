@@ -687,12 +687,15 @@ class TestQueueDigestThreadCli:
                 "  engineer; checks mail at 9:30  ",
                 "--calibration-notes",
                 "  本周重点关注部署审批，忽略 HR 通知。  ",
+                "--cc-downweight",
+                "off",
             ]
         ) == 0
         payload = json.loads(capsys.readouterr().out)
         state = load_state(tmp_path)
         human_context_path = tmp_path / "runtime" / "context" / "human-context.yaml"
         human_context = yaml.safe_load(human_context_path.read_text(encoding="utf-8"))
+        twinbox_config = json.loads((tmp_path / "twinbox.json").read_text(encoding="utf-8"))
 
         assert payload["completed_stage"] == "profile_setup"
         assert payload["current_stage"] == "material_import"
@@ -700,6 +703,7 @@ class TestQueueDigestThreadCli:
         assert "calibration" not in state.profile_data
         assert human_context["profile_notes"] == "engineer; checks mail at 9:30"
         assert human_context["calibration"] == "本周重点关注部署审批，忽略 HR 通知。"
+        assert twinbox_config["preferences"]["cc_downweight"]["enabled"] is False
 
     def test_onboarding_next_ignores_calibration_notes_outside_profile_setup(
         self, monkeypatch, tmp_path, capsys
@@ -728,6 +732,24 @@ class TestQueueDigestThreadCli:
 
         assert state.profile_data["notes"] == "existing"
         assert state.profile_data["calibration"] == "keep me"
+
+    def test_config_set_preferences_cc_downweight_updates_twinbox_json(
+        self, monkeypatch, tmp_path, capsys
+    ):
+        monkeypatch.setenv("TWINBOX_STATE_ROOT", str(tmp_path))
+
+        assert main(["config", "set-preferences", "--cc-downweight", "off", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+        twinbox_config = json.loads((tmp_path / "twinbox.json").read_text(encoding="utf-8"))
+
+        assert payload["status"] == "ok"
+        assert payload["preferences"]["cc_downweight"]["enabled"] is False
+        assert twinbox_config["preferences"]["cc_downweight"]["enabled"] is False
+        assert twinbox_config["preferences"]["cc_downweight"]["weights"] == {
+            "cc_only": 0.6,
+            "indirect": 0.6,
+            "group_only": 0.4,
+        }
 
     def test_mailbox_setup_json_writes_env_and_runs_preflight(
         self, monkeypatch, tmp_path, capsys

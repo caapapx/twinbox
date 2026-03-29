@@ -359,6 +359,49 @@ def test_run_single_applies_recipient_role_weights(tmp_path: Path, monkeypatch: 
     assert result["daily_urgent"][0]["recipient_role"] == "cc_only"
 
 
+def test_apply_recipient_role_weights_can_disable_score_downweight_from_config(
+    tmp_path: Path,
+) -> None:
+    response = {
+        "daily_urgent": [
+            {"thread_key": "cc-thread", "urgency_score": 90, "why": "需要关注"},
+        ],
+        "pending_replies": [
+            {"thread_key": "cc-thread", "why": "请确认", "waiting_on_me": True},
+        ],
+    }
+    context = {
+        "top_threads": [
+            {"thread_key": "cc-thread", "recipient_role": "cc_only"},
+        ]
+    }
+    context_path = tmp_path / "runtime" / "validation" / "phase-4" / "context-pack.json"
+    context_path.parent.mkdir(parents=True, exist_ok=True)
+    context_path.write_text(json.dumps(context, ensure_ascii=False), encoding="utf-8")
+    (tmp_path / "twinbox.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "preferences": {
+                    "cc_downweight": {
+                        "enabled": False,
+                        "weights": {"cc_only": 0.6, "indirect": 0.6, "group_only": 0.4},
+                    }
+                },
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    weighted = _apply_recipient_role_weights(response, context_path, state_root=tmp_path)
+
+    assert weighted["daily_urgent"][0]["urgency_score"] == 90
+    assert weighted["daily_urgent"][0]["recipient_role"] == "cc_only"
+    assert weighted["pending_replies"][0]["recipient_role"] == "cc_only"
+
+
 def test_run_subtask_urgent_applies_recipient_role_weights(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     context = {
         "threads": [{"thread_key": "cc-thread", "recipient_role": "cc_only"}],
