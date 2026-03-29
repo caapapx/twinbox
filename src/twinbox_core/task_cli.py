@@ -21,6 +21,25 @@ from .task_cli_daemon import dispatch_daemon, register_daemon_parser
 from .task_cli_loading import dispatch_loading, register_loading_parser
 from .task_cli_vendor import dispatch_vendor, register_vendor_parser
 
+_BUILTIN_WEEKLY_TEMPLATE = """# 周报 · {{period}}
+
+## 本周完成
+{{flow_summary → [项目名称] N 条线程，亮点}}
+{{action_now → [项目] 行动（原因）}}
+
+## 遇到的问题
+{{important_changes → [线程] 变化 → 影响}}
+{{sla_risks → [线程] 风险描述（N 天未活动）}}
+
+## 下周计划
+{{backlog → [项目] 下一步（原因）}}
+
+## 本周节奏
+{{rhythm_observation}}
+"""
+_WEEKLY_TEMPLATE_PLACEHOLDER = re.compile(r"{{\s*([^}]+?)\s*}}")
+
+
 @dataclass(frozen=True)
 class ThreadCard:
     """Thread card for queue display."""
@@ -162,133 +181,317 @@ def _append_markdown_section(lines: list[str], title: str, body_lines: list[str]
     lines.append("")
 
 
-def _render_weekly_digest_markdown(brief: dict[str, Any]) -> list[str]:
+def _weekly_template_config_path() -> Path:
+    return Path(__file__).resolve().parents[2] / "config" / "weekly-template.md"
+
+
+def _normalize_weekly_template_key(expr: str) -> str:
+    head = re.split(r"\s*(?:->|→)\s*", expr, maxsplit=1)[0]
+    return head.strip()
+
+
+def _render_weekly_template_inline(text: str, context: dict[str, Any]) -> str:
+    def _replace(match: re.Match[str]) -> str:
+        key = _normalize_weekly_template_key(match.group(1))
+        value = context.get(key)
+        if isinstance(value, (str, int, float)):
+            return str(value)
+        return match.group(0)
+
+    return _WEEKLY_TEMPLATE_PLACEHOLDER.sub(_replace, text)
+
+
+def _load_custom_weekly_template_text(state_root: Path) -> str | None:
+    manifest_path = state_root / "runtime" / "context" / "material-manifest.json"
+    materials_dir = state_root / "runtime" / "context" / "material-extracts"
+    if not manifest_path.exists():
+        return None
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    materials = manifest.get("materials", []) if isinstance(manifest, dict) else []
+    candidates: list[tuple[datetime, int, str]] = []
+    for idx, row in enumerate(materials):
+        if not isinstance(row, dict) or str(row.get("intent", "reference")) != "template_hint":
+            continue
+        filename = Path(str(row.get("filename", "")).strip()).name
+        if not filename:
+            continue
+        imported_at = str(row.get("imported_at", "")).strip()
+        try:
+            stamp = datetime.fromisoformat(imported_at)
+        except ValueError:
+            stamp = datetime.min
+        candidates.append((stamp, idx, filename))
+    if not candidates:
+        return None
+
+    _, _, filename = max(candidates, key=lambda item: (item[0], item[1]))
+    source_path = materials_dir / filename
+    suffix = Path(filename).suffix.lower()
+    candidate_paths: list[Path] = []
+    if suffix in {".md", ".txt"}:
+        candidate_paths.append(source_path)
+    try:
+        from .material_extract import extract_output_path
+
+        candidate_paths.append(extract_output_path(Path(filename), materials_dir))
+    except Exception:
+        pass
+
+    seen: set[Path] = set()
+    for path in candidate_paths:
+        if path in seen or not path.exists():
+            continue
+        seen.add(path)
+        try:
+            return path.read_text(encoding="utf-8")
+        except Exception:
+            continue
+    return None
+
+
+def _load_weekly_template_text(state_root: Path) -> str:
+    custom_template = _load_custom_weekly_template_text(state_root)
+    if custom_template:
+        return custom_template
+    config_path = _weekly_template_config_path()
+    if config_path.exists():
+        try:
+            return config_path.read_text(encoding="utf-8")
+        except Exception:
+            pass
+    return _BUILTIN_WEEKLY_TEMPLATE
+
+
+def _parse_weekly_template(template_text: str) -> tuple[str, list[tuple[str, list[str]]]]:
+    title = "# 周报 · {{period}}"
+    sections: list[tuple[str, list[str]]] = []
+    current_title: str | None = None
+    current_fields: list[str] = []
+
+    def _flush() -> None:
+        nonlocal current_title, current_fields
+        if current_title:
+            sections.append((current_title, current_fields))
+        current_title = None
+        current_fields = []
+
+    for raw_line in template_text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("# "):
+            title = line
+            continue
+        if line.startswith("## "):
+            _flush()
+            current_title = line[3:].strip()
+            continue
+        if current_title is None:
+            continue
+        for expr in _WEEKLY_TEMPLATE_PLACEHOLDER.findall(line):
+            key = _normalize_weekly_template_key(expr)
+            if key:
+                current_fields.append(key)
+
+    _flush()
+    return title, sections
+
+
+def _weekly_material_summary_lines(summary: Any) -> list[str]:
+    if not isinstance(summary, dict) or not summary:
+        return []
+    lines: list[str] = []
+    sources = summary.get("sources", [])
+    if isinstance(sources, list) and sources:
+        lines.append(f"Sources: {', '.join(str(item) for item in sources)}")
+    source_type = summary.get("source_type")
+    if source_type:
+        lines.append(f"Source type: {source_type}")
+    table_title = summary.get("table_title")
+    if table_title:
+        lines.append(f"Title: {table_title}")
+    table_section = summary.get("table_section")
+    if table_section:
+        lines.append(f"Section: {table_section}")
+    lines.append(f"Period hint: {summary.get('period_hint', 'N/A')}")
+    lines.append(f"Row count: {summary.get('row_count', 0)}")
+    headers = summary.get("table_headers", [])
+    if isinstance(headers, list) and headers:
+        lines.append("Headers: " + " | ".join(str(item) for item in headers))
+
+    column_stats = summary.get("column_stats", [])
+    if isinstance(column_stats, list) and column_stats:
+        if lines:
+            lines.append("")
+        lines.extend(
+            [
+                "### Column Stats",
+                "",
+                "| Column | Summary |",
+                "|--------|---------|",
+            ]
+        )
+        for item in column_stats:
+            if not isinstance(item, dict):
+                continue
+            lines.append(f"| {item.get('column', '')} | {item.get('summary', '')} |")
+
+    open_risks = summary.get("open_risks", [])
+    if isinstance(open_risks, list) and open_risks:
+        if lines:
+            lines.append("")
+        lines.extend(["### Open Risks", ""])
+        lines.extend(f"- {item}" for item in open_risks)
+
+    notes = summary.get("notes")
+    if notes:
+        if lines:
+            lines.append("")
+        lines.extend(["### Notes", "", str(notes)])
+    return lines
+
+
+def _weekly_flow_summary_lines(items: Any) -> list[str]:
+    if not isinstance(items, list):
+        return []
+    lines: list[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        flow_name = item.get("name") or item.get("flow") or "UNMODELED"
+        lines.append(
+            f"- [{flow_name}] {item.get('count', 0)} 条线程: {item.get('highlight', '')}"
+        )
+    return lines
+
+
+def _weekly_action_now_lines(items: Any) -> list[str]:
+    if not isinstance(items, list):
+        return []
+    lines: list[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        lines.append(
+            "- "
+            + f"[{item.get('flow', 'UNMODELED')}] "
+            + f"{item.get('thread_key', 'unknown')}: "
+            + f"{item.get('action', '')} ({item.get('why', '')})"
+        )
+    return lines
+
+
+def _weekly_backlog_lines(items: Any) -> list[str]:
+    if not isinstance(items, list):
+        return []
+    lines: list[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        lines.append(
+            "- "
+            + f"[{item.get('flow', 'UNMODELED')}] "
+            + f"{item.get('thread_key', 'unknown')}: "
+            + f"{item.get('next_step', '')} ({item.get('why', '')})"
+        )
+    return lines
+
+
+def _weekly_important_changes_lines(items: Any) -> list[str]:
+    if not isinstance(items, list):
+        return []
+    lines: list[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        lines.append(
+            "- "
+            + f"{item.get('thread_key', 'unknown')}: "
+            + f"{item.get('change', '')} -> {item.get('impact', '')}"
+        )
+    return lines
+
+
+def _weekly_sla_risk_lines(items: Any) -> list[str]:
+    if not isinstance(items, list):
+        return []
+    lines: list[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        detail = str(item.get("why", "")).strip()
+        waiting_on = str(item.get("waiting_on", "")).strip()
+        days_open = item.get("days_open")
+        suffix_bits: list[str] = []
+        if waiting_on:
+            suffix_bits.append(f"waiting_on={waiting_on}")
+        if days_open not in (None, ""):
+            suffix_bits.append(f"{days_open}d")
+        suffix = f" ({', '.join(suffix_bits)})" if suffix_bits else ""
+        lines.append(f"- {item.get('thread_key', 'unknown')}: {detail}{suffix}")
+    return lines
+
+
+def _weekly_top_actions_lines(items: Any) -> list[str]:
+    if not isinstance(items, list):
+        return []
+    return [f"- {item}" for item in items if str(item).strip()]
+
+
+def _weekly_scalar_lines(value: Any) -> list[str]:
+    if value in (None, ""):
+        return []
+    return [str(value)]
+
+
+def _render_weekly_template_field(key: str, context: dict[str, Any]) -> list[str]:
+    renderers = {
+        "material_summary": _weekly_material_summary_lines,
+        "flow_summary": _weekly_flow_summary_lines,
+        "action_now": _weekly_action_now_lines,
+        "backlog": _weekly_backlog_lines,
+        "important_changes": _weekly_important_changes_lines,
+        "sla_risks": _weekly_sla_risk_lines,
+        "top_actions": _weekly_top_actions_lines,
+        "rhythm_observation": _weekly_scalar_lines,
+        "period": _weekly_scalar_lines,
+        "total_threads_in_window": _weekly_scalar_lines,
+    }
+    renderer = renderers.get(key)
+    if renderer is None:
+        return []
+    return renderer(context.get(key))
+
+
+def _render_weekly_digest_markdown(brief: dict[str, Any], *, state_root: Path | None = None) -> list[str]:
+    state_root = state_root or _state_root()
+    template_title, template_sections = _parse_weekly_template(_load_weekly_template_text(state_root))
+    if not template_sections:
+        template_title, template_sections = _parse_weekly_template(_BUILTIN_WEEKLY_TEMPLATE)
+
     lines = [
-        "# 每周简报",
+        _render_weekly_template_inline(template_title, brief),
         "",
         "> 当前周视图快照：基于当前邮箱状态生成，不是本周 daily 的自动累计。",
         "",
-        "## Overview",
-        "",
-        f"- Period: {brief.get('period', 'unknown')}",
-        f"- Total threads in window: {brief.get('total_threads_in_window', 0)}",
+        f"- 窗口周期: {brief.get('period', 'unknown')}",
+        f"- 窗口线程数: {brief.get('total_threads_in_window', 0)}",
         "",
     ]
 
-    material_summary = brief.get("material_summary", {})
-    if isinstance(material_summary, dict) and material_summary:
-        material_lines: list[str] = []
-        sources = material_summary.get("sources", [])
-        if isinstance(sources, list) and sources:
-            material_lines.append(f"Sources: {', '.join(str(item) for item in sources)}")
-        source_type = material_summary.get("source_type")
-        if source_type:
-            material_lines.append(f"Source type: {source_type}")
-        table_title = material_summary.get("table_title")
-        if table_title:
-            material_lines.append(f"Title: {table_title}")
-        table_section = material_summary.get("table_section")
-        if table_section:
-            material_lines.append(f"Section: {table_section}")
-        material_lines.append(f"Period hint: {material_summary.get('period_hint', 'N/A')}")
-        material_lines.append(f"Row count: {material_summary.get('row_count', 0)}")
-        headers = material_summary.get("table_headers", [])
-        if isinstance(headers, list) and headers:
-            material_lines.append("Headers: " + " | ".join(str(item) for item in headers))
-        material_lines.append("")
-
-        column_stats = material_summary.get("column_stats", [])
-        if isinstance(column_stats, list) and column_stats:
-            material_lines.extend(
-                [
-                    "### Column Stats",
-                    "",
-                    "| Column | Summary |",
-                    "|--------|---------|",
-                ]
-            )
-            for item in column_stats:
-                if not isinstance(item, dict):
-                    continue
-                material_lines.append(
-                    f"| {item.get('column', '')} | {item.get('summary', '')} |"
-                )
-            material_lines.append("")
-
-        open_risks = material_summary.get("open_risks", [])
-        if isinstance(open_risks, list) and open_risks:
-            material_lines.extend(["### Open Risks", ""])
-            for item in open_risks:
-                material_lines.append(f"- {item}")
-            material_lines.append("")
-
-        notes = material_summary.get("notes")
-        if notes:
-            material_lines.extend(["### Notes", "", str(notes)])
-        _append_markdown_section(lines, "Material Summary", material_lines)
-
-    flow_summary = brief.get("flow_summary", [])
-    if isinstance(flow_summary, list) and flow_summary:
-        flow_lines = [
-            "| Flow | Name | Count | Highlight |",
-            "|------|------|-------|-----------|",
-        ]
-        for item in flow_summary:
-            if not isinstance(item, dict):
+    for section_title, field_keys in template_sections:
+        section_lines: list[str] = []
+        for key in field_keys:
+            rendered = _render_weekly_template_field(key, brief)
+            if not rendered:
                 continue
-            flow_lines.append(
-                f"| {item.get('flow', '')} | {item.get('name', '')} | {item.get('count', 0)} | {item.get('highlight', '')} |"
-            )
-        _append_markdown_section(lines, "Flow Summary", flow_lines)
-
-    top_actions = brief.get("top_actions", [])
-    if isinstance(top_actions, list) and top_actions:
-        _append_markdown_section(lines, "Top Actions", [f"- {action}" for action in top_actions])
-
-    action_now = brief.get("action_now", [])
-    if isinstance(action_now, list) and action_now:
-        action_now_lines = []
-        for item in action_now:
-            if not isinstance(item, dict):
-                continue
-            action_now_lines.append(
-                "- "
-                + f"[{item.get('flow', 'UNMODELED')}] "
-                + f"{item.get('thread_key', 'unknown')}: "
-                + f"{item.get('action', '')} ({item.get('why', '')})"
-            )
-        _append_markdown_section(lines, "Action Now", action_now_lines)
-
-    backlog = brief.get("backlog", [])
-    if isinstance(backlog, list) and backlog:
-        backlog_lines = []
-        for item in backlog:
-            if not isinstance(item, dict):
-                continue
-            backlog_lines.append(
-                "- "
-                + f"[{item.get('flow', 'UNMODELED')}] "
-                + f"{item.get('thread_key', 'unknown')}: "
-                + f"{item.get('next_step', '')} ({item.get('why', '')})"
-            )
-        _append_markdown_section(lines, "Backlog", backlog_lines)
-
-    important_changes = brief.get("important_changes", [])
-    if isinstance(important_changes, list) and important_changes:
-        important_change_lines = []
-        for item in important_changes:
-            if not isinstance(item, dict):
-                continue
-            important_change_lines.append(
-                "- "
-                + f"{item.get('thread_key', 'unknown')}: "
-                + f"{item.get('change', '')} -> {item.get('impact', '')}"
-            )
-        _append_markdown_section(lines, "Important Changes", important_change_lines)
-
-    rhythm_observation = brief.get("rhythm_observation")
-    if rhythm_observation:
-        _append_markdown_section(lines, "Rhythm Observation", [str(rhythm_observation)])
+            if section_lines:
+                section_lines.append("")
+            section_lines.extend(rendered)
+        _append_markdown_section(lines, section_title, section_lines)
 
     return lines
 
@@ -2254,6 +2457,9 @@ def cmd_digest_weekly(args: argparse.Namespace) -> int:
 
     weekly_data = json.loads(weekly_path.read_text(encoding="utf-8"))
     brief = weekly_data.get("weekly_brief", {})
+    sla_data = _load_json_artifact(validation_root / "sla-risks-raw.json")
+    if isinstance(brief, dict):
+        brief = {**brief, "sla_risks": sla_data.get("sla_risks", [])}
 
     if args.json:
         output = {
@@ -2268,7 +2474,7 @@ def cmd_digest_weekly(args: argparse.Namespace) -> int:
         }
         print(json.dumps(output, ensure_ascii=False, indent=2))
     else:
-        print("\n".join(_render_weekly_digest_markdown(brief)))
+        print("\n".join(_render_weekly_digest_markdown(brief, state_root=canonical_root)))
 
     return 0
 

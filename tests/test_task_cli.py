@@ -22,7 +22,7 @@ import json
 import pytest
 import yaml
 
-from twinbox_core.onboarding import OnboardingState, load_state, save_state
+from twinbox_core.onboarding import OnboardingState, get_stage_prompt, load_state, save_state
 from twinbox_core.task_cli import (
     ActionCard,
     DigestView,
@@ -1085,6 +1085,25 @@ class TestQueueDigestThreadCli:
         assert main(["digest", "weekly", "--json"]) == 1
 
     def test_digest_weekly_human_output_renders_full_markdown_sections(self, phase4_root, capsys):
+        state_root = phase4_root.parents[2]
+        (state_root / "runtime" / "validation" / "phase-4" / "sla-risks-raw.json").write_text(
+            json.dumps(
+                {
+                    "generated_at": "2026-03-24T10:00:00+08:00",
+                    "sla_risks": [
+                        {
+                            "thread_key": "项目D",
+                            "waiting_on": "customer",
+                            "days_open": 5,
+                            "why": "客户还未确认部署窗口",
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
         (phase4_root / "weekly-brief-raw.json").write_text(
             json.dumps(
                 {
@@ -1126,15 +1145,124 @@ class TestQueueDigestThreadCli:
         assert main(["digest", "weekly"]) == 0
         out = capsys.readouterr().out
 
-        assert out.startswith("# 每周简报\n")
+        assert out.startswith("# 周报 · 2026-03-18 ~ 2026-03-24\n")
         assert "> 当前周视图快照：基于当前邮箱状态生成，不是本周 daily 的自动累计。" in out
-        assert "## Action Now" in out
-        assert "## Backlog" in out
-        assert "## Important Changes" in out
-        assert "## Flow Summary" in out
-        assert "## Material Summary" in out
-        assert "## Rhythm Observation" in out
+        assert "## 本周完成" in out
+        assert "## 遇到的问题" in out
+        assert "## 下周计划" in out
+        assert "## 本周节奏" in out
+        assert out.index("## 本周完成") < out.index("## 遇到的问题") < out.index("## 下周计划") < out.index("## 本周节奏")
+        assert "部署" in out
+        assert "回复审批意见" in out
+        assert "项目D" in out
+        assert "周三前追问供应商" in out
+        assert "## Overview" not in out
+        assert "## Action Now" not in out
         assert "=" * 40 not in out
+
+    def test_digest_weekly_human_output_prefers_latest_template_hint_material(self, phase4_root, capsys):
+        state_root = phase4_root.parents[2]
+        context_root = state_root / "runtime" / "context"
+        materials_dir = context_root / "material-extracts"
+        materials_dir.mkdir(parents=True, exist_ok=True)
+        (context_root / "material-manifest.json").write_text(
+            json.dumps(
+                {
+                    "generated_at": "2026-03-24T10:05:00+08:00",
+                    "materials": [
+                        {
+                            "filename": "custom-weekly-template.md",
+                            "imported_at": "2026-03-24T10:04:00+08:00",
+                            "source": "/tmp/custom-weekly-template.md",
+                            "intent": "template_hint",
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        (materials_dir / "custom-weekly-template.md").write_text(
+            "\n".join(
+                [
+                    "# 自定义周报 · {{period}}",
+                    "",
+                    "## 风险先看",
+                    "{{sla_risks}}",
+                    "{{important_changes}}",
+                    "",
+                    "## 本周推进",
+                    "{{action_now}}",
+                    "{{backlog}}",
+                    "",
+                    "## 节奏备注",
+                    "{{rhythm_observation}}",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        (state_root / "runtime" / "validation" / "phase-4" / "sla-risks-raw.json").write_text(
+            json.dumps(
+                {
+                    "generated_at": "2026-03-24T10:00:00+08:00",
+                    "sla_risks": [
+                        {
+                            "thread_key": "项目D",
+                            "waiting_on": "customer",
+                            "days_open": 5,
+                            "why": "客户还未确认部署窗口",
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        (phase4_root / "weekly-brief-raw.json").write_text(
+            json.dumps(
+                {
+                    "generated_at": "2026-03-24T10:00:00+08:00",
+                    "weekly_brief": {
+                        "period": "2026-03-18 ~ 2026-03-24",
+                        "total_threads_in_window": 12,
+                        "action_now": [
+                            {"thread_key": "项目A", "flow": "deploy", "why": "今天要确认", "action": "回复审批意见"}
+                        ],
+                        "backlog": [
+                            {"thread_key": "项目B", "flow": "support", "why": "仍需跟进", "next_step": "周三前追问供应商"}
+                        ],
+                        "important_changes": [
+                            {"thread_key": "项目C", "change": "需求已确认", "impact": "可进入部署"}
+                        ],
+                        "rhythm_observation": "本周上午审批类线程明显增多。",
+                    },
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        assert main(["digest", "weekly"]) == 0
+        out = capsys.readouterr().out
+
+        assert out.startswith("# 自定义周报 · 2026-03-18 ~ 2026-03-24\n")
+        assert "## 风险先看" in out
+        assert "## 本周推进" in out
+        assert "## 节奏备注" in out
+        assert out.index("## 风险先看") < out.index("## 本周推进") < out.index("## 节奏备注")
+        assert "## 本周完成" not in out
+
+    def test_material_import_stage_prompt_mentions_default_weekly_template(self):
+        prompt = get_stage_prompt("material_import")
+
+        assert "默认周报模板" in prompt
+        assert "config/weekly-template.md" in prompt
+        assert "template_hint" in prompt
 
     def test_thread_inspect_not_found_exits_1(self, phase4_root):
         assert main(["thread", "inspect", "missing-thread", "--json"]) == 1

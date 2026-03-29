@@ -134,7 +134,13 @@ STAGE_PROMPTS = {
         "也请补充三点：这周主要关注谁/什么、哪些邮件可忽略、以及本周最重要的事项。\n"
         "如果您的工作很多通过 CC 跟进（例如 PM / 总监 / 运营），也请明确说明；agent 会据此建议是否关闭 CC 降权。"
     ),
-    "material_import": "Phase 2 of 2 · 上下文材料导入\n继续完成 Twinbox onboarding。您可以上传项目文档、团队信息等材料，帮助我理解业务背景。",
+    "material_import": (
+        "Phase 2 of 2 · 上下文材料导入\n"
+        "继续完成 Twinbox onboarding。您可以上传项目文档、团队信息等材料，帮助我理解业务背景。\n"
+        "如果您希望周报按特定格式输出，请先展示默认周报模板 `config/weekly-template.md`，再询问用户是否要调整标题、章节顺序或措辞。\n"
+        "用户只需用自然语言描述想改什么；agent 应协助生成新的 Markdown 模板，并通过 "
+        "`twinbox context import-material FILE --intent template_hint` 导入，使后续 weekly digest 自动跟随。"
+    ),
     "routing_rules": "Phase 2 of 2 · 邮件过滤规则\n继续完成 Twinbox onboarding。配置语义路由规则，自动过滤不重要的邮件（如群组通知、系统告警）。",
     "push_subscription": "Phase 2 of 2 · 推送通知设置\n继续完成 Twinbox onboarding。配置紧急邮件推送通知，及时了解重要事项。",
 }
