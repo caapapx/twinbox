@@ -126,6 +126,66 @@ class ContextBuilderTest(unittest.TestCase):
             self.assertTrue(hc["has_onboarding_profile_notes"])
             self.assertEqual(hc["onboarding_profile_notes"], "engineer; checks mail at 9:30")
 
+    def test_phase2_loading_uses_onboarding_calibration_when_file_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_phase1_inputs(root)
+            (root / "runtime/context/instance-calibration-notes.md").unlink()
+            (root / "runtime").mkdir(parents=True, exist_ok=True)
+            (root / "runtime/onboarding-state.json").write_text(
+                json.dumps(
+                    {
+                        "current_stage": "material_import",
+                        "completed_stages": ["profile_setup"],
+                        "profile_data": {"calibration": "  prioritize approvals this week  "},
+                        "mailbox_config": {},
+                        "materials": [],
+                        "routing_rules": [],
+                        "push_enabled": False,
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            run_phase2_loading(root)
+            output = json.loads(
+                (root / "runtime/validation/phase-2/context-pack.json").read_text(encoding="utf-8")
+            )
+            hc = output["human_context"]
+            self.assertTrue(hc["has_calibration"])
+            self.assertEqual(hc["calibration_notes"], "prioritize approvals this week")
+
+    def test_phase2_loading_prefers_calibration_file_over_onboarding_calibration(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_phase1_inputs(root)
+            (root / "runtime").mkdir(parents=True, exist_ok=True)
+            (root / "runtime/onboarding-state.json").write_text(
+                json.dumps(
+                    {
+                        "current_stage": "material_import",
+                        "completed_stages": ["profile_setup"],
+                        "profile_data": {"calibration": "should not win"},
+                        "mailbox_config": {},
+                        "materials": [],
+                        "routing_rules": [],
+                        "push_enabled": False,
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            run_phase2_loading(root)
+            output = json.loads(
+                (root / "runtime/validation/phase-2/context-pack.json").read_text(encoding="utf-8")
+            )
+            hc = output["human_context"]
+            self.assertTrue(hc["has_calibration"])
+            self.assertIn("This calibration note is long enough", hc["calibration_notes"])
+            self.assertNotEqual(hc["calibration_notes"], "should not win")
+
     def test_phase3_loading_writes_context_pack(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

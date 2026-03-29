@@ -1610,9 +1610,11 @@ def cmd_onboarding_next(args: argparse.Namespace) -> int:
 
     completed_stage = state.current_stage
     
-    # If we are completing profile_setup and the user provided notes, save them to profile_data
+    # profile_setup persists conversational profile summaries for later phase loading.
     if completed_stage == "profile_setup" and getattr(args, "profile_notes", None):
         state.profile_data["notes"] = args.profile_notes
+    if completed_stage == "profile_setup" and getattr(args, "calibration_notes", None):
+        state.profile_data["calibration"] = args.calibration_notes
         
     complete_stage(state, state.current_stage)
     save_state(state_root, state)
@@ -3081,6 +3083,10 @@ def _build_parser() -> argparse.ArgumentParser:
     onboarding_next = onboarding_sub.add_parser("next", help="Complete current stage and move to next")
     onboarding_next.add_argument("--json", action="store_true", help="Output as JSON")
     onboarding_next.add_argument("--profile-notes", help="Save user profile notes during profile_setup stage")
+    onboarding_next.add_argument(
+        "--calibration-notes",
+        help="Save weekly focus/ignore guidance during profile_setup stage",
+    )
 
     # push commands
     push_parser = subparsers.add_parser("push", help="Push notification subscriptions")

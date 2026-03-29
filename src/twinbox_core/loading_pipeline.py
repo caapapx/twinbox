@@ -503,11 +503,17 @@ def run_phase4_loading(
     ob_state = load_state(state_root)
     raw_notes = ob_state.profile_data.get("notes") if isinstance(ob_state.profile_data, dict) else None
     onboarding_notes = raw_notes.strip() if isinstance(raw_notes, str) and raw_notes.strip() else ""
+    raw_calibration = ob_state.profile_data.get("calibration") if isinstance(ob_state.profile_data, dict) else None
+    onboarding_calibration = (
+        raw_calibration.strip() if isinstance(raw_calibration, str) and raw_calibration.strip() else ""
+    )
 
     cal_path = runtime_context / "instance-calibration-notes.md"
     calibration_raw = (
         cal_path.read_text(encoding="utf-8").strip() if cal_path.is_file() else ""
     )
+    if not calibration_raw and onboarding_calibration:
+        calibration_raw = onboarding_calibration
     has_calibration = bool(calibration_raw)
 
     context = {

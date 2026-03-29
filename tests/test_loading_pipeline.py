@@ -297,3 +297,135 @@ def test_phase4_loading_includes_calibration_notes(tmp_path: Path, monkeypatch: 
     hc = context["human_context"]
     assert hc["has_calibration"] is True
     assert hc["calibration_notes"] == "本周优先处理部署与审批相关线程。"
+
+
+def test_phase4_loading_uses_onboarding_calibration_when_file_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state_root = tmp_path
+    _write_mail_env(state_root)
+
+    phase1_raw = state_root / "runtime" / "validation" / "phase-1" / "raw"
+    phase3_dir = state_root / "runtime" / "validation" / "phase-3"
+    phase2_dir = state_root / "runtime" / "validation" / "phase-2"
+    runtime_context = state_root / "runtime" / "context"
+    phase1_raw.mkdir(parents=True, exist_ok=True)
+    phase3_dir.mkdir(parents=True, exist_ok=True)
+    phase2_dir.mkdir(parents=True, exist_ok=True)
+    runtime_context.mkdir(parents=True, exist_ok=True)
+
+    envelopes = [
+        {
+            "id": "m1",
+            "folder": "INBOX",
+            "subject": "项目A",
+            "date": "2026-03-27T09:00:00+08:00",
+            "from": {"addr": "alice@example.com"},
+            "to": {"addr": "owner@example.com"},
+        },
+    ]
+    (phase1_raw / "envelopes-merged.json").write_text(json.dumps(envelopes, ensure_ascii=False), encoding="utf-8")
+    (phase1_raw / "sample-bodies.json").write_text(json.dumps([], ensure_ascii=False), encoding="utf-8")
+    (phase3_dir / "thread-stage-samples.json").write_text(
+        json.dumps({"samples": []}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (phase3_dir / "lifecycle-model.yaml").write_text("model: ok\n", encoding="utf-8")
+    (phase3_dir / "context-pack.json").write_text(
+        json.dumps({"top_threads": []}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (phase2_dir / "persona-hypotheses.yaml").write_text('hypothesis: "x"\n', encoding="utf-8")
+    (runtime_context / "manual-facts.yaml").write_text("facts: []\n", encoding="utf-8")
+    (runtime_context / "manual-habits.yaml").write_text("habits: []\n", encoding="utf-8")
+    (state_root / "runtime" / "onboarding-state.json").write_text(
+        json.dumps(
+            {
+                "current_stage": "material_import",
+                "completed_stages": ["profile_setup"],
+                "profile_data": {"calibration": "  优先处理客户审批与部署线程。  "},
+                "mailbox_config": {},
+                "materials": [],
+                "routing_rules": [],
+                "push_enabled": False,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("twinbox_core.loading_pipeline.find_himalaya_binary", lambda paths: "/usr/bin/himalaya")
+    monkeypatch.setattr("twinbox_core.loading_pipeline._run_himalaya_json", lambda *a, **k: "")
+
+    context = run_phase4_loading(state_root, lookback_days=7, max_body_fetch=0, max_thread_candidates=10)
+    hc = context["human_context"]
+    assert hc["has_calibration"] is True
+    assert hc["calibration_notes"] == "优先处理客户审批与部署线程。"
+
+
+def test_phase4_loading_prefers_calibration_file_over_onboarding_calibration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state_root = tmp_path
+    _write_mail_env(state_root)
+
+    phase1_raw = state_root / "runtime" / "validation" / "phase-1" / "raw"
+    phase3_dir = state_root / "runtime" / "validation" / "phase-3"
+    phase2_dir = state_root / "runtime" / "validation" / "phase-2"
+    runtime_context = state_root / "runtime" / "context"
+    phase1_raw.mkdir(parents=True, exist_ok=True)
+    phase3_dir.mkdir(parents=True, exist_ok=True)
+    phase2_dir.mkdir(parents=True, exist_ok=True)
+    runtime_context.mkdir(parents=True, exist_ok=True)
+
+    envelopes = [
+        {
+            "id": "m1",
+            "folder": "INBOX",
+            "subject": "项目A",
+            "date": "2026-03-27T09:00:00+08:00",
+            "from": {"addr": "alice@example.com"},
+            "to": {"addr": "owner@example.com"},
+        },
+    ]
+    (phase1_raw / "envelopes-merged.json").write_text(json.dumps(envelopes, ensure_ascii=False), encoding="utf-8")
+    (phase1_raw / "sample-bodies.json").write_text(json.dumps([], ensure_ascii=False), encoding="utf-8")
+    (phase3_dir / "thread-stage-samples.json").write_text(
+        json.dumps({"samples": []}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (phase3_dir / "lifecycle-model.yaml").write_text("model: ok\n", encoding="utf-8")
+    (phase3_dir / "context-pack.json").write_text(
+        json.dumps({"top_threads": []}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (phase2_dir / "persona-hypotheses.yaml").write_text('hypothesis: "x"\n', encoding="utf-8")
+    (runtime_context / "manual-facts.yaml").write_text("facts: []\n", encoding="utf-8")
+    (runtime_context / "manual-habits.yaml").write_text("habits: []\n", encoding="utf-8")
+    (runtime_context / "instance-calibration-notes.md").write_text(
+        "文件优先：先处理审批与部署。\n",
+        encoding="utf-8",
+    )
+    (state_root / "runtime" / "onboarding-state.json").write_text(
+        json.dumps(
+            {
+                "current_stage": "material_import",
+                "completed_stages": ["profile_setup"],
+                "profile_data": {"calibration": "should not win"},
+                "mailbox_config": {},
+                "materials": [],
+                "routing_rules": [],
+                "push_enabled": False,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("twinbox_core.loading_pipeline.find_himalaya_binary", lambda paths: "/usr/bin/himalaya")
+    monkeypatch.setattr("twinbox_core.loading_pipeline._run_himalaya_json", lambda *a, **k: "")
+
+    context = run_phase4_loading(state_root, lookback_days=7, max_body_fetch=0, max_thread_candidates=10)
+    hc = context["human_context"]
+    assert hc["has_calibration"] is True
+    assert hc["calibration_notes"] == "文件优先：先处理审批与部署。"

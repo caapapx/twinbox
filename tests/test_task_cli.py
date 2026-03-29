@@ -22,6 +22,7 @@ import json
 import pytest
 import yaml
 
+from twinbox_core.onboarding import OnboardingState, load_state, save_state
 from twinbox_core.task_cli import (
     ActionCard,
     DigestView,
@@ -640,6 +641,65 @@ class TestQueueDigestThreadCli:
         monkeypatch.setenv("TWINBOX_CANONICAL_ROOT", str(tmp_path))
 
         assert main(["schedule", "update", "daily-refresh", "--cron", "30 9 * *", "--json"]) == 1
+
+    def test_onboarding_next_profile_setup_persists_profile_and_calibration_notes(
+        self, monkeypatch, tmp_path, capsys
+    ):
+        monkeypatch.setenv("TWINBOX_STATE_ROOT", str(tmp_path))
+        save_state(
+            tmp_path,
+            OnboardingState(
+                current_stage="profile_setup",
+                completed_stages=["mailbox_login", "llm_setup"],
+            ),
+        )
+
+        assert main(
+            [
+                "onboarding",
+                "next",
+                "--json",
+                "--profile-notes",
+                "  engineer; checks mail at 9:30  ",
+                "--calibration-notes",
+                "  本周重点关注部署审批，忽略 HR 通知。  ",
+            ]
+        ) == 0
+        payload = json.loads(capsys.readouterr().out)
+        state = load_state(tmp_path)
+
+        assert payload["completed_stage"] == "profile_setup"
+        assert payload["current_stage"] == "material_import"
+        assert state.profile_data["notes"] == "  engineer; checks mail at 9:30  "
+        assert state.profile_data["calibration"] == "  本周重点关注部署审批，忽略 HR 通知。  "
+
+    def test_onboarding_next_ignores_calibration_notes_outside_profile_setup(
+        self, monkeypatch, tmp_path, capsys
+    ):
+        monkeypatch.setenv("TWINBOX_STATE_ROOT", str(tmp_path))
+        save_state(
+            tmp_path,
+            OnboardingState(
+                current_stage="material_import",
+                completed_stages=["mailbox_login", "llm_setup", "profile_setup"],
+                profile_data={"notes": "existing", "calibration": "keep me"},
+            ),
+        )
+
+        assert main(
+            [
+                "onboarding",
+                "next",
+                "--json",
+                "--calibration-notes",
+                "should be ignored",
+            ]
+        ) == 0
+        _ = json.loads(capsys.readouterr().out)
+        state = load_state(tmp_path)
+
+        assert state.profile_data["notes"] == "existing"
+        assert state.profile_data["calibration"] == "keep me"
 
     def test_mailbox_setup_json_writes_env_and_runs_preflight(
         self, monkeypatch, tmp_path, capsys

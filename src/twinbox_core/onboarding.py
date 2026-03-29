@@ -128,7 +128,11 @@ STAGE_PROMPTS = {
         "  TWINBOX_SETUP_API_KEY=<your_key> twinbox config set-llm --provider anthropic --model MODEL --api-url URL --json\n\n"
         "配置写入 state root/twinbox.json，不会泄露到命令行参数。Twinbox 不再内置默认模型或默认 API URL。"
     ),
-    "profile_setup": "Phase 2 of 2 · 个人画像设置\n继续完成 Twinbox onboarding。请告诉我您的职位、工作习惯和偏好，帮助我更好地理解邮件优先级。",
+    "profile_setup": (
+        "Phase 2 of 2 · 个人画像设置\n"
+        "继续完成 Twinbox onboarding。请告诉我您的职位、工作习惯和偏好，帮助我更好地理解邮件优先级。\n"
+        "也请补充三点：这周主要关注谁/什么、哪些邮件可忽略、以及本周最重要的事项。"
+    ),
     "material_import": "Phase 2 of 2 · 上下文材料导入\n继续完成 Twinbox onboarding。您可以上传项目文档、团队信息等材料，帮助我理解业务背景。",
     "routing_rules": "Phase 2 of 2 · 邮件过滤规则\n继续完成 Twinbox onboarding。配置语义路由规则，自动过滤不重要的邮件（如群组通知、系统告警）。",
     "push_subscription": "Phase 2 of 2 · 推送通知设置\n继续完成 Twinbox onboarding。配置紧急邮件推送通知，及时了解重要事项。",

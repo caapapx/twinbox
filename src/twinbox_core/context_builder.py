@@ -429,8 +429,14 @@ def _build_human_context(state_root: Path) -> dict[str, object]:
     raw_notes = ob_state.profile_data.get("notes") if isinstance(ob_state.profile_data, dict) else None
     if isinstance(raw_notes, str) and raw_notes.strip():
         onboarding_notes = raw_notes.strip()
+    onboarding_calibration = ""
+    raw_calibration = ob_state.profile_data.get("calibration") if isinstance(ob_state.profile_data, dict) else None
+    if isinstance(raw_calibration, str) and raw_calibration.strip():
+        onboarding_calibration = raw_calibration.strip()
 
     calibration_raw = _read_text_if_exists(runtime_context / "instance-calibration-notes.md")
+    if not calibration_raw and onboarding_calibration:
+        calibration_raw = onboarding_calibration
     has_calibration = bool(calibration_raw)
 
     return {
