@@ -1,505 +1,368 @@
-# twinbox 📮
+# TWINBOX 📮
 
-> **线程级邮件智能，让重要的事情不被淹没。**
+> 面向真实工作邮箱的线程级邮件智能。
 
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-[![Tests](https://img.shields.io/badge/tests-pytest-informational.svg)](./tests/)
+[Python 3.11+](https://www.python.org/downloads/)
+[License: MIT](./LICENSE)
+[Tests](./tests/)
 
 [English](./README.md) | [中文](./README.zh.md)
 
 ---
 
-## 从这里开始
+## 1. 介绍
 
-### 推荐：引导式 onboard
+twinbox 是一个自托管的邮件智能系统。它通过 **只读 IMAP** 读取邮箱，以 **线程** 为基本单位建模工作，再把结果写成磁盘上的结构化产物。
 
-**方案 A — OpenClaw 宿主**（状态在 `~/.twinbox`，Twinbox 接入 OpenClaw）：
+它主要解决四类实际问题：
 
-```bash
-git clone https://github.com/caapapx/twinbox.git && cd twinbox
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e .
-twinbox onboard openclaw --json
+- 我现在必须处理什么？
+- 谁在等我？
+- 什么卡住了或有风险？
+- 这周相对上周变在哪？
+
+它适合：
+
+- 偏好 **CLI + JSON** 工作流的操作者
+- 运行在 **OpenClaw** 或其他可执行 shell 的宿主上的团队
+- 邮箱里大量是 **长线程工作流邮件**，而不是零散通知的人
+- 更看重 **可审查文件产物**，而不是黑盒 UI 自动化的人
+
+它不是：
+
+- 网页邮箱替代品
+- 托管 SaaS 产品
+- 群发自动回复工具
+
+> 默认是自托管。除非你显式配置外部 LLM API，否则邮件不会离开你的基础设施。
+
+---
+
+## 2. twinbox 的独特优势
+
+**不是关键词分拣，而是线程生命周期。** 很多邮件 AI 只停在标签、过滤器或一次性摘要。twinbox 更关注线程层面的责任归属、等待关系、阻塞状态和时效优先级。
+
+**结果可解释。** 主要的 Phase 4 产物会带分数、原因码和简短理由。你能看到为什么某条线程被排高，而不是只收到一个黑盒“重要”标签。
+
+**结果就是几份看得见、能检查的文件。** twinbox 会直接落盘 `daily-urgent.yaml`、`pending-replies.yaml`、`sla-risks.yaml`、`weekly-brief.md` 这类结果，方便 diff、复核，也方便接到 CI 或宿主自动化里。
+
+**先证明价值，再谈自动化。** 当前最强的是只读价值面：排序、解释、周报和运行态可见性。草稿与发送仍然放在显式门闸之后。
+
+**和 OpenClaw 联动，但不是一套分叉产品。** 在 OpenClaw 宿主上，`twinbox onboard openclaw` 是引导式主路径。本地、仓库 checkout、vendor/no-clone 交付仍然共用同一套 Twinbox 核心。
+
+---
+
+## 3. 架构
+
+### 四个阶段
+
+```mermaid
+flowchart LR
+    M["邮箱<br/>信封 + 正文"] --> P1["Phase 1<br/>普查 + 意图"] --> B1["attention-budget v1"]
+    B1 --> P2["Phase 2<br/>画像 + 业务"] --> B2["attention-budget v2"]
+    B2 --> P3["Phase 3<br/>生命周期模型"] --> B3["attention-budget v3"]
+    B3 --> P4["Phase 4<br/>价值输出"] --> O["输出"]
+    C["人工上下文"] -.-> P2 & P3 & P4
 ```
 
-`twinbox onboard openclaw` 会检查门槛、合并宿主配置、同步 **SKILL.md**、按需重启 Gateway，并交接到**对话引导**（`twinbox onboarding start|status|next`）。细节与排障：**[openclaw-skill/DEPLOY.md](openclaw-skill/DEPLOY.md)**。
 
-**方案 B — 仅本机 / 终端**（默认：仓库根 `twinbox.json`，产物在 **`runtime/validation/`**）：
 
-```bash
-git clone https://github.com/caapapx/twinbox.git && cd twinbox
-pip install -e .
-twinbox onboarding start --json
+
+| 阶段          | 做什么        | 主要输出               |
+| ----------- | ---------- | ------------------ |
+| **Phase 1** | 邮箱普查与降噪    | 信封索引、意图分类          |
+| **Phase 2** | 推断角色与业务上下文 | 画像与业务假设            |
+| **Phase 3** | 建模线程生命周期状态 | 生命周期模型、线程阶段        |
+| **Phase 4** | 生成用户可见价值面  | 紧急队列、待回复、SLA 风险、周报 |
+
+
+每个阶段都由确定性 `Loading` 加上 LLM `Thinking` 组成。
+
+> Phase 1–4 全程只读，不会发送、移动、删除或打标邮件。
+
+### 核心模型
+
+```text
+邮箱（只读 IMAP）
+      |
+      v
+Phase 1 -> Phase 2 -> Phase 3 -> Phase 4
+      ^               |
+      |               v
+ 人工上下文       队列 / 摘要产物
 ```
 
-按输出里的 `prompt` 操作；用 `twinbox onboarding next --json` 推进，直到 `current_stage` 为 `completed`。随时可用 `twinbox onboarding status --json` 查看进度。
-
-### 引导完成后
-
-```bash
-twinbox-orchestrate run --phase 4
-twinbox task todo --json
-```
-
-**你将获得**：`daily-urgent.yaml`、`pending-replies.yaml`、`sla-risks.yaml`、`weekly-brief.md` — 具体路径见 [安装路径](#选择安装路径)（仓库 `runtime/validation/` 与 OpenClaw 宿主 `~/.twinbox/runtime/validation/` 不同）。
-
-**高级（非交互 / CI）**：跳过向导、一次性写入邮箱与 LLM — 见 [快速开始 → 非交互配置](#非交互配置)。
-
-**可选**：后台 JSON-RPC daemon（`twinbox daemon …`）、可选 Go 薄入口 `cmd/twinbox-go/`、模组化模拟邮箱种子脚本 — 见 [docs/ref/daemon-and-runtime-slice.md](docs/ref/daemon-and-runtime-slice.md)。与旧文档冲突时以该页与本仓库代码为准。
+项目把磁盘上的产物当作稳定契约，让流水线、操作者和上层工具都围绕同一份事实工作。
 
 ---
 
-## 选择安装路径
-
-| 路径 | 状态与配置落点 | 从这里开始 |
-|------|----------------|------------|
-| **本地 / 开发** | 仓库根的 `twinbox.json`；产物在仓库 **`runtime/validation/`** | [从这里开始](#从这里开始)（方案 B）→ [快速开始](#快速开始)（安装细节与非交互配置） |
-| **OpenClaw 宿主** | 邮件与流水线数据在 **`~/.twinbox`**；roots 在 **`~/.config/twinbox/`**；OpenClaw 读 **`~/.openclaw/openclaw.json`** | [从这里开始](#从这里开始)（方案 A）+ **[openclaw-skill/DEPLOY.md](openclaw-skill/DEPLOY.md)**；**高级 / 脚本化**：`twinbox deploy openclaw --json`。设计说明：[docs/ref/openclaw-deploy-model.md](docs/ref/openclaw-deploy-model.md) |
-
-两条路径**不能混为一谈**：只做方案 B **不会**自动接好 OpenClaw。详见 [OpenClaw 宿主部署摘要](#openclaw-宿主部署摘要) 或通读 **DEPLOY.md** 完成邮箱 / LLM / 环境与验证 — `onboard openclaw` 与 `deploy openclaw` 负责接线自动化，**不**替代对前置条件的理解。
-
----
-
-## 目录
-
-- [从这里开始](#从这里开始)
-- [选择安装路径](#选择安装路径)
-- [它是做什么的](#它是做什么的)
-- [OpenClaw 宿主部署摘要](#openclaw-宿主部署摘要)
-- [为什么选择 twinbox（价值亮点）](#为什么选择-twinbox价值亮点)
-- [适合谁用](#适合谁用)
-- [快速开始](#快速开始)
-- [日常命令](#日常命令)
-- [四个阶段](#四个阶段)
-- [架构](#架构)
-- [常见问题](#常见问题)
-- [路线图](#当前聚焦与路线图) · [完整待办 ROADMAP.md](ROADMAP.md)
-
----
-
-## 它是做什么的
-
-twinbox 通过**只读 IMAP** 拉取邮箱，经多阶段流水线分析后，把结论写成磁盘上的**价值面产物**：回答**我现在该先处理什么**、**谁在等我**、**什么卡住或有 SLA 风险**、**这周相对上周变在哪**——一律以**线程**为单元，而不是对「最新一封邮件」做一次性摘要。
-
-- 📬 **只读优先（Phase 1–4）**：不发送、不移动、不删除、不打标；先稳定产出日/周视图，再谈草稿与自动发送（见 [安全边界](#安全边界)）。
-- 🧵 **线程级流水线**：意图与噪声收敛 → 画像与业务上下文 → 生命周期建模 → Phase 4 生成紧急队列、待回复、风险与结构化周报。
-- 📁 **文件即 API**：`daily-urgent.yaml`、`pending-replies.yaml`、`sla-risks.yaml`、`weekly-brief.md` 等写入 state / `runtime/validation/`（路径随 [安装路径](#选择安装路径) 而变），可 diff、可 CI、可被 Agent 或人工复核。
-- 🎯 **人类上下文**：材料、习惯与**你确认过的事实**可与邮箱侧推断合并；设计原则是补充与可审计，**不静默覆盖**原始邮件事实。
-
-> **设计上就是自托管的。** 你的邮件留在你的基础设施上。
-
-**接下来** — OpenClaw 宿主：[OpenClaw 宿主部署摘要](#openclaw-宿主部署摘要)。价值与定位：[为什么选择 twinbox（价值亮点）](#为什么选择-twinbox价值亮点)。
-
-## OpenClaw 宿主部署摘要
-
-完整步骤、可选项、回滚与卸载：**[openclaw-skill/DEPLOY.md](openclaw-skill/DEPLOY.md)**。排障：**[openclaw-skill/TROUBLESHOOT.md](openclaw-skill/TROUBLESHOOT.md)**。插件与 JSON 片段：**[openclaw-skill/DEPLOY-APPENDIX.md](openclaw-skill/DEPLOY-APPENDIX.md)**。
-
-**为什么还有 `scripts/install_openclaw_twinbox_init.sh`** — **不是**过时脚本。`twinbox deploy openclaw` 与 `twinbox onboard openclaw`（你选择 **Apply setup** 应用宿主配置时）会把它当作 **`bootstrap_roots`** 执行：创建 **`~/.twinbox`**，写入 **`~/.config/twinbox/code-root`**、**`state-root`**。在跑 `onboard` 之前**不必**手敲这条 bash，除非你按 DEPLOY §3.3 顺序先初始化、或只想写指针还不要完整 deploy。
-
-**Go（`cmd/twinbox-go`）与 `vendor/twinbox_core`** — 可选薄 RPC 客户端；**`twinbox-go install --archive …`**（本地或 HTTPS）把 Python **`twinbox_core`** 解到 state 下。常见 OpenClaw 流程会从你的 checkout（或 `TWINBOX_CODE_ROOT`）解析 **`code_root`**，以便 **SKILL.md**、**`openclaw-skill/`**、`onboard`/`deploy` 找到树形布局；无完整 git clone 时也可用 **`twinbox vendor install`** / **`twinbox-go install`** 走 **仅 vendor** 宿主 —— 见 **[docs/ref/code-root-developer.md](docs/ref/code-root-developer.md)** 与 **[docs/ref/daemon-and-runtime-slice.md](docs/ref/daemon-and-runtime-slice.md)**。
-
-**推荐顺序**（与 DEPLOY §2 一致）：
-
-1. **OpenClaw 可用** — 已安装 `openclaw`；`openclaw config validate`（按需启动 Gateway）。
-2. **Twinbox CLI** — 在仓库内：`python3 -m venv .venv`、`source .venv/bin/activate`、`pip install -e .`；确认 `twinbox` / `twinbox-orchestrate` 可执行。
-3. **Roots** — 由 **`twinbox onboard openclaw`** / **`twinbox deploy openclaw`** 内的 **`bootstrap_roots`** 完成（即上述脚本）。若你更习惯 DEPLOY §3.3，也可先在仓库根手动执行 `bash scripts/install_openclaw_twinbox_init.sh`。
-4. **邮箱 + LLM** — 优先在 **`twinbox onboard openclaw`** 或 **`twinbox onboarding …`** 里完成。若需一次性命令行写入，用 [非交互配置](#非交互配置)；配置落在 **`~/.twinbox/twinbox.json`**。详见 DEPLOY §3.4。
-5. **接入 skill 与 OpenClaw 配置** — **首选**：`twinbox onboard openclaw --json`（检查、宿主接线，再引导对话 onboarding）。**脚本化替代**：`twinbox deploy openclaw --json`（合并 `skills.entries.twinbox`、将 **SKILL.md** 同步到 state root，并在 `~/.openclaw/skills/twinbox/` 下尽量用**符号链接**指向该文件、可选 himalaya 检查、`openclaw gateway restart`）。可选 JSON 片段：`openclaw-skill/openclaw.fragment.json`（见 DEPLOY §3.5）。
-6. **验证** — `openclaw skills info twinbox`；可选冒烟：`openclaw agent --agent twinbox --message "Acknowledge if twinbox skill is available." --json --timeout 120`（见 DEPLOY §3.6）。
-7. **对话内引导** — 使用**专用 `twinbox` agent** 与**新会话**；按 DEPLOY §3.8 执行 `twinbox onboarding start|status|next --json`。需要可靠 JSON 时可在宿主 shell 直接跑上述命令。
-
-**升级 / 仅刷新 skill**：`git pull`、`pip install -e .` 后执行 `twinbox deploy openclaw --json`（或按 DEPLOY §4 仅复制 **SKILL.md** + 重启 Gateway）。
-
-**仅撤销宿主接线**（保留 `~/.twinbox` 邮件数据）：`twinbox deploy openclaw --rollback --json`（见 DEPLOY §3.5）。
-
----
-
-## 为什么选择 twinbox（价值亮点）
-
-下面这些**结果导向**的问题，是 twinbox 持续优化的方向 —— 也是「强人类助理」在不重读整箱邮件时帮你回答的问题：
-
-| 你想搞清楚的事 | twinbox 试图给你的 |
-|----------------|-------------------|
-| **我现在必须处理什么？** | 带优先级与下一步提示的紧急 / 时效线程 |
-| **谁在等我？** | 待回复、「球在你这边」类工作 |
-| **什么卡住了或有风险？** | SLA 式风险、沉默或过久的线程 |
-| **这周相对上周变在哪？** | 结构化周报 —— 而不只是新主题列表 |
-
-**线程生命周期，而不只是关键词分拣。** 很多「邮件 AI」停在过滤词与模板。twinbox 以**线程**为单元：谁在等谁、生命周期阶段、工作流形态的往来 —— 更接近协调密集型邮箱的真实结构。
-
-**可解释，而不是黑盒。** Phase 4 产物带有**原因码**、**分数**、简短**理由**与**证据向提示**（例如来自邮件 vs. 你确认过的规则）。你能看到「为什么这条被标高」，而不是只信一个「重要」标记。
-
-**周报 = 结构 + 叙事。** `weekly-brief.md` 按区块组织（总览、工作流摘要、**立即行动**、积压、本周重要变化、节奏观察等），便于你**安排一周**，而不止读完一段摘要。
-
-**先证明价值，再谈自动化。** Phase 1–4 严格**只读**；先稳定产出日/周价值面，再谈草稿与发送（见下文 [安全边界](#安全边界)）。
-
-**痛点已被广泛感知。** 分拣疲劳、跟进遗漏、周报汇总成本 —— 许多人已经能说清这些痛。twinbox 直接对准这些**结果**，而不是抽象推销「AI 邮箱」。
-
-**轻量规则够用 vs. twinbox 更合适的场景：** 关键词规则 + 模板摘要上手快，但在**长线程**、**责任边界模糊**、**工作流邮件**上容易失真。twinbox 用更多搭建成本，换**更深、带证据取向**的判断 —— 更适合邮箱里大量是**对话型工作**、而非零散通知的人。
-
-完整设计叙事见 [docs/ref/architecture.md](docs/ref/architecture.md)（价值面、注意力闸门、人类上下文）。
-
----
-
-## 适合谁用
-
-想把邮箱接入自动化的人：
-
-- CLI + JSON 优先
-- OpenClaw 或任何能跑 shell 的宿主
-- **不是**网页邮箱
-- **不是**群发自动回复
-- **不是**托管 SaaS 产品
-
----
-
-## 快速开始
+## 4. 安装与部署
 
 ### 前置要求
 
 - Python 3.11+
-- 邮箱 IMAP 访问权限
-- 邮箱服务商的**应用专用密码**（账户开启 2FA 时，如 [Google](https://support.google.com/accounts/answer/185833)），或服务商允许的常规密码 —— **不是** GitHub / Git 的 PAT
+- 邮箱的 IMAP 访问权限
+- 如果邮箱启用了 2FA，需要服务商的应用专用密码
 
-### 安装
+### 安装 twinbox CLI 及运行时
+
+面向最终用户时，日常只接触命令 **`twinbox`**。先把 `twinbox` 二进制放进 `PATH`：
 
 ```bash
-# 方式 A：从源码 pip 安装
-pip install -e .
+# 系统级安装
+sudo cp dist/twinbox /usr/local/bin/twinbox
+sudo chmod 0755 /usr/local/bin/twinbox
 
-# 方式 B：直接从仓库运行（自动设置路径）
-bash scripts/twinbox
+# 或当前用户安装
+mkdir -p ~/.local/bin
+cp dist/twinbox ~/.local/bin/twinbox
+chmod 0755 ~/.local/bin/twinbox
+export PATH="$HOME/.local/bin:$PATH"
 ```
 
-### 配置
-
-#### 引导式配置（推荐）
-
-与 [从这里开始](#从这里开始) 方案 B 相同 — CLI 分阶段引导邮箱、LLM、画像、材料、规则与可选推送：
+已拿到 `twinbox_core.tar.gz`（或等价运行时归档）时，安装 CLI 并导入 Email agent runtime（vendor）：
 
 ```bash
+twinbox install --archive /path/to/twinbox_core.tar.gz
+```
+
+### 接入 OpenClaw 宿主
+
+如果你主要是把 Twinbox 和 OpenClaw 一起使用，就从这里开始。整条路径分 **两段**：先在**宿主 shell** 接线，再在 **OpenClaw 的 `twinbox` agent 对话里**做完 Twinbox 自己的引导（邮箱、LLM、画像等）。**只跑完第一段是不够的。**
+
+**阶段一：宿主接线（在终端执行）**
+
+```bash
+twinbox onboard openclaw
+```
+
+作用概览：检查 OpenClaw 环境；初始化或复用 `~/.twinbox`；写入集成侧配置；把 SKILL 接到 `~/.openclaw/skills/twinbox/`（细节见 [openclaw-skill/DEPLOY.md](openclaw-skill/DEPLOY.md)）。**这一阶段不会替你完成邮箱登录或 LLM 配置。**
+
+**阶段二：Twinbox 引导（在 OpenClaw 对话里继续）**
+
+在 OpenClaw 中打开 **`twinbox` agent**，建议**新开一轮对话**，把下面整段复制进去，推动 agent **真的执行** CLI（不要停在「我去执行」而没有任何输出）：
+
+```text
+请先读取 ~/.openclaw/skills/twinbox/SKILL.md，然后在本轮内立即直接运行：
 twinbox onboarding start --json
-twinbox onboarding next --json   # 每完成一阶段后执行，直到 completed
+不要只说「让我执行命令：」。执行后只基于真实 stdout 汇报 current_stage、prompt、next_action；若失败，贴 stderr。
+```
+
+之后按返回的 `prompt` 在对话里补全信息，并反复执行：
+
+```bash
+twinbox onboarding next --json
+```
+
+直到 `current_stage` 为 `completed`。中途可查：
+
+```bash
 twinbox onboarding status --json
 ```
 
-在 OpenClaw 宿主上，更推荐 **`twinbox onboard openclaw --json`**，宿主接线与对话引导在同一条向导里完成（[openclaw-skill/DEPLOY.md](openclaw-skill/DEPLOY.md)）。
+阶段二才会真正补齐：邮箱登录、LLM provider / model / API URL、角色与偏好，以及可选的材料导入、路由规则和推送订阅。更长的 bootstrap 变体、空响应排障与阶段顺序说明见 [openclaw-skill/DEPLOY.md](openclaw-skill/DEPLOY.md) 中的「引导流程」。
 
-#### 非交互配置
+### 不接入 OpenClaw 时（使用Claude Code、Codex等平台）
 
-适用于脚本、CI，或已熟悉参数 —— 当 state root 为仓库时写入 **`./twinbox.json`**；OpenClaw 宿主在跑过 `install_openclaw_twinbox_init.sh` 后使用相同命令，配置写入 **`~/.twinbox/twinbox.json`**。
+只有在你想把 Twinbox 作为本地工具或纯终端工具使用时，才走这里。`twinbox onboard openclaw` 是给 OpenClaw 宿主接线用的；本地邮箱初始化用的是 `twinbox onboarding ...`。
 
 ```bash
-# 邮箱 → twinbox.json
+twinbox onboarding start --json
+twinbox onboarding next --json
+twinbox onboarding status --json
+```
+
+若在源码 checkout 中运行，输出默认写到 `runtime/validation/`；若按发布形态安装，通常写到当前 state root 下。
+
+### 非交互配置
+
+```bash
 TWINBOX_SETUP_IMAP_PASS=your-app-password \
   twinbox mailbox setup --email you@example.com --json
 
-# LLM → twinbox.json
 TWINBOX_SETUP_API_KEY=your-api-key \
   twinbox config set-llm --provider openai --model MODEL --api-url URL --json
 ```
 
-> 🔒 **安全提示**：本地 / 开发使用的 `twinbox.json` 已加入 gitignore。永远不要提交凭证。
+在源码 checkout 中，本地通常写入 `./twinbox.json`。在 OpenClaw 宿主上通常写入 `~/.twinbox/twinbox.json`。
 
-### 验证与运行
+### 日常运维（按场景）
 
-```bash
-# 测试连接（只读 IMAP）；若引导里已做过预检可跳过
-twinbox mailbox preflight --json
+**两个入口不要混：** **`twinbox`** 管邮箱检查、任务看板、队列、daemon 等；**`twinbox-orchestrate`** 管 Phase 流水线、宿主 **`schedule` / `bridge`** 等编排。需要脚本或 agent 解析输出时，在支持的命令上加 **`--json`**（与上文 onboarding 一致）。
 
-# 运行完整流水线（Phase 1→4）
-twinbox-orchestrate run
+#### 1. 邮箱与 Phase 刷新
 
-# 或仅刷新今日队列
-twinbox-orchestrate run --phase 4
-```
+| 命令 | 说明 |
+| --- | --- |
+| `twinbox mailbox preflight --json` | 只读 IMAP 是否可用 |
+| `twinbox-orchestrate run` | Phase 1→4 按序全跑 |
+| `twinbox-orchestrate run --phase 4` | 仅重算 Phase 4（前置产物已在时可省时间与模型调用） |
 
-### 查看结果
+#### 2. 日间活动（task / digest 的前置）
 
-```bash
-# 当前有什么紧急事项？
-twinbox task todo --json
+**`activity-pulse.json`** 不会随 `digest` 现算；通常要先跑日间同步类作业，例如：
 
-# 今天发生了什么？
-twinbox task latest-mail --json
+| 命令 | 说明 |
+| --- | --- |
+| `twinbox-orchestrate schedule --job daytime-sync --format json` | 执行预置宿主作业，供今日活动视图消费 |
 
-# 查看某个线程状态
-twinbox thread inspect <thread-id> --json
-```
+宿主上也可能通过 **`bridge` / `bridge-poll`** 间接触发同一类作业，见 [docs/ref/cli.md](docs/ref/cli.md)。
 
-输出位于 **`runtime/validation/`**：
-- `phase-4/daily-urgent.yaml`
-- `phase-4/pending-replies.yaml`
-- `phase-4/sla-risks.yaml`
-- `phase-4/weekly-brief.md`
+#### 3. 看板与单线程
 
----
+| 命令 | 说明 |
+| --- | --- |
+| `twinbox task todo --json` | 紧急与待办总览 |
+| `twinbox task latest-mail --json` | 今日最新邮件视图 |
+| `twinbox task weekly --json` | 周报类输出（依赖已生成的 Phase 4 产物） |
+| `twinbox thread inspect <thread-id> --json` | 单线程详情 |
 
-## 日常命令
+另有 `task progress`、`task mailbox-status` 等，以 CLI 文档为准。
 
-### 🔍 **查看状态**
-| 命令 | 用途 |
-|------|------|
-| `twinbox task mailbox-status --json` | 邮箱是否已连接？ |
-| `twinbox task latest-mail --json` | 今天发生了什么？ |
-| `twinbox task todo --json` | 有什么需要我关注？ |
+#### 4. 队列（只改本机可见性，不改邮箱）
 
-### 📋 **管理队列**
-| 命令 | 用途 |
-|------|------|
-| `twinbox queue list --json` | 列出所有队列（urgent、pending、sla_risk） |
-| `twinbox queue show urgent --json` | urgent 队列详情 |
-| `twinbox queue dismiss <id> --reason "..."` | 隐藏某线程 |
-| `twinbox queue complete <id> --action-taken "..."` | 标记线程为已完成 |
+dismiss / complete 写入 **`user-queue-state.yaml`**，**不会**在 IMAP 里删信或改标签。
 
-### 🔧 **流水线与调试**
-| 命令 | 用途 |
-|------|------|
-| `twinbox-orchestrate run --dry-run` | 预览将要执行的内容 |
-| `twinbox-orchestrate run --phase 4` | 仅刷新 Phase 4 输出 |
-| `twinbox-orchestrate contract --format json` | 显示阶段依赖关系 |
+| 命令 | 说明 |
+| --- | --- |
+| `twinbox queue list --json` | 各队列条目一览 |
+| `twinbox queue show urgent --json` | 查看某一队列（`pending`、`sla_risk` 等类型同理） |
+| `twinbox queue explain` | 队列规则说明（偏排查） |
+| `twinbox queue dismiss <thread-id> --reason "..." --json` | 暂时不再提醒该线程（线程有新变化时可能重新出现） |
+| `twinbox queue complete <thread-id> --action-taken "..." --json` | 标记已处理，在恢复前保持隐藏 |
+| `twinbox queue restore <thread-id> --json` | 撤销 dismiss/complete，重新参与排序 |
 
-完整 CLI 参考：[docs/ref/cli.md](docs/ref/cli.md)
+#### 5. 本地 daemon（JSON-RPC）
 
----
+| 命令 | 说明 |
+| --- | --- |
+| `twinbox daemon start --supervise` | 启动；异常退出由监督进程拉起 |
+| `twinbox daemon stop` | 停止 |
+| `twinbox daemon restart --supervise` | 重启并可带监督 |
+| `twinbox daemon status --json` | 状态（含是否 supervised） |
 
-## 四个阶段
+#### 6. 交付与 vendor 同步
 
-```mermaid
-flowchart LR
-    M["📬 邮箱<br/>信封 + 正文"] --> P1["Phase 1<br/>普查 + 意图"] --> B1["attention-budget v1"]
-    B1 --> P2["Phase 2<br/>画像 + 业务"] --> B2["attention-budget v2"]
-    B2 --> P3["Phase 3<br/>生命周期模型"] --> B3["attention-budget v3"]
-    B3 --> P4["Phase 4<br/>价值输出"] --> O["📄 输出"]
-    C["👤 人工上下文"] -.-> P2 & P3 & P4
-```
+| 命令 | 说明 |
+| --- | --- |
+| `twinbox install --archive <path-or-url>` | 从运行时归档安装或更新 |
+| `twinbox vendor install` | 将 Python runtime 同步到 state root 下 `vendor/` |
 
-| 阶段 | 做什么 | 关键输出 |
-|------|--------|----------|
-| **Phase 1** | 邮箱普查 + 降噪 | `intent-classification.json`、信封索引 |
-| **Phase 2** | 推断你的角色 + 业务背景 | `persona-hypotheses.yaml`、`business-hypotheses.yaml` |
-| **Phase 3** | 建模线程生命周期状态 | `lifecycle-model.yaml`、线程阶段 |
-| **Phase 4** | 生成用户可见队列 | `daily-urgent.yaml`、`pending-replies.yaml`、`sla-risks.yaml`、`weekly-brief.md` |
+更全的子命令与参数见 [docs/ref/cli.md](docs/ref/cli.md)。
 
-每个阶段：确定性 `Loading` → LLM `Thinking`。
 
-> **全程只读**：Phase 1–4 不发送、不移动、不删除、不打标任何邮件。
+### 示例：向 twinbox 提问
 
----
+宿主接好、引导完成之后，OpenClaw 里的日常使用其实就是直接和 `twinbox` agent 对话。
 
-## 架构
-
-### 核心设计
+**1. 早晨排优先级**
 
 ```text
-┌─────────────────┐      ┌─────────────────────┐      ┌──────────────────┐
-│   邮箱 (IMAP)   │─────▶│    线程状态层       │◀─────│   上下文导入     │
-│     只读        │      │  (生命周期、队列)   │      │ (材料/习惯)      │
-└─────────────────┘      └──────────┬──────────┘      └──────────────────┘
-                                    │
-                                    ▼
-                          ┌─────────────────────┐
-                          │    运行时骨架       │
-                          │ (listener / action  │
-                          │  模板 / 审计)       │
-                          └──────────┬──────────┘
-                                    │
-                                    ▼
-                          ┌─────────────────────┐
-                          │     自动化闸门      │
-                          │ 只读 → 草稿 → 发送  │
-                          └─────────────────────┘
+你：今天中午前我必须处理什么？
+Twinbox：先看这 3 个线程。1 个已经卡住客户，1 个今天会碰到 SLA 风险，1 个是你昨天承诺要回的事项。
 ```
 
-### 与典型邮件 Agent 对比
+**2. 谁在等我**
 
-| | **twinbox** | 典型演示 |
-|---|-------------|----------|
-| **工作单元** | 线程 | 单封邮件 |
-| **输出** | 磁盘上的文件（可 diff、可 CI 门禁） | UI 或即时回复 |
-| **安全** | 显式只读 → 草稿 → 发送闸门 | 往往是一次性自动化 |
-| **上下文** | 结构化文件 + 来源追溯 | 仅会话级 prompt |
-| **托管** | 自托管 | 往往是 SaaS |
-
----
-
-## 仓库结构
-
-```
-twinbox/
-├── 📄 README.md / README.zh.md  # 中英主文档
-├── 🗺️  ROADMAP.md               # 待办索引（P0–P3）；替代已删除的分散计划文档
-├── 📋 SKILL.md                  # OpenClaw 清单
-├── ⚙️  pyproject.toml           # Python 包配置
-├── 🐍 src/twinbox_core/         # 核心实现
-│   ├── task_cli.py             # 面向任务的 CLI
-│   ├── orchestration.py        # 流水线编排器
-│   ├── phase4_value.py         # Phase 4：输出
-│   └── ...
-├── 📁 config/
-│   ├── action-templates/       # 动作模板
-│   ├── context/                # 上下文配置
-│   └── profiles/               # 用户画像
-├── 📖 docs/
-│   ├── ref/architecture.md     # 完整架构文档
-│   ├── ref/cli.md              # CLI 参考
-│   └── ref/validation.md       # 输出契约
-├── 🔧 scripts/                 # Shell 入口
-│   ├── twinbox                 # CLI 包装器
-│   ├── twinbox-orchestrate     # 流水线运行器
-│   └── install_openclaw_twinbox_init.sh  # OpenClaw 宿主：code/state roots
-├── 🦞 openclaw-skill/          # OpenClaw 部署手册、插件、systemd 样例
-│   ├── DEPLOY.md               # 宿主安装主路径
-│   └── plugin-twinbox-task/    # 可选：Gateway 侧确定性 twinbox 工具
-└── 💾 runtime/                 # 运行状态 (gitignored；本地开发默认)
-    ├── context/                # 用户上下文
-    ├── validation/             # 阶段输出
-    └── himalaya/               # 邮件配置
+```text
+你：现在谁在等我回复？哪些可以明天再处理？
+Twinbox：目前有 5 个活跃线程在等你。2 个今天该回，2 个可以顺延到明天，另 1 个只是低信号 CC 线程。
 ```
 
-### 代码根 vs 状态根
+**3. 单线程补课**
 
-| | **代码根 (Code Root)** | **状态根 (State Root)** |
-|---|------------------------|------------------------|
-| **包含** | `src/`、`scripts/`、`docs/` | `.env`、`runtime/`、配置 |
-| **设置方式** | `TWINBOX_CODE_ROOT` | `TWINBOX_STATE_ROOT` |
-| **默认** | 当前 checkout（或 `TWINBOX_CODE_ROOT`） | **`TWINBOX_STATE_ROOT`**，否则 **`~/.config/twinbox/state-root`** 首行路径，否则 **`cwd`（`twinbox`）/ 代码根（`twinbox-orchestrate`）**。OpenClaw **`bootstrap_roots`** 一般指向 **`~/.twinbox`**。详见 **[docs/ref/code-root-developer.md](docs/ref/code-root-developer.md)**。 |
-
----
-
-## 常见问题
-
-**Q: 这和 Gmail 标签或 Outlook 规则有什么区别？**
-
-A: 标签和规则是静态过滤器。twinbox 用 LLM 理解线程的*生命周期*——你是否在等某人回复、截止日期是否临近、对话是否已沉寂。它还将邮箱数据与外部上下文（表格、项目文档、习惯）融合。
-
-**Q: 支持 Outlook/Exchange/ProtonMail 吗？**
-
-A: 任何支持 IMAP 的提供商都应该能用。我们测试过 Gmail 和 Fastmail。Exchange 需要开启 IMAP。ProtonMail 需要使用其 IMAP Bridge。
-
-**Q: 运行成本是多少？**
-
-A: twinbox 是自托管开源软件。你需要支付：
-- 自己的基础设施
-- LLM API 调用（可配置；默认使用 OpenAI 兼容端点）
-- Phase 4 每分析一个线程约 1 次 API 调用
-
-**Q: 它能帮我发邮件吗？**
-
-A: 默认还不能。Phase 1–4 严格只读。草稿生成和发送被显式审批流程的门闸控制（开发中）。参见[安全边界](#安全边界)。
-
-**Q: 隐私如何保障？**
-
-A: 除非你配置了外部 LLM API，否则你的邮件不会离开你的基础设施。即使如此，也只发送线程元数据和抽样正文——不是整个邮箱。完全本地 LLM 作为一等部署形态仍在待办中（见 [ROADMAP.md](ROADMAP.md) P3）。
-
-**Q: 如何更新上下文（材料、习惯）？**
-
-```bash
-# 导入表格或文档
-twinbox context import-material ./project-priorities.csv --intent reference
-
-# 添加确认事实
-twinbox context upsert-fact --id "customer-tier:acme" --type "tier" --content "enterprise"
-
-# 刷新受影响线程
-twinbox-orchestrate run --phase 4
+```text
+你：帮我看一下 Acme 续约这条线程，上次承诺了什么，下一步该谁动，风险点在哪？
+Twinbox：上次承诺是周五前给出价格反馈。下一步由销售推进。当前风险中等，因为法务还卡在签约条款上。
 ```
 
-目前仍需你自行决定何时重跑流水线；仅改上下文后的全自动重算尚未完全接通（见 [ROADMAP.md](ROADMAP.md) P0）。
+**4. 周报 / 汇报准备**
 
-**Q: 能在 CI/CD 中运行吗？**
+```text
+你：给我出一版本周邮箱简报，分成进展、风险、卡点、需要我升级处理的事项。
+Twinbox：本周已推进完成 4 条线程，3 条卡在外部方，2 条需要升级处理，主要风险集中在供应商响应延迟。
+```
 
-A: 可以。所有输出都是可 diff 的文件。preflight 命令返回适合 CI 门禁的结构化 JSON 和退出码。
+这四类提问基本就覆盖了 Twinbox 当前最核心的价值面：紧急处理、待我回复、线程补课、周报总结。
 
-**Q: 在 OpenClaw 宿主上怎么部署 twinbox？**
+### `~/.twinbox` 下常见布局
 
-A: 先看 [从这里开始](#从这里开始) **方案 A**，再按 **[openclaw-skill/DEPLOY.md](openclaw-skill/DEPLOY.md)** 做验证与对话引导。**`twinbox onboard openclaw --json`** 是引导式主路径；**`twinbox deploy openclaw --json`** 是脚本化替代。邮箱/LLM 可在向导内完成，也可用 [非交互配置](#非交互配置)。
+OpenClaw 宿主上典型 state root 大致如下（`#` 后为简要说明）：
 
----
+```text
+~/.twinbox/
+├── twinbox.json                    # 主配置：邮箱、LLM、集成
+├── runtime/
+│   ├── validation/
+│   │   └── phase-4/                # 最常打开的 Phase 4 产物目录
+│   │       ├── daily-urgent.yaml
+│   │       ├── pending-replies.yaml
+│   │       ├── sla-risks.yaml
+│   │       ├── weekly-brief.md
+│   │       └── activity-pulse.json # task / digest 等用的日间活动视图
+│   └── himalaya/
+│       └── config.toml             # 渲染后的 Himalaya 邮箱配置
+├── run/
+│   ├── daemon.sock                 # 本地 JSON-RPC daemon
+│   ├── daemon.pid
+│   └── daemon-supervisor.pid       # --supervise 时的监督进程
+├── logs/
+│   └── daemon.log
+└── vendor/                         # twinbox install --archive … / twinbox vendor install
+```
 
-## 当前聚焦与路线图
-
-> **单一事实待办**（优先级、来源、P0–P3 细表）：**[ROADMAP.md](ROADMAP.md)**。  
-> 与本文对齐日期：2026-03-29
-
-### 已交付（摘要）
-
-**核心流水线**
-- [x] `twinbox-orchestrate` + Phase 1–4 Python 核心（Loading / Thinking）；Phase 1/4 加载编排已在 Python（shell 仅作兼容 shim，见 [daemon-and-runtime-slice.md](docs/ref/daemon-and-runtime-slice.md)）
-- [x] 面向任务的 CLI（`twinbox task … --json`）— 45+ 命令
-- [x] JSON-RPC daemon（`twinbox daemon …`）— Unix 套接字、`cli_invoke`、日志
-- [x] 增量日内同步（UID 水位线 + 回退）并合并进 Phase 1 上下文；`nightly-full` 仍走全量对账
-- [x] 活动脉冲 / 日内切片视图（`twinbox digest pulse`）
-- [x] Phase 2–4 提示词：可组合片段、system/user 划分；Phase 4 加载会带上 onboard 画像笔记及可选的 `runtime/context/instance-calibration-notes.md`；`recipient_role` 打分与展示层警告分离
-
-**邮箱与引导**
-- [x] IMAP 只读预检，结构化 JSON 输出
-- [x] 邮箱自动探测（`twinbox mailbox detect`）
-- [x] 引导（`twinbox onboarding start/status/next`）；OpenClaw 宿主旅程 + `twinbox onboard openclaw`；单一 `twinbox.json` 配置源；可从 OpenClaw 导入 LLM
-- [x] 推送订阅（`twinbox push subscribe/unsubscribe`）
-
-**队列与上下文**
-- [x] 队列 dismiss/complete/restore 持久化与指纹触发的重新激活
-- [x] 调度覆盖（`twinbox schedule update/reset`）
-- [x] 材料导入 intent（reference vs template_hint）
-- [x] 语义路由规则（`twinbox rule list/add/remove/test`）
-- [x] 收件人角色（direct/cc_only/group_only/indirect）
-- [x] 仅未读过滤（`--unread-only`）
-
-**OpenClaw 集成**
-- [x] 根级 SKILL.md 含 `metadata.openclaw`
-- [x] `twinbox deploy openclaw` / `twinbox onboard openclaw` — 可测部署步骤、回滚、JSON 片段合并、state root 下 canonical **SKILL.md** 及 `~/.openclaw/skills/twinbox/` 符号链接（可行时）；部署侧为常见 Linux 架构附带 Himalaya
-- [x] OpenClaw 调度工具（同步平台 cron）与队列工具（完成/dismiss）
-- [x] 可选插件（`openclaw-skill/plugin-twinbox-task`）：Gateway 侧确定性调用 `twinbox task …`
-
-**运行时与打包**
-- [x] Vendor 同步（`twinbox vendor install|status`）、Go 薄客户端（`cmd/twinbox-go/`）及 HTTP/归档安装路径；`TWINBOX_HOME` 与 `--profile` 共享 vendor — 见 [daemon-and-runtime-slice.md](docs/ref/daemon-and-runtime-slice.md)
-
-### 待办摘要（详见 ROADMAP.md）
-
-**P0 — 产品契约**
-- [ ] 上下文变更（`import-material`、`upsert-fact`、画像）应驱动真实流水线重跑（而非仅提示）；`context refresh` 须触发实际工作
-- [ ] `twinbox review approve|reject` 与 `twinbox action apply`（需显式确认）
-- [ ] 根 **SKILL.md** 保持薄：主路径走 `twinbox task …`，减少对 phase 编号的阅读负担
-
-**P1 — OpenClaw 与宿主**
-- [ ] 在真实 OpenClaw 版本上验证并文档化 `preflightCommand` 是否自动执行、`metadata.openclaw.schedules` 的实际消费方式
-- [ ] 专用 `twinbox` Agent 的会话隔离加强
-- [ ] 订阅注册表、过期产物回退与责任边界、生产宿主加固、运行时归档快照
-- [ ] Track A（`.claude/skills/twinbox`）打磨与托管 smoke 的验证面对齐
-
-**P2 — 工程**
-- [ ] 各 phase「Thinking」共用同一 LLM 边界（扩展 `llm.py` 覆盖）
-- [ ] Phase 4 render/merge 去重；用 `attention-budget` 做强阶段门禁测试
-- [ ] Phase 4 评测基线可选；**仓库内**以本地 `pytest` 为准（树内无 GitHub Actions workflow）
-
-**P3 — 自动化与审计**（Phase 1–4 在闸门到位前仍只读）
-- [ ] 草稿生成与审批闸门；结构化审计轨迹；动作模板注册表；审阅 UI/CLI
-- [ ] 完全本地 LLM 作为可选部署形态
+更完整的契约说明见 [docs/ref/cli.md](docs/ref/cli.md)、[docs/ref/artifact-contract.md](docs/ref/artifact-contract.md)、[docs/ref/code-root-developer.md](docs/ref/code-root-developer.md)。
 
 ---
 
-## 安全边界
+## 5. 常见问题（FAQ）
 
-1. **仅使用应用专用密码** — 永远不要用主账户密码
-2. **`.env` 留在本地** — 永远不要提交凭证
-3. **`runtime/` 是运行数据** — 如需备份请手动操作，不要直接编辑
-4. **在验证前不自动发送** — 草稿质量和审批流程优先
-5. **邮箱事实不可变** — 用户上下文补充但不静默覆盖线程证据
+**Q: 这和邮箱标签、文件夹或「规则」有什么本质区别？**
+
+A: 标签和规则大多是**按单封邮件或静态条件**分拣。twinbox 把 **整段线程** 当作工作单元：谁在等你、谁在等对方、是否卡住、相对优先级如何，并把这些结论写成带理由的产物（如紧急队列、待回复、SLA 风险、周报），便于人审阅和脚本消费。
+
+**Q: Outlook / Exchange / ProtonMail 能用吗？**
+
+A: 只要提供商暴露 **只读 IMAP** 即可。Exchange 需开启 IMAP；ProtonMail 通常要通过官方 **IMAP Bridge**。具体以各服务商文档为准。
+
+**Q: Phase 1–4 会改我的邮箱吗（发送、移动、删信、打标）？**
+
+A: **不会。** 当前流水线在 Phase 1–4 内是只读的。出站、草稿落地等能力若以后出现，也会走显式门闸，而不是静默改箱内状态。
+
+**Q: OpenClaw 宿主接线和「本地 onboarding」是不是一回事？**
+
+A: **不是。** `twinbox onboard openclaw` 负责把 Skill、路径、网关侧步骤接到 OpenClaw；接完后仍要在对话里继续跑 `twinbox onboarding start` / `next`，补齐邮箱、LLM、画像与材料。纯本地 CLI 使用则直接从 `twinbox onboarding start --json` 开始即可。
+
+**Q: `twinbox onboard openclaw` 跑完就算装好了吗？**
+
+A: 通常只算 **宿主侧 Phase 1**。还需要在 agent 里继续 **Phase 2**：读 `SKILL.md`，执行 `twinbox onboarding start`，按提示补信息并继续 `twinbox onboarding next`，直到引导完成。
+
+**Q: 不克隆整个仓库、只在目标机上放一个包，能跑吗？**
+
+A: 可以。交付路径包括 `**twinbox install --archive <本地路径或 HTTP URL>`** 以及 `**twinbox vendor install**`，把 Python 运行时同步到 state root 下的 `vendor/`，与仓库 checkout 共用同一套核心行为（详见 [docs/ref/daemon-and-runtime-slice.md](docs/ref/daemon-and-runtime-slice.md)）。
+
+**Q: `twinbox-orchestrate run` 和 `twinbox daemon` 是什么关系？**
+
+A: `**twinbox-orchestrate run`** 适合一次性或 cron 式跑完整/指定 phase 流水线。**daemon** 在本地提供 JSON-RPC 入口，便于宿主或工具按需触发子任务；`**twinbox daemon start --supervise`** 会在进程退出时由监督进程自动拉起。日常「刷新 Phase 4」等仍可按需直接 orchestrate。
+
+**Q: 周报、摘要类输出能按我们团队口径改吗？**
+
+A: 可以逐步定制。近期实现里已有 **周报 digest 模板可配置**、**日间 ledger 回放到周报**、以及 **抄送（CC）降权等策略可调**（具体键名与契约见 [docs/ref/cli.md](docs/ref/cli.md)、产物说明见 [docs/ref/artifact-contract.md](docs/ref/artifact-contract.md)）。
+
+**Q: 邮件内容和配置会离开我的环境吗？**
+
+A: **默认自托管**：邮箱经 IMAP 在你指定的机器上读取，产物落在磁盘。只有在你配置了 **外部 LLM API** 时，相关片段才会按该提供商的策略发往其服务；不配置则不会为了「智能」把邮件交给第三方 SaaS。
+
+**Q: 能接 CI、定时任务或自己的脚本吗？**
+
+A: 可以。CLI 支持 `**--json`**，产物是 **YAML/Markdown/JSON 文件**，适合 diff、门禁和自动化。仓库内也有 `**scripts/verify_runtime_slice.sh`** 一类运行时切片回归脚本，可作集成参考。
+
+**Q: 产品路线、发布门槛和 backlog 以哪里为准？**
+
+A: 以仓库根目录 **[ROADMAP.md](ROADMAP.md)** 为准；与实现细节冲突时配合 **[docs/ref/daemon-and-runtime-slice.md](docs/ref/daemon-and-runtime-slice.md)** 看当前事实。
 
 ---
 
-## 发布说明
+## License
 
-`docs/validation/` 可能包含真实邮箱研究产生的实例材料；完全公开前请清理。稳定对外叙述以该目录之外为准。
-
----
-
-## 许可证
-
-MIT — 见 [LICENSE](./LICENSE)
-
----
-
-**有问题？** 提 Issue 或查看 [docs/README.md](docs/README.md) 深度文档。
+MIT

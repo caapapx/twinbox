@@ -1,6 +1,6 @@
-# twinbox 📮
+# TWINBOX 📮
 
-> **Thread-level email intelligence that keeps important things from drowning.**
+> Thread-level email intelligence for people whose inbox is real work.
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
@@ -10,496 +10,353 @@
 
 ---
 
-## Start here
+## 1. Introduction
 
-### Recommended: guided onboarding
+twinbox is a self-hosted email intelligence system that reads your mailbox over **read-only IMAP**, models work at the **thread** level, and writes structured outputs to disk.
 
-**Option A — OpenClaw host** (state under `~/.twinbox`, Twinbox wired into OpenClaw):
+It is built for people who want answers to practical questions such as:
 
-```bash
-git clone https://github.com/caapapx/twinbox.git && cd twinbox
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e .
-twinbox onboard openclaw --json
+- What must I act on now?
+- What is waiting on me?
+- What is stuck or risky?
+- What changed this week?
+
+It is a good fit for:
+
+- operators who prefer **CLI + JSON** workflows
+- teams running **OpenClaw** or any shell-capable host
+- inboxes full of **long-running work threads**, not just notifications
+- people who want **reviewable files**, not opaque UI-only automation
+
+It is not:
+
+- a webmail replacement
+- a hosted SaaS product
+- a bulk auto-reply tool
+
+> Self-hosted by design. Your mail stays on your infrastructure unless you explicitly configure an external LLM API.
+
+---
+
+## 2. Why twinbox is different
+
+**Thread lifecycle instead of keyword triage.** Many email AI tools stop at labels, filters, or one-shot summaries. twinbox models who is waiting on whom, whether a thread is blocked, and what stage the work is in.
+
+**Explainable outputs.** The main Phase 4 artifacts carry scores, reason codes, and short rationales. You can inspect why something ranked high instead of trusting a black-box priority label.
+
+**The outputs are plain files you can inspect.** twinbox writes files such as `daily-urgent.yaml`, `pending-replies.yaml`, `sla-risks.yaml`, and `weekly-brief.md`. They are easy to diff, review, and plug into CI or host automation.
+
+**Value before automation.** Phases 1–4 stay read-only. The project is strongest today at ranking, summarizing, and operational visibility. Drafting and sending stay behind explicit gates.
+
+**OpenClaw works with the same core, not a separate edition.** On an OpenClaw host, `twinbox onboard openclaw` is the guided path. The same Twinbox core also runs locally, from a checkout, or through vendor/no-clone delivery.
+
+---
+
+## 3. Architecture
+
+### Four phases
+
+```mermaid
+flowchart LR
+    M["Mailbox<br/>envelopes + bodies"] --> P1["Phase 1<br/>Census + Intent"] --> B1["attention-budget v1"]
+    B1 --> P2["Phase 2<br/>Persona + Business"] --> B2["attention-budget v2"]
+    B2 --> P3["Phase 3<br/>Lifecycle Model"] --> B3["attention-budget v3"]
+    B3 --> P4["Phase 4<br/>Value Outputs"] --> O["Outputs"]
+    C["Human Context"] -.-> P2 & P3 & P4
 ```
 
-`twinbox onboard openclaw` checks prerequisites, merges host config, syncs **SKILL.md**, restarts the Gateway when needed, and hands off to **conversation onboarding** (`twinbox onboarding start|status|next`). Details and troubleshooting: **[openclaw-skill/DEPLOY.md](openclaw-skill/DEPLOY.md)**.
+| Phase | What it does | Main outputs |
+|-------|--------------|--------------|
+| **Phase 1** | Mailbox census and noise filtering | envelope index, intent classification |
+| **Phase 2** | Infer role and business context | persona and business hypotheses |
+| **Phase 3** | Model thread lifecycle state | lifecycle model and thread stages |
+| **Phase 4** | Produce user-visible value surfaces | urgent queue, pending replies, SLA risks, weekly brief |
 
-**Option B — Local / terminal only** (default: `twinbox.json` in the repo root, outputs under **`runtime/validation/`**):
+Each phase is deterministic `Loading` plus LLM `Thinking`.
 
-```bash
-git clone https://github.com/caapapx/twinbox.git && cd twinbox
-pip install -e .
-twinbox onboarding start --json
+> Phases 1–4 are read-only. No mail is sent, moved, deleted, or flagged.
+
+### Core model
+
+```text
+Mailbox (read-only IMAP)
+        |
+        v
+Phase 1 -> Phase 2 -> Phase 3 -> Phase 4
+        ^                |
+        |                v
+ Human context      Queue / digest artifacts
 ```
 
-Follow the printed `prompt`; advance with `twinbox onboarding next --json` until `current_stage` is `completed`. Check progress anytime with `twinbox onboarding status --json`.
-
-### After onboarding
-
-```bash
-twinbox-orchestrate run --phase 4
-twinbox task todo --json
-```
-
-**What you get**: `daily-urgent.yaml`, `pending-replies.yaml`, `sla-risks.yaml`, `weekly-brief.md` — paths depend on [Choose your setup path](#choose-your-setup-path) (repo `runtime/validation/` vs `~/.twinbox/runtime/validation/`).
-
-**Advanced (non-interactive / CI)**: skip the wizard and set mailbox + LLM in one shot — [Quick Start → Non-interactive configuration](#non-interactive-configuration).
-
-**Optional**: background JSON-RPC daemon (`twinbox daemon …`), optional Go shim `cmd/twinbox-go/`, and seed scripts for modular testing — see [docs/ref/daemon-and-runtime-slice.md](docs/ref/daemon-and-runtime-slice.md). When older docs disagree, prefer that page plus the code in this repo.
+The project treats disk artifacts as the stable contract between the pipeline, operators, and higher-level tools.
 
 ---
 
-## Choose your setup path
-
-| Path | State & config | Start here |
-|------|----------------|------------|
-| **Local / dev** | `twinbox.json` in the repo root; outputs under **`runtime/validation/`** in the repo | [Start here](#start-here) (Option B) → [Quick Start](#quick-start) for install detail and non-interactive setup |
-| **OpenClaw host** | Mail + pipeline data under **`~/.twinbox`**; code/state roots in **`~/.config/twinbox/`**; OpenClaw reads **`~/.openclaw/openclaw.json`** | [Start here](#start-here) (Option A) + **[openclaw-skill/DEPLOY.md](openclaw-skill/DEPLOY.md)**; **advanced / CI**: `twinbox deploy openclaw --json`. Design: [docs/ref/openclaw-deploy-model.md](docs/ref/openclaw-deploy-model.md) |
-
-The two are **not interchangeable**: Option B alone does not configure OpenClaw. See the [OpenClaw host deployment summary](#openclaw-host-deployment-summary) or read **DEPLOY.md** end-to-end for mailbox/LLM/env and verification — `onboard openclaw` and `deploy openclaw` automate wiring but do not remove the need to understand those prerequisites.
-
----
-
-## Table of Contents
-
-- [Start here](#start-here)
-- [Choose your setup path](#choose-your-setup-path)
-- [What it does](#what-it-does)
-- [OpenClaw host deployment summary](#openclaw-host-deployment-summary)
-- [Why twinbox (value)](#why-twinbox-value)
-- [Who it is for](#who-it-is-for)
-- [Quick Start](#quick-start)
-- [Daily Commands](#daily-commands)
-- [The Four Phases](#the-four-phases)
-- [Architecture](#architecture)
-- [FAQ](#faq)
-- [Roadmap](#current-focus--roadmap) · [Full backlog](ROADMAP.md)
-
----
-
-## What it does
-
-twinbox syncs your mailbox over **read-only IMAP**, runs a multi-phase pipeline, and writes **value-surface artifacts** to disk. It answers **what to act on now**, **what is waiting on you**, **what is stuck or SLA-risky**, and **what changed this week**—always at **thread** granularity, not a one-shot summary of the latest message.
-
-- 📬 **Read-only first (Phases 1–4)**: No send, move, delete, or flag; stabilize daily/weekly outputs before drafts or automation ([Safety boundaries](#safety-boundaries)).
-- 🧵 **Thread-level pipeline**: Intent / noise → persona & business context → lifecycle modeling → Phase 4 urgent, pending, risk queues and a structured weekly brief.
-- 📁 **Files as API**: `daily-urgent.yaml`, `pending-replies.yaml`, `sla-risks.yaml`, `weekly-brief.md`, etc., under your state / `runtime/validation/` (exact path depends on [Choose your setup path](#choose-your-setup-path))—diffable, CI-gatable, human- or agent-reviewable.
-- 🎯 **Human context**: Materials, habits, and **user-confirmed facts** can merge with mailbox-side inference with provenance; mailbox facts are not silently overwritten.
-
-> **Self-hosted by design.** Your mail stays on your infrastructure.
-
-**Next steps** — OpenClaw host: [OpenClaw host deployment summary](#openclaw-host-deployment-summary). Value and positioning: [Why twinbox (value)](#why-twinbox-value).
-
-## OpenClaw host deployment summary
-
-Full procedure, options, rollback, and uninstall: **[openclaw-skill/DEPLOY.md](openclaw-skill/DEPLOY.md)**. Troubleshooting: **[openclaw-skill/TROUBLESHOOT.md](openclaw-skill/TROUBLESHOOT.md)**. Plugin tools and fragments: **[openclaw-skill/DEPLOY-APPENDIX.md](openclaw-skill/DEPLOY-APPENDIX.md)**.
-
-**Why `scripts/install_openclaw_twinbox_init.sh` still exists** — It is **not** legacy. `twinbox deploy openclaw` (and `twinbox onboard openclaw` when you choose **Apply setup**) runs it as the **`bootstrap_roots`** step: create **`~/.twinbox`**, write **`~/.config/twinbox/code-root`** and **`state-root`**. You do **not** need to run it by hand before `onboard` unless you follow DEPLOY §3.3 linearly or want pointers without a full deploy.
-
-**Go (`cmd/twinbox-go`) and `vendor/twinbox_core`** — Optional thin RPC client and **`twinbox-go install --archive …`** (local path or HTTPS) to unpack Python **`twinbox_core`** under the state root. The usual OpenClaw flow resolves **`code_root`** from your checkout (or `TWINBOX_CODE_ROOT`) so **SKILL.md**, **`openclaw-skill/`**, and `onboard`/`deploy` can find the tree; a **vendor-only** host without a full git clone is also supported via **`twinbox vendor install`** / **`twinbox-go install`** — see **[docs/ref/code-root-developer.md](docs/ref/code-root-developer.md)** and **[docs/ref/daemon-and-runtime-slice.md](docs/ref/daemon-and-runtime-slice.md)**.
-
-**Recommended order** (matches DEPLOY §2):
-
-1. **OpenClaw available** — `openclaw` on PATH; `openclaw config validate` (and start Gateway when needed).
-2. **Twinbox CLI** — In the repo: `python3 -m venv .venv`, `source .venv/bin/activate`, `pip install -e .`; confirm `twinbox` / `twinbox-orchestrate` work.
-3. **Roots** — Happens inside **`twinbox onboard openclaw`** / **`twinbox deploy openclaw`** via **`bootstrap_roots`** (the script above). Or run `bash scripts/install_openclaw_twinbox_init.sh` manually first if you prefer DEPLOY §3.3 before onboarding.
-4. **Mailbox + LLM** — Prefer completing these inside **`twinbox onboard openclaw`** or **`twinbox onboarding …`**. If you need one-shot flags, use [Non-interactive configuration](#non-interactive-configuration); config lands in **`~/.twinbox/twinbox.json`**. See DEPLOY §3.4.
-5. **Wire skill + OpenClaw config** — **Preferred**: `twinbox onboard openclaw --json` (runs checks, host wiring, then points you at conversational onboarding). **Scripted alternative**: `twinbox deploy openclaw --json` (merges `skills.entries.twinbox`, syncs **SKILL.md** to state root with a symlink under `~/.openclaw/skills/twinbox/` when possible, optional himalaya check, `openclaw gateway restart`). Optional JSON fragment: `openclaw-skill/openclaw.fragment.json` (see DEPLOY §3.5).
-6. **Verify** — `openclaw skills info twinbox`; optional smoke: `openclaw agent --agent twinbox --message "Acknowledge if twinbox skill is available." --json --timeout 120` (see DEPLOY §3.6).
-7. **Onboarding in chat** — Use a **dedicated `twinbox` agent** and a **new session**; follow DEPLOY §3.8 (`twinbox onboarding start|status|next --json`). For reliable JSON, you can run those commands in the host shell.
-
-**Upgrade / skill-only refresh**: `git pull`, `pip install -e .`, then `twinbox deploy openclaw --json` (or copy **SKILL.md** + restart Gateway per DEPLOY §4).
-
-**Undo host wiring only** (keeps `~/.twinbox` mail data): `twinbox deploy openclaw --rollback --json` (see DEPLOY §3.5).
-
----
-
-## Why twinbox (value)
-
-These are the **outcomes** the system is optimized for — the same questions a strong human assistant would help you answer without rereading every thread:
-
-| Question | What twinbox aims to surface |
-|----------|------------------------------|
-| **What must I act on now?** | Urgent / time-sensitive threads with scored priorities and next-step hints |
-| **What is waiting on me?** | Pending-reply and “ball in your court” style work |
-| **What is stuck or risky?** | SLA-style risks, silence, or stalled conversations |
-| **What changed this week?** | A structured weekly brief — not a dump of new subjects |
-
-**Thread lifecycle, not keyword triage.** Many “email AI” setups stop at filters and templates. twinbox works at **thread** granularity: who is waiting on whom, lifecycle stage, and workflow-shaped mail — closer to how coordination-heavy inboxes actually behave.
-
-**Explainable, not a black box.** Phase 4 artifacts carry **reason codes**, **scores**, short **rationales**, and **evidence-style hints** (e.g. mail-derived vs. a rule you confirmed). You can inspect *why* something ranked high instead of trusting a single “important” flag.
-
-**Weekly brief = structure + narrative.** `weekly-brief.md` is designed as sections (overview, flow summary, **action now**, backlog, important weekly changes, rhythm notes) so you can steer the week — not only read a paragraph summary.
-
-**Value before automation.** Phases 1–4 stay **read-only**; daily/weekly surfaces are meant to earn trust first. Drafts and send stay behind explicit gates ([Safety boundaries](#safety-boundaries)).
-
-**Pain people already name.** Inbox triage fatigue, missed follow-ups, and weekly write-up cost are widely felt. twinbox targets those outcomes directly rather than selling abstract “AI for email.”
-
-**When lightweight rules are enough vs. when twinbox shines:** keyword rules and template digests are quick to wire but weaken on **long threads**, **ambiguous ownership**, and **workflow mail**. twinbox trades more setup for **deeper, evidence-oriented** judgments — a better fit when your mailbox is mostly **conversation-shaped work**, not one-off notifications.
-
-For the full design story, see [docs/ref/architecture.md](docs/ref/architecture.md) (value surfaces, attention gates, human context).
-
----
-
-## Who it is for
-
-People wiring a mailbox into automation:
-
-- CLI + JSON first
-- OpenClaw or any host that can run shell
-- **Not** a webmail UI
-- **Not** bulk auto-reply
-- **Not** a hosted SaaS product
-
----
-
-## Quick Start
+## 4. Installation & Deployment
 
 ### Prerequisites
 
 - Python 3.11+
 - IMAP access to your mailbox
-- A mail-provider **app password** when the account uses 2FA (e.g. [Google](https://support.google.com/accounts/answer/185833)), or a regular password if your provider allows it — not a GitHub/Git PAT
+- a mail-provider app password if the account uses 2FA
 
-### Installation
+### Install the twinbox CLI and runtime
+
+End users normally only run **`twinbox`**. First, put the `twinbox` binary on your `PATH`:
 
 ```bash
-# Option A: pip install from source
-pip install -e .
+# system-wide
+sudo cp dist/twinbox /usr/local/bin/twinbox
+sudo chmod 0755 /usr/local/bin/twinbox
 
-# Option B: run directly from repo (sets up paths automatically)
-bash scripts/twinbox
+# or user-local
+mkdir -p ~/.local/bin
+cp dist/twinbox ~/.local/bin/twinbox
+chmod 0755 ~/.local/bin/twinbox
+export PATH="$HOME/.local/bin:$PATH"
 ```
 
-### Configuration
-
-#### Guided setup (recommended)
-
-Same as [Start here](#start-here) Option B — the CLI walks mailbox, LLM, profile, materials, rules, and optional push:
+When you already have `twinbox_core.tar.gz` (or an equivalent runtime archive), install the CLI and import the Email agent runtime (vendor):
 
 ```bash
+twinbox install --archive /path/to/twinbox_core.tar.gz
+```
+
+### Connect to an OpenClaw host
+
+If you mainly use Twinbox together with OpenClaw, start here. The full path has **two stages**: host wiring in a **terminal**, then Twinbox **onboarding inside the OpenClaw `twinbox` agent** (mailbox, LLM, profile, ...). **Finishing stage 1 alone is not enough.**
+
+**Stage 1: host wiring (run in a shell)**
+
+```bash
+twinbox onboard openclaw
+```
+
+What it does: checks the OpenClaw environment; initializes or reuses `~/.twinbox`; writes integration-side config; wires the skill under `~/.openclaw/skills/twinbox/` (see [openclaw-skill/DEPLOY.md](openclaw-skill/DEPLOY.md)). **It does not complete mailbox login or LLM setup for you.**
+
+**Stage 2: Twinbox onboarding (continue in OpenClaw chat)**
+
+Open the **`twinbox` agent** in OpenClaw, start a **fresh session**, and paste the block below so the agent **actually runs** the CLI (not just says it will):
+
+```text
+Read ~/.openclaw/skills/twinbox/SKILL.md, then in this same turn run immediately:
 twinbox onboarding start --json
-twinbox onboarding next --json   # after each stage, until completed
+Do not stop after "I will run the command". After execution, report current_stage, prompt, and next_action from real stdout; on failure, paste stderr.
+```
+
+Then follow the returned `prompt`, and repeat:
+
+```bash
+twinbox onboarding next --json
+```
+
+until `current_stage` is `completed`. To inspect progress:
+
+```bash
 twinbox onboarding status --json
 ```
 
-On an OpenClaw host, prefer **`twinbox onboard openclaw --json`** so wiring and onboarding stay in one guided flow ([openclaw-skill/DEPLOY.md](openclaw-skill/DEPLOY.md)).
+Stage 2 is what fills real working config: mailbox login, LLM provider/model/API URL, your role and preferences, and optional materials, routing rules, or push subscription. Longer bootstrap variants, empty-response workarounds, and the stage order are in [openclaw-skill/DEPLOY.md](openclaw-skill/DEPLOY.md) under the onboarding walkthrough.
 
-#### Non-interactive configuration
+### Without OpenClaw (Claude Code, Codex, etc.)
 
-For scripts, CI, or experts who already know the flags — writes **`./twinbox.json`** when state root is the repo (OpenClaw host: use the same commands after `install_openclaw_twinbox_init.sh`; config goes to **`~/.twinbox/twinbox.json`**).
+Use this only when you want Twinbox locally or in a plain terminal environment. `twinbox onboard openclaw` is for OpenClaw host wiring; local mailbox setup uses `twinbox onboarding ...`.
 
 ```bash
-# Mailbox → twinbox.json
+twinbox onboarding start --json
+twinbox onboarding next --json
+twinbox onboarding status --json
+```
+
+In a source checkout, outputs land under `runtime/validation/`. In a user install, they usually land under the active state root.
+
+### Non-interactive configuration
+
+```bash
 TWINBOX_SETUP_IMAP_PASS=your-app-password \
   twinbox mailbox setup --email you@example.com --json
 
-# LLM → twinbox.json
 TWINBOX_SETUP_API_KEY=your-api-key \
   twinbox config set-llm --provider openai --model MODEL --api-url URL --json
 ```
 
-> 🔒 **Security**: `twinbox.json` is gitignored by default for local/dev use. Never commit credentials.
+In a source checkout, config usually lands in `./twinbox.json`. On an OpenClaw host it usually lands in `~/.twinbox/twinbox.json`.
 
-### Verify & Run
+### Daily operations (by scenario)
 
-```bash
-# Test connection (read-only IMAP check); skip if onboarding already validated IMAP
-twinbox mailbox preflight --json
+**Two entrypoints:** **`twinbox`** covers mailbox checks, task views, queues, and the daemon; **`twinbox-orchestrate`** runs the Phase pipeline and host **`schedule` / `bridge`** jobs. Add **`--json`** on supported commands when a script or agent needs structured output (same idea as onboarding above).
 
-# Run full pipeline (Phase 1→4)
-twinbox-orchestrate run
+#### 1. Mailbox and Phase refresh
 
-# Or just refresh today's queues
-twinbox-orchestrate run --phase 4
-```
-
-### See Results
-
-```bash
-# What's urgent right now?
-twinbox task todo --json
-
-# What happened today?
-twinbox task latest-mail --json
-
-# Check any thread's status
-twinbox thread inspect <thread-id> --json
-```
-
-Outputs land in **`runtime/validation/`**:
-- `phase-4/daily-urgent.yaml`
-- `phase-4/pending-replies.yaml`
-- `phase-4/sla-risks.yaml`
-- `phase-4/weekly-brief.md`
-
----
-
-## Daily Commands
-
-### 🔍 **Check Status**
 | Command | Purpose |
-|---------|---------|
-| `twinbox task mailbox-status --json` | Is the mailbox connected? |
-| `twinbox task latest-mail --json` | What happened today? |
-| `twinbox task todo --json` | What needs my attention? |
+| --- | --- |
+| `twinbox mailbox preflight --json` | verify read-only IMAP access |
+| `twinbox-orchestrate run` | run Phase 1→4 in order |
+| `twinbox-orchestrate run --phase 4` | recompute Phase 4 only (cheaper when earlier artifacts already exist) |
 
-### 📋 **Manage Queues**
+#### 2. Daytime activity (prerequisite for some task/digest views)
+
+**`activity-pulse.json`** is not computed on demand by `digest`; you usually need a daytime sync job first, for example:
+
 | Command | Purpose |
-|---------|---------|
-| `twinbox queue list --json` | List all queues (urgent, pending, sla_risk) |
-| `twinbox queue show urgent --json` | Details of urgent items |
-| `twinbox queue dismiss <id> --reason "..."` | Hide a thread from queues |
-| `twinbox queue complete <id> --action-taken "..."` | Mark thread as done |
+| --- | --- |
+| `twinbox-orchestrate schedule --job daytime-sync --format json` | run the bundled host job that feeds the daytime activity view |
 
-### 🔧 **Pipeline & Debugging**
+On a real host you may trigger the same class of work via **`bridge` / `bridge-poll`**; see [docs/ref/cli.md](docs/ref/cli.md).
+
+#### 3. Boards and single-thread drill-down
+
 | Command | Purpose |
-|---------|---------|
-| `twinbox-orchestrate run --dry-run` | Preview what would run |
-| `twinbox-orchestrate run --phase 4` | Refresh just Phase 4 outputs |
-| `twinbox-orchestrate contract --format json` | Show phase dependencies |
+| --- | --- |
+| `twinbox task todo --json` | urgent + pending overview |
+| `twinbox task latest-mail --json` | today's latest-mail style view |
+| `twinbox task weekly --json` | weekly-style output (depends on generated Phase 4 artifacts) |
+| `twinbox thread inspect <thread-id> --json` | inspect one thread |
 
-See full CLI reference: [docs/ref/cli.md](docs/ref/cli.md)
+See the CLI doc for more (`task progress`, `task mailbox-status`, ...).
 
----
+#### 4. Queues (local visibility only; mailbox unchanged)
 
-## The Four Phases
+`dismiss` / `complete` update **`user-queue-state.yaml`** and do **not** delete or relabel mail over IMAP.
 
-```mermaid
-flowchart LR
-    M["📬 Mailbox<br/>envelopes + bodies"] --> P1["Phase 1<br/>Census + Intent"] --> B1["attention-budget v1"]
-    B1 --> P2["Phase 2<br/>Persona + Business"] --> B2["attention-budget v2"]
-    B2 --> P3["Phase 3<br/>Lifecycle Model"] --> B3["attention-budget v3"]
-    B3 --> P4["Phase 4<br/>Value Outputs"] --> O["📄 Outputs"]
-    C["👤 Human Context"] -.-> P2 & P3 & P4
-```
+| Command | Purpose |
+| --- | --- |
+| `twinbox queue list --json` | list queue entries |
+| `twinbox queue show urgent --json` | inspect one queue type (`pending`, `sla_risk`, ... same pattern) |
+| `twinbox queue explain` | explain queue rules (mostly for debugging) |
+| `twinbox queue dismiss <thread-id> --reason "..." --json` | stop surfacing a thread until it changes materially |
+| `twinbox queue complete <thread-id> --action-taken "..." --json` | mark handled; stays hidden until restored |
+| `twinbox queue restore <thread-id> --json` | undo dismiss/complete for sorting again |
 
-| Phase | What it does | Key Outputs |
-|-------|--------------|-------------|
-| **Phase 1** | Mailbox census + noise filtering | `intent-classification.json`, envelope index |
-| **Phase 2** | Infer your role + business context | `persona-hypotheses.yaml`, `business-hypotheses.yaml` |
-| **Phase 3** | Model thread lifecycle states | `lifecycle-model.yaml`, thread stages |
-| **Phase 4** | Generate user-visible queues | `daily-urgent.yaml`, `pending-replies.yaml`, `sla-risks.yaml`, `weekly-brief.md` |
+#### 5. Local daemon (JSON-RPC)
 
-Each phase: deterministic `Loading` → LLM `Thinking`.
+| Command | Purpose |
+| --- | --- |
+| `twinbox daemon start --supervise` | start with a supervisor that restarts on exit |
+| `twinbox daemon stop` | stop |
+| `twinbox daemon restart --supervise` | restart with supervision |
+| `twinbox daemon status --json` | state (includes supervised mode) |
 
-> **Read-only throughout**: No mail is sent, moved, deleted, or flagged in Phases 1–4.
+#### 6. Delivery and vendor sync
 
----
+| Command | Purpose |
+| --- | --- |
+| `twinbox install --archive <path-or-url>` | install or update from a runtime archive |
+| `twinbox vendor install` | sync the Python runtime into `vendor/` under the state root |
 
-## Architecture
+Full command trees and flags live in [docs/ref/cli.md](docs/ref/cli.md).
 
-### Core Design
+### Example: ask twinbox
+
+After the host is connected and onboarding is complete, the normal OpenClaw experience is just talking to the `twinbox` agent in real work.
+
+**1. Morning triage**
 
 ```text
-┌─────────────────┐      ┌─────────────────────┐      ┌──────────────────┐
-│  Mailbox (IMAP) │─────▶│  Thread State Layer │◀─────│  Context Ingest  │
-│   read-only     │      │ (lifecycle, queues) │      │ (materials/habits│
-└─────────────────┘      └──────────┬──────────┘      └──────────────────┘
-                                    │
-                                    ▼
-                          ┌─────────────────────┐
-                          │   Runtime Skeleton  │
-                          │ (listener / action  │
-                          │  template / audit)  │
-                          └──────────┬──────────┘
-                                    │
-                                    ▼
-                          ┌─────────────────────┐
-                          │  Automation Gates   │
-                          │ read → draft → send │
-                          └─────────────────────┘
+You: What do I need to act on before noon?
+Twinbox: Start with these 3 threads. One is customer-blocking, one is already at SLA risk, and one is waiting on a reply you promised yesterday.
 ```
 
-### Compared to Typical Email Agents
+**2. Waiting-on-me review**
 
-| | **twinbox** | Typical demos |
-|---|-------------|---------------|
-| **Unit of work** | Thread | Single message |
-| **Outputs** | Files on disk (diffable, CI-gated) | UI or immediate reply |
-| **Safety** | Explicit read-only → draft → send gates | Often one-shot automation |
-| **Context** | Structured files + provenance | Session-only prompts |
-| **Hosting** | Self-hosted | Often SaaS |
+```text
+You: Who is waiting on me right now, and what can wait until tomorrow?
+Twinbox: 5 active threads are waiting on you. 2 should be answered today, 2 can slip to tomorrow, and 1 is low-signal CC traffic.
+```
+
+**3. Single-thread catch-up**
+
+```text
+You: Inspect the Acme renewal thread. What was the last commitment, who owns the next move, and what is the risk?
+Twinbox: The last commitment was pricing feedback by Friday. Sales owns the next move. Risk is medium because legal is still blocking signature terms.
+```
+
+**4. Weekly brief**
+
+```text
+You: Draft my weekly mailbox brief: wins, risks, blocked threads, and anything I should escalate.
+Twinbox: This week closed 4 threads, 3 threads are blocked on external parties, 2 need escalation, and the main risk cluster is vendor response delay.
+```
+
+These four patterns map closely to Twinbox's core value surfaces: urgent action, pending replies, thread inspection, and weekly summary.
+
+### Layout under `~/.twinbox`
+
+On a typical OpenClaw host, the state root looks roughly like this (`#` comments are hints):
+
+```text
+~/.twinbox/
+├── twinbox.json                    # mailbox, LLM, integration settings
+├── runtime/
+│   ├── validation/
+│   │   └── phase-4/                # main user-visible Phase 4 outputs
+│   │       ├── daily-urgent.yaml
+│   │       ├── pending-replies.yaml
+│   │       ├── sla-risks.yaml
+│   │       ├── weekly-brief.md
+│   │       └── activity-pulse.json # daytime view for task / digest commands
+│   └── himalaya/
+│       └── config.toml             # rendered Himalaya mailbox config
+├── run/
+│   ├── daemon.sock                 # local JSON-RPC daemon
+│   ├── daemon.pid
+│   └── daemon-supervisor.pid       # supervisor when using --supervise
+├── logs/
+│   └── daemon.log
+└── vendor/                         # runtime from install --archive / vendor install
+```
+
+See [docs/ref/cli.md](docs/ref/cli.md), [docs/ref/artifact-contract.md](docs/ref/artifact-contract.md), and [docs/ref/code-root-developer.md](docs/ref/code-root-developer.md) for the fuller contract.
 
 ---
 
-## Repository Layout
-
-```
-twinbox/
-├── 📄 README.md                 # This file
-├── 🗺️  ROADMAP.md               # Backlog index (P0–P3); replaces old plan files
-├── 📋 SKILL.md                  # OpenClaw manifest
-├── ⚙️  pyproject.toml           # Python package
-├── 🐍 src/twinbox_core/         # Core implementation
-│   ├── task_cli.py             # Task-facing CLI
-│   ├── orchestration.py        # Pipeline orchestrator
-│   ├── phase4_value.py         # Phase 4: outputs
-│   └── ...
-├── 📁 config/
-│   ├── action-templates/       # Action templates
-│   ├── context/                # Context configs
-│   └── profiles/               # User profiles
-├── 📖 docs/
-│   ├── ref/architecture.md     # Full architecture
-│   ├── ref/cli.md              # CLI reference
-│   └── ref/validation.md       # Output contracts
-├── 🔧 scripts/                 # Shell entry points
-│   ├── twinbox                 # CLI wrapper
-│   ├── twinbox-orchestrate     # Pipeline runner
-│   └── install_openclaw_twinbox_init.sh  # OpenClaw host: code/state roots
-├── 🦞 openclaw-skill/          # OpenClaw deploy runbook, plugin, systemd samples
-│   ├── DEPLOY.md               # Host install main path
-│   └── plugin-twinbox-task/    # Optional Gateway tools for twinbox CLI
-└── 💾 runtime/                 # Operational state (gitignored; local dev default)
-    ├── context/                # User context
-    ├── validation/             # Phase outputs
-    └── himalaya/               # Mail config
-```
-
-### Code vs State Roots
-
-| | **Code Root** | **State Root** |
-|---|---------------|----------------|
-| **Contains** | `src/`, `scripts/`, `docs/` | `.env`, `runtime/`, configs |
-| **Set via** | `TWINBOX_CODE_ROOT` | `TWINBOX_STATE_ROOT` |
-| **Default** | Current checkout (or `TWINBOX_CODE_ROOT`) | **`TWINBOX_STATE_ROOT`**, else line 1 of **`~/.config/twinbox/state-root`**, else **cwd** (`twinbox`) / **code root** (`twinbox-orchestrate`). OpenClaw **`bootstrap_roots`** usually points at **`~/.twinbox`**. See **[docs/ref/code-root-developer.md](docs/ref/code-root-developer.md)**. |
-
----
-
-## FAQ
+## 5. FAQ & Roadmap
 
 **Q: How is this different from Gmail labels or Outlook rules?**
 
-A: Labels and rules are static filters. twinbox uses LLMs to understand thread *lifecycle*—whether you're waiting on someone, if a deadline is approaching, or if a conversation has gone silent. It also blends mailbox data with your external context (spreadsheets, project docs, habits).
+A: Labels and rules are static filters. twinbox tries to understand thread lifecycle, ownership, waiting state, and urgency at the conversation level.
 
-**Q: Does it work with Outlook/Exchange/ProtonMail?**
+**Q: Does it work with Outlook, Exchange, or ProtonMail?**
 
-A: Any provider with IMAP access should work. We've tested Gmail and Fastmail. For Exchange, ensure IMAP is enabled. For ProtonMail, use their IMAP bridge.
-
-**Q: How much does it cost to run?**
-
-A: twinbox is self-hosted and open source. You pay for:
-- Your own infrastructure
-- LLM API calls (configurable; defaults to OpenAI-compatible endpoints)
-- ~1 API call per thread analyzed in Phase 4
+A: Any provider with IMAP access should work. Exchange needs IMAP enabled. ProtonMail typically needs its IMAP Bridge.
 
 **Q: Can it send emails for me?**
 
-A: Not yet by default. Phases 1–4 are strictly read-only. Draft generation and sending are gated behind explicit approval flows (in development). See [Safety boundaries](#safety-boundaries).
+A: Not by default. The project is currently strongest at read-only value surfaces. Drafting and outbound actions are future gated work.
 
-**Q: What about privacy?**
+**Q: Can I use it in CI or host automation?**
 
-A: Your mail never leaves your infrastructure unless you configure an external LLM API. Even then, only thread metadata and sampled bodies are sent—not your entire mailbox. Fully local LLM as a first-class deployment mode is backlog (see [ROADMAP.md](ROADMAP.md) P3).
+A: Yes. The project is CLI-first, JSON-friendly, and file-output-oriented.
 
-**Q: How do I update my context (materials, habits)?**
+**Q: How do I deploy it on an OpenClaw host?**
 
-```bash
-# Import a spreadsheet or doc
-twinbox context import-material ./project-priorities.csv --intent reference
+A: The normal path is `twinbox onboard openclaw`, then continue inside the `twinbox` agent with `twinbox onboarding start` and `twinbox onboarding next`. For fuller host details, read [openclaw-skill/DEPLOY.md](openclaw-skill/DEPLOY.md).
 
-# Add a confirmed fact
-twinbox context upsert-fact --id "customer-tier:acme" --type "tier" --content "enterprise"
+**Q: What should I treat as the canonical backlog?**
 
-# Refresh affected threads
-twinbox-orchestrate run --phase 4
-```
+A: Use [ROADMAP.md](ROADMAP.md). The short summary below is only for quick scanning.
 
-Today you still choose when to re-orchestrate; automatic rerun after every context-only change is not fully wired yet ([ROADMAP.md](ROADMAP.md) P0).
+### Roadmap snapshot
 
-**Q: Can I run this in CI/CD?**
+**Current release gate**
 
-A: Yes. All outputs are files you can diff. The preflight command returns structured JSON with exit codes suitable for CI gates.
+- [ ] clean-host OpenClaw run through `twinbox onboard openclaw`
+- [ ] scripted host path: `twinbox deploy openclaw` + rollback + upgrade refresh
+- [ ] vendor / no-clone host path: `twinbox install --archive ...` or `twinbox vendor install`
+- [ ] real-host daemon smoke: `twinbox daemon start --supervise` + status/stop + `twinbox task ...`
 
-**Q: How do I deploy twinbox on an OpenClaw host?**
+**Next backlog themes**
 
-A: Use [Start here](#start-here) **Option A**, then **[openclaw-skill/DEPLOY.md](openclaw-skill/DEPLOY.md)** for verification and chat onboarding. **`twinbox onboard openclaw --json`** is the guided path; **`twinbox deploy openclaw --json`** is the scripted alternative. Mailbox/LLM can be completed inside the wizard or via [Non-interactive configuration](#non-interactive-configuration).
+- [ ] context updates should trigger real reruns, not only hints
+- [ ] review / action apply flows with explicit confirmation
+- [ ] stronger OpenClaw platform verification on real builds
+- [ ] one shared LLM boundary across phase thinking paths
+- [ ] draft approval gates, audit trail, and future automation layers
 
----
-
-## Current Focus & Roadmap
-
-> **Canonical backlog** (ordering, sources, P0–P3 detail): **[ROADMAP.md](ROADMAP.md)**.  
-> Last aligned with that file: 2026-03-29
-
-### Shipped (summary)
-
-**Core pipeline**
-- [x] `twinbox-orchestrate` + Phase 1–4 Python core (Loading / Thinking); phase 1/4 loading orchestration in Python (shell shims where noted in [daemon-and-runtime-slice.md](docs/ref/daemon-and-runtime-slice.md))
-- [x] Task-facing CLI (`twinbox task … --json`) — 45+ commands
-- [x] JSON-RPC daemon (`twinbox daemon …`) — Unix socket, `cli_invoke`, logs
-- [x] Incremental daytime sync (UID watermark + fallback) and merge into Phase 1 context; `nightly-full` keeps full rescan for reconciliation
-- [x] Activity pulse / daytime-slice view (`twinbox digest pulse`)
-- [x] Phase 2–4 prompts: composable fragments, system/user split; Phase 4 loading includes onboarding profile notes and optional `runtime/context/instance-calibration-notes.md` when present; `recipient_role` scoring separated from display warnings
-
-**Mailbox & onboarding**
-- [x] IMAP read-only preflight with structured JSON output
-- [x] Mailbox auto-detection (`twinbox mailbox detect`)
-- [x] Onboarding (`twinbox onboarding start/status/next`); OpenClaw host journey + `twinbox onboard openclaw`; single `twinbox.json` config source; LLM can be imported from OpenClaw during setup
-- [x] Push subscription system (`twinbox push subscribe/unsubscribe`)
-
-**Queue & context**
-- [x] Queue dismiss/complete/restore with persistence and fingerprint-based reactivation
-- [x] Schedule overrides (`twinbox schedule update/reset`)
-- [x] Material import with intent (reference vs template_hint)
-- [x] Semantic routing rules (`twinbox rule list/add/remove/test`)
-- [x] Recipient role handling (direct/cc_only/group_only/indirect)
-- [x] Unread-only filtering (`--unread-only`)
-
-**OpenClaw integration**
-- [x] SKILL.md manifest with `metadata.openclaw`
-- [x] `twinbox deploy openclaw` / `twinbox onboard openclaw` — tested deploy steps, rollback, JSON fragment merge, canonical **SKILL.md** under state root + symlink under `~/.openclaw/skills/twinbox/` when possible; bundled Himalaya for common Linux arches on deploy
-- [x] OpenClaw schedule tools (sync to platform cron) and queue tools (complete/dismiss)
-- [x] Optional plugin (`openclaw-skill/plugin-twinbox-task`) for deterministic `twinbox task …` from Gateway
-
-**Runtime & packaging**
-- [x] Vendor sync (`twinbox vendor install|status`), Go thin client (`cmd/twinbox-go/`) with HTTP/archive install path; `TWINBOX_HOME` + `--profile` for shared vendor — see [daemon-and-runtime-slice.md](docs/ref/daemon-and-runtime-slice.md)
-
-### Backlog (summary — see ROADMAP.md)
-
-**P0 — Product contracts**
-- [ ] Context updates (`import-material`, `upsert-fact`, profile) should drive a real pipeline rerun (not only messages); `context refresh` must invoke work, not just hints
-- [ ] `twinbox review approve|reject` and `twinbox action apply` with explicit confirmation
-- [ ] Keep root **SKILL.md** thin: happy paths via `twinbox task …`, minimal phase jargon for readers
-
-**P1 — OpenClaw & host**
-- [ ] Verify and document whether OpenClaw auto-runs `preflightCommand` and how `metadata.openclaw.schedules` is consumed on real builds
-- [ ] Better session isolation for the dedicated `twinbox` agent
-- [ ] Subscription registry, stale-artifact fallback + ownership, production host hardening, runtime archive snapshots
-- [ ] Track A (`.claude/skills/twinbox`) polish and eval parity with hosted smoke
-
-**P2 — Engineering**
-- [ ] One LLM boundary across all phase “thinking” transports (extend `llm.py` usage)
-- [ ] Dedup Phase 4 render/merge where still split; stronger attention-budget-driven phase gates in tests
-- [ ] Phase-4 eval baselines optional; **in-repo** verification is local `pytest` (no GitHub Actions workflow in tree)
-
-**P3 — Automation & audit** (Phases 1–4 stay read-only until gates exist)
-- [ ] Draft generation with approval gates; structured audit trail; action template registry; review UI/CLI
-- [ ] Fully local LLM as optional deployment mode
-
----
-
-## Safety Boundaries
-
-1. **App passwords only** — Never use your main account password
-2. **`.env` stays local** — Never commit credentials
-3. **`runtime/` is operational data** — Backup if needed, don't edit directly
-4. **No auto-send until proven** — Draft quality and approval flows come first
-5. **Mailbox facts are immutable** — User context supplements but never silently overwrites thread evidence
-
----
-
-## Publishing Note
-
-`docs/validation/` may contain instance-specific materials from real mailbox studies. Sanitize before a fully public release. Stable public surface lives outside that directory.
+Canonical source: [ROADMAP.md](ROADMAP.md)
 
 ---
 
 ## License
 
-MIT — see [LICENSE](./LICENSE)
-
----
-
-**Questions?** Open an issue or check [docs/README.md](docs/README.md) for deep dives.
+MIT
