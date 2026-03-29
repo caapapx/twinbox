@@ -1857,6 +1857,7 @@ def cmd_deploy_openclaw(args: argparse.Namespace) -> int:
     else:
         fragment_value = args.fragment.strip() or str(integration_defaults.get("fragment_path", "") or "").strip()
         frag = Path(fragment_value).expanduser() if fragment_value else None
+        tb = str(getattr(args, "twinbox_bin", "") or "").strip()
         report = run_openclaw_deploy(
             code_root=code_root,
             openclaw_home=openclaw_home,
@@ -1867,6 +1868,8 @@ def cmd_deploy_openclaw(args: argparse.Namespace) -> int:
             fragment_path=frag,
             no_fragment=args.no_fragment or integration_defaults.get("use_fragment") is False,
             openclaw_bin=openclaw_bin,
+            skip_bridge=getattr(args, "skip_bridge", False),
+            twinbox_bin=tb or None,
         )
         label = "Deploy"
     if args.json:
@@ -1900,6 +1903,7 @@ def _cmd_onboard_openclaw_journey(args: argparse.Namespace) -> int:
         openclaw_home=openclaw_home,
         dry_run=args.dry_run,
         openclaw_bin=args.openclaw_bin,
+        skip_bridge=getattr(args, "skip_bridge", False),
     )
     if args.json:
         print(json.dumps(report.to_json_dict(), ensure_ascii=False, indent=2))
@@ -2016,12 +2020,28 @@ def cmd_onboarding_next(args: argparse.Namespace) -> int:
 
 def cmd_push_subscribe(args: argparse.Namespace) -> int:
     """Subscribe to push notifications."""
+    from .push_schedule_ownership import ensure_hourly_daily_refresh_if_needed, sync_schedules_for_subscriptions
     from .push_subscription import subscribe
 
     filters = {}
     if args.min_urgency:
         filters["min_urgency"] = args.min_urgency
-    sub = subscribe(_state_root(), args.session_id, filters)
+    sr = _state_root()
+    daily_on = getattr(args, "daily", None)
+    weekly_on = getattr(args, "weekly", None)
+    if daily_on is not None or weekly_on is not None:
+        sub = subscribe(
+            sr,
+            args.session_id,
+            filters,
+            daily=True if daily_on is None else daily_on == "on",
+            weekly=True if weekly_on is None else weekly_on == "on",
+        )
+    else:
+        sub = subscribe(sr, args.session_id, filters)
+    if sub.cadences.daily:
+        ensure_hourly_daily_refresh_if_needed(sr)
+    sync_schedules_for_subscriptions(sr)
 
     if args.json:
         print(json.dumps(sub.to_dict(), ensure_ascii=False, indent=2))
@@ -2031,11 +2051,44 @@ def cmd_push_subscribe(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_push_configure(args: argparse.Namespace) -> int:
+    """Configure per-cadence push for a session target."""
+    from .push_schedule_ownership import sync_schedules_for_subscriptions
+    from .push_subscription import configure_cadences
+
+    sr = _state_root()
+    daily_val = None
+    if getattr(args, "daily", None) == "on":
+        daily_val = True
+    elif getattr(args, "daily", None) == "off":
+        daily_val = False
+    weekly_val = None
+    if getattr(args, "weekly", None) == "on":
+        weekly_val = True
+    elif getattr(args, "weekly", None) == "off":
+        weekly_val = False
+    sub = configure_cadences(sr, args.session_target, daily=daily_val, weekly=weekly_val)
+    if sub is None:
+        err = {"error": "subscription_not_found", "session_target": args.session_target}
+        print(json.dumps(err, ensure_ascii=False))
+        return 1
+    sync = sync_schedules_for_subscriptions(sr)
+    out = {"subscription": sub.to_dict(), "schedule_ownership": sync}
+    if args.json:
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+    else:
+        print(f"✅ Updated {args.session_target}")
+    return 0
+
+
 def cmd_push_unsubscribe(args: argparse.Namespace) -> int:
     """Unsubscribe from push notifications."""
+    from .push_schedule_ownership import sync_schedules_for_subscriptions
     from .push_subscription import unsubscribe
 
-    ok = unsubscribe(_state_root(), args.session_id)
+    sr = _state_root()
+    ok = unsubscribe(sr, args.session_id)
+    sync_schedules_for_subscriptions(sr)
     if args.json:
         print(json.dumps({"success": ok}, ensure_ascii=False))
     else:
@@ -2059,17 +2112,132 @@ def cmd_push_list(args: argparse.Namespace) -> int:
 def cmd_push_dispatch(args: argparse.Namespace) -> int:
     """Manually trigger push dispatch (for testing)."""
     from .daytime_slice import load_activity_pulse
-    from .push_dispatcher import dispatch_push
+    from .push_dispatcher import dispatch_push_daily
 
     state_root = _state_root()
     payload = load_activity_pulse(state_root)
-    result = dispatch_push(state_root, payload, openclaw_bin=args.openclaw_bin)
+    result = dispatch_push_daily(state_root, payload, openclaw_bin=args.openclaw_bin)
 
     if args.json:
         print(json.dumps(result, ensure_ascii=False))
     else:
         print(f"📤 Push dispatch: {result['sent']} sent, {result['failed']} failed, {result['skipped']} skipped")
 
+    return 0
+
+
+def cmd_host_bridge_poll(args: argparse.Namespace) -> int:
+    from .host_bridge import host_bridge_poll, resolve_default_roots
+
+    code_root, state_root = resolve_default_roots(
+        Path(args.repo_root).expanduser() if getattr(args, "repo_root", "") else None
+    )
+    exit_code, payload = host_bridge_poll(
+        code_root,
+        state_root,
+        dry_run=args.dry_run,
+        limit=args.limit,
+        openclaw_bin=args.openclaw_bin,
+    )
+    if args.format == "json":
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(f"bridge_poll status={payload.get('status')} dispatched={payload.get('dispatched_count')}")
+    return exit_code
+
+
+def cmd_host_bridge_status(args: argparse.Namespace) -> int:
+    from .host_bridge import host_bridge_status, resolve_default_roots
+
+    _code_root, state_root = resolve_default_roots(
+        Path(args.repo_root).expanduser() if getattr(args, "repo_root", "") else None
+    )
+    payload = host_bridge_status(
+        state_root=state_root,
+        openclaw_bin=args.openclaw_bin,
+        twinbox_bin=args.twinbox_bin or None,
+    )
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_host_bridge_install(args: argparse.Namespace) -> int:
+    from .host_bridge import install_host_bridge, resolve_default_roots
+
+    _code_root, state_root = resolve_default_roots(
+        Path(args.repo_root).expanduser() if getattr(args, "repo_root", "") else None
+    )
+    payload = install_host_bridge(
+        state_root=state_root,
+        openclaw_bin=args.openclaw_bin,
+        twinbox_bin=args.twinbox_bin or None,
+        dry_run=args.dry_run,
+        no_start=args.no_start,
+    )
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return 0 if payload.get("status") in ("ok", "dry_run") else 1
+
+
+def cmd_host_bridge_remove(args: argparse.Namespace) -> int:
+    from .host_bridge import remove_host_bridge, resolve_default_roots
+
+    _code_root, state_root = resolve_default_roots(
+        Path(args.repo_root).expanduser() if getattr(args, "repo_root", "") else None
+    )
+    payload = remove_host_bridge(state_root=state_root, dry_run=args.dry_run)
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return 0 if payload.get("status") in ("ok", "dry_run") else 1
+
+
+def cmd_openclaw_onboarding_start(args: argparse.Namespace) -> int:
+    from .openclaw_onboarding_tools import json_onboarding_start
+
+    print(json.dumps(json_onboarding_start(_state_root()), ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_openclaw_onboarding_status(args: argparse.Namespace) -> int:
+    from .openclaw_onboarding_tools import json_onboarding_status
+
+    print(json.dumps(json_onboarding_status(_state_root()), ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_openclaw_onboarding_advance(args: argparse.Namespace) -> int:
+    from .openclaw_onboarding_tools import json_onboarding_advance
+
+    print(
+        json.dumps(
+            json_onboarding_advance(
+                _state_root(),
+                profile_notes=getattr(args, "profile_notes", None),
+                calibration_notes=getattr(args, "calibration_notes", None),
+                cc_downweight=getattr(args, "cc_downweight", None),
+            ),
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 0
+
+
+def cmd_openclaw_onboarding_confirm_push(args: argparse.Namespace) -> int:
+    from .openclaw_onboarding_tools import json_onboarding_confirm_push
+
+    print(
+        json.dumps(
+            json_onboarding_confirm_push(
+                _state_root(),
+                session_target=args.session_target,
+                daily=args.daily == "on",
+                weekly=args.weekly == "on",
+                openclaw_bin=args.openclaw_bin,
+                twinbox_bin=args.twinbox_bin or None,
+            ),
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
     return 0
 
 
@@ -3371,6 +3539,16 @@ def _build_parser() -> argparse.ArgumentParser:
         default="openclaw",
         help="openclaw executable for gateway restart",
     )
+    dep_oc.add_argument(
+        "--skip-bridge",
+        action="store_true",
+        help="Skip vendor-safe bridge timer install/health (advanced; default installs bridge)",
+    )
+    dep_oc.add_argument(
+        "--twinbox-bin",
+        default="",
+        help="Absolute path to twinbox executable for bridge units (default: auto-detect)",
+    )
     dep_oc.add_argument("--json", action="store_true", help="Output as JSON")
 
     onboard_parser = subparsers.add_parser("onboard", help="Guided onboarding helpers")
@@ -3400,6 +3578,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default="openclaw",
         help="openclaw executable for validation and gateway restart",
     )
+    onboard_oc.add_argument(
+        "--skip-bridge",
+        action="store_true",
+        help="Skip bridge prerequisite bundle (not recommended)",
+    )
     onboard_oc.add_argument("--json", action="store_true", help="Output as JSON")
 
     onboard_oc_v2 = onboard_sub.add_parser(
@@ -3426,7 +3609,55 @@ def _build_parser() -> argparse.ArgumentParser:
         default="openclaw",
         help="openclaw executable for validation and gateway restart",
     )
+    onboard_oc_v2.add_argument(
+        "--skip-bridge",
+        action="store_true",
+        help="Skip bridge prerequisite bundle (not recommended)",
+    )
     onboard_oc_v2.add_argument("--json", action="store_true", help="Output as JSON")
+
+    openclaw_parser = subparsers.add_parser("openclaw", help="OpenClaw-native onboarding tools (JSON)")
+    openclaw_sub = openclaw_parser.add_subparsers(dest="openclaw_command", required=True)
+    oc_ob_start = openclaw_sub.add_parser("onboarding-start", help="Mirror twinbox onboarding start --json")
+    oc_ob_start.add_argument("--json", action="store_true", help="Ignored; always JSON")
+    oc_ob_status = openclaw_sub.add_parser("onboarding-status", help="Mirror twinbox onboarding status --json")
+    oc_ob_status.add_argument("--json", action="store_true", help="Ignored; always JSON")
+    oc_ob_adv = openclaw_sub.add_parser("onboarding-advance", help="Advance onboarding stage (non-push)")
+    oc_ob_adv.add_argument("--profile-notes", default=None)
+    oc_ob_adv.add_argument("--calibration-notes", default=None)
+    oc_ob_adv.add_argument("--cc-downweight", choices=["on", "off"], default=None)
+    oc_ob_adv.add_argument("--json", action="store_true", help="Ignored; always JSON")
+    oc_ob_push = openclaw_sub.add_parser("onboarding-confirm-push", help="Confirm push subscription stage")
+    oc_ob_push.add_argument("session_target", help="OpenClaw session id / target")
+    oc_ob_push.add_argument("--daily", choices=["on", "off"], default="on")
+    oc_ob_push.add_argument("--weekly", choices=["on", "off"], default="on")
+    oc_ob_push.add_argument("--openclaw-bin", default="openclaw")
+    oc_ob_push.add_argument("--twinbox-bin", default="")
+    oc_ob_push.add_argument("--json", action="store_true", help="Ignored; always JSON")
+
+    host_parser = subparsers.add_parser("host", help="Host integration (bridge, systemd)")
+    host_sub = host_parser.add_subparsers(dest="host_command", required=True)
+    host_bridge = host_sub.add_parser("bridge", help="OpenClaw cron bridge")
+    host_bridge_sub = host_bridge.add_subparsers(dest="bridge_command", required=True)
+    hb_poll = host_bridge_sub.add_parser("poll", help="Poll OpenClaw and dispatch bridge events")
+    hb_poll.add_argument("--dry-run", action="store_true")
+    hb_poll.add_argument("--limit", type=int, default=50)
+    hb_poll.add_argument("--openclaw-bin", default="openclaw")
+    hb_poll.add_argument("--format", choices=("text", "json"), default="json")
+    hb_poll.add_argument("--repo-root", default="", help="Twinbox code root for orchestration")
+    hb_status = host_bridge_sub.add_parser("status", help="Bridge systemd and state summary (JSON)")
+    hb_status.add_argument("--openclaw-bin", default="openclaw")
+    hb_status.add_argument("--twinbox-bin", default="")
+    hb_status.add_argument("--repo-root", default="")
+    hb_install = host_bridge_sub.add_parser("install", help="Install user systemd bridge units")
+    hb_install.add_argument("--dry-run", action="store_true")
+    hb_install.add_argument("--no-start", action="store_true")
+    hb_install.add_argument("--openclaw-bin", default="openclaw")
+    hb_install.add_argument("--twinbox-bin", default="")
+    hb_install.add_argument("--repo-root", default="")
+    hb_remove = host_bridge_sub.add_parser("remove", help="Remove bridge units and env file")
+    hb_remove.add_argument("--dry-run", action="store_true")
+    hb_remove.add_argument("--repo-root", default="")
 
     # onboarding commands
     onboarding_parser = subparsers.add_parser("onboarding", help="Conversational onboarding flow")
@@ -3458,7 +3689,15 @@ def _build_parser() -> argparse.ArgumentParser:
     push_subscribe = push_sub.add_parser("subscribe", help="Subscribe to push notifications")
     push_subscribe.add_argument("session_id", help="OpenClaw session ID")
     push_subscribe.add_argument("--min-urgency", choices=["high", "medium", "low"], help="Minimum urgency filter")
+    push_subscribe.add_argument("--daily", choices=["on", "off"], help="Enable daily push cadence (default on)")
+    push_subscribe.add_argument("--weekly", choices=["on", "off"], help="Enable weekly push cadence (default on)")
     push_subscribe.add_argument("--json", action="store_true", help="Output as JSON")
+
+    push_configure = push_sub.add_parser("configure", help="Set daily/weekly cadence for a session")
+    push_configure.add_argument("session_target", help="Session target / OpenClaw session id")
+    push_configure.add_argument("--daily", choices=["on", "off"], help="Daily cadence")
+    push_configure.add_argument("--weekly", choices=["on", "off"], help="Weekly cadence")
+    push_configure.add_argument("--json", action="store_true", help="Output as JSON")
 
     push_unsubscribe = push_sub.add_parser("unsubscribe", help="Unsubscribe from push")
     push_unsubscribe.add_argument("session_id", help="OpenClaw session ID")
@@ -3706,6 +3945,25 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "deploy":
             if args.deploy_command == "openclaw":
                 return cmd_deploy_openclaw(args)
+        elif args.command == "host":
+            if args.host_command == "bridge":
+                if args.bridge_command == "poll":
+                    return cmd_host_bridge_poll(args)
+                if args.bridge_command == "status":
+                    return cmd_host_bridge_status(args)
+                if args.bridge_command == "install":
+                    return cmd_host_bridge_install(args)
+                if args.bridge_command == "remove":
+                    return cmd_host_bridge_remove(args)
+        elif args.command == "openclaw":
+            if args.openclaw_command == "onboarding-start":
+                return cmd_openclaw_onboarding_start(args)
+            if args.openclaw_command == "onboarding-status":
+                return cmd_openclaw_onboarding_status(args)
+            if args.openclaw_command == "onboarding-advance":
+                return cmd_openclaw_onboarding_advance(args)
+            if args.openclaw_command == "onboarding-confirm-push":
+                return cmd_openclaw_onboarding_confirm_push(args)
         elif args.command == "onboard":
             if args.onboard_command == "openclaw":
                 return cmd_onboard_openclaw(args)
@@ -3721,6 +3979,8 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "push":
             if args.push_command == "subscribe":
                 return cmd_push_subscribe(args)
+            elif args.push_command == "configure":
+                return cmd_push_configure(args)
             elif args.push_command == "unsubscribe":
                 return cmd_push_unsubscribe(args)
             elif args.push_command == "list":

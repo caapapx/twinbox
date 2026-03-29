@@ -13,6 +13,7 @@ test("toolOpts uses env TWINBOX_CODE_ROOT when cwd omitted", () => {
     assert.deepEqual(toolOpts({ twinboxBin: "twinbox" }), {
       twinboxBin: "twinbox",
       cwd: "/tmp/tb-root",
+      openclawBin: "openclaw",
     });
   } finally {
     if (prev === undefined) {
@@ -34,6 +35,7 @@ test("toolOpts prefers cwd/scripts/twinbox when twinboxBin omitted", () => {
   assert.deepEqual(toolOpts({ cwd: dir }), {
     twinboxBin: twinboxScript,
     cwd: dir,
+    openclawBin: "openclaw",
   });
 });
 
@@ -69,6 +71,10 @@ test("registerTwinboxTaskTools registers expected tools and task/thread helpers 
     "twinbox_latest_mail",
     "twinbox_mailbox_setup",
     "twinbox_mailbox_status",
+    "twinbox_onboarding_advance",
+    "twinbox_onboarding_confirm_push",
+    "twinbox_onboarding_start",
+    "twinbox_onboarding_status",
     "twinbox_queue_complete",
     "twinbox_queue_dismiss",
     "twinbox_rule_add",

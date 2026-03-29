@@ -272,6 +272,40 @@ def _build_thread_index(
     return snapshots
 
 
+def list_push_daily_candidates(
+    state_root: str | Path | None = None,
+    *,
+    window_hours: int = 24,
+) -> list[dict[str, Any]]:
+    """Threads on the urgent/pending action surface eligible for daily push (global sort).
+
+    Per-subscription fingerprint dedupe and backlog rotation happen in :mod:`push_dispatcher`.
+    """
+    resolved_root = coerce_daytime_state_root(state_root)
+    envelopes = _load_phase1_envelopes(resolved_root)
+    if not envelopes:
+        return []
+    queue_membership, _queue_generated = _queue_membership(resolved_root)
+    snapshots = _build_thread_index(envelopes, queue_membership, window_hours=window_hours)
+    visible_snapshots = [
+        ThreadSnapshot(**item)
+        for item in filter_thread_snapshots(
+            state_root=resolved_root,
+            snapshots=[snapshot.to_dict() for snapshot in snapshots],
+        )
+    ]
+    candidates: list[ThreadSnapshot] = []
+    for snap in visible_snapshots:
+        tags = snap.queue_tags
+        if "urgent" not in tags and "pending" not in tags:
+            continue
+        if snap.new_message_count <= 0 and not tags:
+            continue
+        candidates.append(snap)
+    candidates.sort(key=lambda item: (item.score, item.last_activity_at), reverse=True)
+    return [c.to_dict() for c in candidates]
+
+
 def _filter_notifiable(
     snapshots: list[ThreadSnapshot],
     delivered: dict[str, Any],

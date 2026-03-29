@@ -26,9 +26,12 @@ class OpenClawDeployReport:
     openclaw_json: str = ""
     deploy_host_system: str = ""
     deploy_host_machine: str = ""
+    phase2_ready: bool | None = None
+    plugin_tools: dict[str, Any] = field(default_factory=dict)
+    bridge: dict[str, Any] = field(default_factory=dict)
 
     def to_json_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "ok": self.ok,
             "code_root": self.code_root,
             "openclaw_home": self.openclaw_home,
@@ -38,6 +41,9 @@ class OpenClawDeployReport:
             "openclaw_json": self.openclaw_json,
             "deploy_host_system": self.deploy_host_system,
             "deploy_host_machine": self.deploy_host_machine,
+            "phase2_ready": self.phase2_ready,
+            "plugin_tools": self.plugin_tools,
+            "bridge": self.bridge,
             "steps": [
                 {
                     "id": s.id,
@@ -48,3 +54,16 @@ class OpenClawDeployReport:
                 for s in self.steps
             ],
         }
+        if self.plugin_tools:
+            payload["plugin_tools.status"] = self.plugin_tools.get("status")
+            payload["plugin_tools.loaded_names"] = self.plugin_tools.get("loaded_names", [])
+        if self.bridge:
+            inst = self.bridge.get("install") if isinstance(self.bridge.get("install"), dict) else {}
+            sysd = self.bridge.get("systemd") if isinstance(self.bridge.get("systemd"), dict) else {}
+            payload["bridge.status"] = self.bridge.get("status")
+            payload["bridge.timer_enabled"] = sysd.get("timer_enabled")
+            payload["bridge.timer_active"] = sysd.get("timer_active")
+            payload["bridge.last_health_check"] = self.bridge.get("last_health_check")
+            payload["bridge.twinbox_bin"] = inst.get("twinbox_bin")
+            payload["bridge.openclaw_bin"] = inst.get("openclaw_bin")
+        return payload

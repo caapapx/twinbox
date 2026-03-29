@@ -312,6 +312,7 @@ def test_run_openclaw_deploy_runtime_strict_avoids_write_side_effects(
         sync_env_from_dotenv=True,
         strict=True,
         runtime=runtime,
+        skip_bridge=True,
     )
 
     assert not report.ok
@@ -360,6 +361,7 @@ def test_run_openclaw_deploy_runtime_dry_run_keeps_side_effects_zero(
         restart_gateway=True,
         sync_env_from_dotenv=False,
         runtime=runtime,
+        skip_bridge=True,
     )
 
     assert report.ok
@@ -370,6 +372,7 @@ def test_run_openclaw_deploy_runtime_dry_run_keeps_side_effects_zero(
         "ensure_himalaya",
         "sync_skill_md",
         "gateway_restart",
+        "openclaw_prerequisite_bundle",
     ]
     assert runtime.file_ops.write_json_calls == []
     assert runtime.file_ops.copy_calls == []
@@ -430,6 +433,7 @@ def test_run_openclaw_deploy_skill_sync_fallback_when_symlink_fails(
         restart_gateway=False,
         sync_env_from_dotenv=False,
         runtime=runtime,
+        skip_bridge=True,
     )
     assert report.ok
     step = next(s for s in report.steps if s.id == "sync_skill_md")
@@ -457,6 +461,7 @@ def test_run_openclaw_deploy_runtime_restart_failure_keeps_prior_steps(
         restart_gateway=True,
         sync_env_from_dotenv=False,
         runtime=runtime,
+        skip_bridge=True,
     )
 
     assert not report.ok
@@ -566,6 +571,7 @@ def test_run_openclaw_rollback_runtime_only_unwires_twinbox(
 
     assert report.ok
     assert [step.id for step in report.steps] == [
+        "bridge_remove",
         "strip_openclaw_json",
         "remove_skill_dir",
         "remove_twinbox_config",
@@ -601,6 +607,7 @@ def test_run_openclaw_deploy_ensure_himalaya_skipped_on_non_linux(
         restart_gateway=False,
         sync_env_from_dotenv=False,
         runtime=runtime,
+        skip_bridge=True,
     )
 
     assert report.ok

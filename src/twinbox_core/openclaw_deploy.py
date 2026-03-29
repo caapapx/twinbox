@@ -37,6 +37,7 @@ from .openclaw_deploy_steps import (
     sync_skill_md_step,
 )
 from .openclaw_deploy_types import DeployStepResult, OpenClawDeployReport
+from .openclaw_host_prereq import append_prereq_to_deploy_report, rollback_bridge_for_openclaw, run_openclaw_prerequisite_bundle
 from .openclaw_json_io import load_openclaw_json
 from .paths import PathResolutionError, config_dir, resolve_code_root, resolve_state_root
 
@@ -64,6 +65,8 @@ def run_openclaw_deploy(
     fragment_path: Path | None = None,
     no_fragment: bool = False,
     openclaw_bin: str = "openclaw",
+    skip_bridge: bool = False,
+    twinbox_bin: str | None = None,
     run_subprocess: Callable[..., subprocess.CompletedProcess[str]] | None = None,
     runtime: OpenClawDeployRuntime | None = None,
 ) -> OpenClawDeployReport:
@@ -179,6 +182,22 @@ def run_openclaw_deploy(
         report=report,
         runtime=runtime,
     )
+    if report.ok:
+        prereq = run_openclaw_prerequisite_bundle(
+            code_root=resolved_code_root,
+            state_root=ctx.state_root,
+            openclaw_json=ctx.openclaw_json,
+            openclaw_bin=openclaw_bin,
+            dry_run=dry_run,
+            skip_bridge=skip_bridge,
+            twinbox_bin=twinbox_bin,
+        )
+        pt = prereq.get("plugin_tools")
+        report.plugin_tools = pt if isinstance(pt, dict) else {}
+        br = prereq.get("bridge")
+        report.bridge = br if isinstance(br, dict) else {}
+        report.phase2_ready = bool(prereq.get("phase2_ready"))
+        append_prereq_to_deploy_report(report, prereq)
     return report
 
 
@@ -234,6 +253,19 @@ def run_openclaw_rollback(
     report.openclaw_home = str(ctx.openclaw_home)
     report.openclaw_json = str(ctx.openclaw_json)
     report.skill_dest = str(ctx.skill_dir / "SKILL.md")
+
+    try:
+        sr = resolve_state_root(default_state_root)
+    except PathResolutionError:
+        sr = default_state_root
+    bridge_rb = rollback_bridge_for_openclaw(state_root=sr, dry_run=dry_run)
+    append_step(
+        report,
+        "bridge_remove",
+        "ok" if bridge_rb.get("status") == "ok" else "skipped",
+        str(bridge_rb.get("status", "")),
+        bridge_rb,
+    )
 
     if not strip_openclaw_json_step(ctx, report, runtime):
         return report

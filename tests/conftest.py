@@ -10,11 +10,17 @@ Fixture categories:
 
 from __future__ import annotations
 
+import os
+import stat
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 import yaml
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_SRC_ROOT = _REPO_ROOT / "src"
 
 
 # ---------------------------------------------------------------------------
@@ -114,3 +120,60 @@ def recent_timestamp():
 def stale_timestamp():
     """ISO 8601 timestamp from two years ago — always stale."""
     return "2024-01-01T00:00:00Z"
+
+
+# ---------------------------------------------------------------------------
+# Global stubs
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _pytest_src_on_pythonpath(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Daemon and other subprocesses need the package on PYTHONPATH (same as scripts/twinbox)."""
+    if _SRC_ROOT.is_dir():
+        prev = os.environ.get("PYTHONPATH", "")
+        merged = str(_SRC_ROOT) + (os.pathsep + prev if prev else "")
+        monkeypatch.setenv("PYTHONPATH", merged)
+
+
+@pytest.fixture(autouse=True)
+def _stub_openclaw_cli(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stub `openclaw` and `twinbox` for subprocess calls in schedule/bridge/deploy tests."""
+    bindir = Path(tempfile.mkdtemp(prefix="twinbox-test-bin-"))
+    openclaw = bindir / "openclaw"
+    openclaw.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        "if [[ \"${1:-}\" == \"gateway\" && \"${2:-}\" == \"restart\" ]]; then exit 0; fi\n"
+        "if [[ \" $* \" == *\" cron.list \"* ]] || [[ \" $* \" == *\"cron.list\"* ]]; then echo '{\"jobs\":[]}'; exit 0; fi\n"
+        "if [[ \" $* \" == *\" cron.runs \"* ]] || [[ \" $* \" == *\"cron.runs\"* ]]; then echo '{\"entries\":[]}'; exit 0; fi\n"
+        "if [[ \"${1:-}\" == \"gateway\" && \"${2:-}\" == \"call\" ]]; then echo '{}'; exit 0; fi\n"
+        "if [[ \"${1:-}\" == \"cron\" && \"${2:-}\" == \"list\" ]]; then echo '{\"jobs\":[]}'; exit 0; fi\n"
+        "if [[ \"${1:-}\" == \"cron\" && \"${2:-}\" == \"add\" ]]; then echo '{\"id\":\"stub-job\"}'; exit 0; fi\n"
+        "if [[ \"${1:-}\" == \"cron\" ]]; then exit 0; fi\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    openclaw.chmod(openclaw.stat().st_mode | stat.S_IEXEC)
+    twinbox = bindir / "twinbox"
+    twinbox.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        "if [[ \"${1:-}\" == \"host\" && \"${2:-}\" == \"bridge\" && \"${3:-}\" == \"poll\" ]]; then echo '{}'; exit 0; fi\n"
+        "if [[ \"${1:-}\" == \"host\" && \"${2:-}\" == \"bridge\" && \"${3:-}\" == \"install\" ]]; then echo '{\"status\":\"ok\"}'; exit 0; fi\n"
+        "exec python3 -m twinbox_core.task_cli \"$@\"\n",
+        encoding="utf-8",
+    )
+    twinbox.chmod(twinbox.stat().st_mode | stat.S_IEXEC)
+    systemctl = bindir / "systemctl"
+    systemctl.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        "if [[ \"${1:-}\" == \"--user\" && \"${2:-}\" == \"is-enabled\" ]]; then echo enabled; exit 0; fi\n"
+        "if [[ \"${1:-}\" == \"--user\" && \"${2:-}\" == \"is-active\" ]]; then echo active; exit 0; fi\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    systemctl.chmod(systemctl.stat().st_mode | stat.S_IEXEC)
+    path = str(bindir) + os.pathsep + os.environ.get("PATH", "")
+    monkeypatch.setenv("PATH", path)

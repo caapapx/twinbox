@@ -14,6 +14,10 @@
       "cwd": {
         "type": "string",
         "description": "Working directory (Twinbox code root). Falls back to TWINBOX_CODE_ROOT env if unset and is also used to auto-detect <cwd>/scripts/twinbox."
+      },
+      "openclawBin": {
+        "type": "string",
+        "description": "Optional OpenClaw CLI path on the Gateway host (passed to twinbox --openclaw-bin for bridge health and onboarding-confirm-push)."
       }
     }
   }

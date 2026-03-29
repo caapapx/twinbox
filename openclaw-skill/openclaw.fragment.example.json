@@ -10,7 +10,8 @@
         "enabled": true,
         "config": {
           "cwd": "REPLACE_ME",
-          "twinboxBin": "REPLACE_ME/scripts/twinbox"
+          "twinboxBin": "REPLACE_ME/scripts/twinbox",
+          "openclawBin": "openclaw"
         }
       }
     }

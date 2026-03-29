@@ -18,7 +18,7 @@ from uuid import uuid4
 from twinbox_core.daytime_slice import DaytimeSliceError, write_activity_pulse
 from twinbox_core.openclaw_bridge import OpenClawBridgeError, poll_openclaw_bridge
 from twinbox_core.paths import PathResolutionError, resolve_existing_dir, resolve_state_root
-from twinbox_core.push_dispatcher import dispatch_push
+from twinbox_core.push_dispatcher import dispatch_push_daily, dispatch_push_weekly
 from twinbox_core.push_subscription import get_active_subscriptions
 
 
@@ -652,6 +652,7 @@ def run_scheduled_job(
         pulse_path: str | None = None
         pulse_payload: dict[str, object] | None = None
         push_dispatch_result: dict[str, object] | None = None
+        push_dispatch_weekly: dict[str, object] | None = None
         final_exit = 1
 
         for attempt_index in range(1, attempt_total + 1):
@@ -687,9 +688,10 @@ def run_scheduled_job(
                     active_subscriptions = get_active_subscriptions(state_root)
                     if active_subscriptions:
                         try:
-                            push_dispatch_result = dispatch_push(state_root, pulse_payload)
+                            push_dispatch_result = dispatch_push_daily(state_root, pulse_payload)
                         except Exception as exc:
                             push_dispatch_result = {
+                                "cadence": "daily",
                                 "status": "failed",
                                 "error": str(exc),
                                 "sent": 0,
@@ -708,6 +710,21 @@ def run_scheduled_job(
         )
         log_path = None
         if not dry_run:
+            if final_exit == 0 and job.id == "friday-weekly":
+                active_subscriptions = get_active_subscriptions(state_root)
+                if active_subscriptions:
+                    try:
+                        push_dispatch_weekly = dispatch_push_weekly(
+                            state_root,
+                            run_id=run_id,
+                        )
+                    except Exception as exc:
+                        push_dispatch_weekly = {
+                            "cadence": "weekly",
+                            "status": "failed",
+                            "error": str(exc),
+                            "run_id": run_id,
+                        }
             record = {
                 "run_id": run_id,
                 "job": job.id,
@@ -721,6 +738,7 @@ def run_scheduled_job(
                 "archive_path": archive_path,
                 "activity_pulse_path": pulse_path,
                 "push_dispatch": push_dispatch_result,
+                "push_dispatch_weekly": push_dispatch_weekly,
             }
             log_path = _append_schedule_log(state_root, record)
 
@@ -735,6 +753,7 @@ def run_scheduled_job(
             "retry_attempted": len(attempts) > 1,
             "alert_required": final_exit != 0,
             "push_dispatch": push_dispatch_result,
+            "push_dispatch_weekly": push_dispatch_weekly,
             "artifact_paths": {
                 "activity_pulse": pulse_path,
                 "archive": archive_path,

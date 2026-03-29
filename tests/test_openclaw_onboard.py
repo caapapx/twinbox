@@ -147,7 +147,7 @@ def test_run_openclaw_onboard_configures_missing_mailbox_and_llm_then_deploys(
 
     def fake_run_openclaw_deploy(**kwargs: object) -> OpenClawDeployReport:
         deploy_calls.append(kwargs)
-        return OpenClawDeployReport(ok=True, steps=[])
+        return OpenClawDeployReport(ok=True, steps=[], phase2_ready=True)
 
     report = run_openclaw_onboard(
         code_root=repo,
@@ -212,7 +212,7 @@ def test_run_openclaw_onboard_skips_prompts_when_mailbox_and_llm_already_configu
     monkeypatch.setattr("getpass.getpass", lambda _prompt="": (_ for _ in ()).throw(AssertionError("getpass should not be called")))
 
     def fake_run_openclaw_deploy(**_: object) -> OpenClawDeployReport:
-        return OpenClawDeployReport(ok=True, steps=[])
+        return OpenClawDeployReport(ok=True, steps=[], phase2_ready=True)
 
     report = run_openclaw_onboard(
         code_root=repo,
@@ -349,7 +349,7 @@ def test_run_openclaw_onboard_v2_console_prompter_prints_english_shell(
     monkeypatch.setattr("twinbox_core.mailbox.run_preflight", _fake_run_preflight)
     monkeypatch.setattr(
         "twinbox_core.openclaw_onboard.run_openclaw_deploy",
-        lambda **_: OpenClawDeployReport(ok=True, steps=[]),
+        lambda **_: OpenClawDeployReport(ok=True, steps=[], phase2_ready=True),
     )
     # Security defaults to No; must explicitly choose Yes (1 / continue) to proceed.
     answers = iter(["continue", "", "", "1", "", ""])
@@ -759,7 +759,7 @@ def test_run_openclaw_onboard_v2_requires_explicit_steps_even_with_existing_valu
 
     monkeypatch.setattr(
         "twinbox_core.openclaw_onboard.run_openclaw_deploy",
-        lambda **_: OpenClawDeployReport(ok=True, steps=[]),
+        lambda **_: OpenClawDeployReport(ok=True, steps=[], phase2_ready=True),
     )
 
     prompter = _FakePrompter(
@@ -840,7 +840,7 @@ def test_run_openclaw_onboard_v2_reads_existing_values_from_twinbox_json(
     monkeypatch.setattr("twinbox_core.mailbox.run_preflight", _fake_run_preflight)
     monkeypatch.setattr(
         "twinbox_core.openclaw_onboard.run_openclaw_deploy",
-        lambda **_: OpenClawDeployReport(ok=True, steps=[]),
+        lambda **_: OpenClawDeployReport(ok=True, steps=[], phase2_ready=True),
     )
 
     prompter = _FakePrompter(
@@ -889,7 +889,7 @@ def test_run_openclaw_onboard_v2_collects_llm_inputs_before_validation_progress(
     monkeypatch.setattr("twinbox_core.llm.validate_backend", lambda _backend: (True, ""))
     monkeypatch.setattr(
         "twinbox_core.openclaw_onboard.run_openclaw_deploy",
-        lambda **_: OpenClawDeployReport(ok=True, steps=[]),
+        lambda **_: OpenClawDeployReport(ok=True, steps=[], phase2_ready=True),
     )
 
     prompter = _FakePrompter(
@@ -960,7 +960,7 @@ def test_run_openclaw_onboard_v2_collects_mailbox_inputs_before_validation_progr
     monkeypatch.setattr("twinbox_core.llm.validate_backend", lambda _backend: (True, ""))
     monkeypatch.setattr(
         "twinbox_core.openclaw_onboard.run_openclaw_deploy",
-        lambda **_: OpenClawDeployReport(ok=True, steps=[]),
+        lambda **_: OpenClawDeployReport(ok=True, steps=[], phase2_ready=True),
     )
 
     prompter = _FakePrompter(
@@ -1019,7 +1019,7 @@ def test_run_openclaw_onboard_v2_starts_detection_progress_before_mailbox_auto_d
     monkeypatch.setattr("twinbox_core.llm.validate_backend", lambda _backend: (True, ""))
     monkeypatch.setattr(
         "twinbox_core.openclaw_onboard.run_openclaw_deploy",
-        lambda **_: OpenClawDeployReport(ok=True, steps=[]),
+        lambda **_: OpenClawDeployReport(ok=True, steps=[], phase2_ready=True),
     )
 
     prompter = _FakePrompter(
@@ -1076,7 +1076,7 @@ def test_run_openclaw_onboard_v2_times_out_llm_validation(
     monkeypatch.setattr("twinbox_core.mailbox.run_preflight", _fake_run_preflight)
     monkeypatch.setattr(
         "twinbox_core.openclaw_onboard.run_openclaw_deploy",
-        lambda **_: OpenClawDeployReport(ok=True, steps=[]),
+        lambda **_: OpenClawDeployReport(ok=True, steps=[], phase2_ready=True),
     )
 
     def slow_llm_update_runner(**kwargs):
@@ -1141,7 +1141,7 @@ def test_run_openclaw_onboard_v2_llm_validation_failure_returns_to_llm_menu(
     monkeypatch.setattr("twinbox_core.mailbox.run_preflight", _fake_run_preflight)
     monkeypatch.setattr(
         "twinbox_core.openclaw_onboard.run_openclaw_deploy",
-        lambda **_: OpenClawDeployReport(ok=True, steps=[]),
+        lambda **_: OpenClawDeployReport(ok=True, steps=[], phase2_ready=True),
     )
 
     def failing_llm_update_runner(**kwargs):
@@ -1283,7 +1283,7 @@ def test_run_openclaw_onboard_v2_allows_llm_skip_and_returns_incomplete_handoff(
     monkeypatch.setattr("twinbox_core.mailbox.run_preflight", _fake_run_preflight)
     monkeypatch.setattr(
         "twinbox_core.openclaw_onboard.run_openclaw_deploy",
-        lambda **_: OpenClawDeployReport(ok=True, steps=[]),
+        lambda **_: OpenClawDeployReport(ok=True, steps=[], phase2_ready=True),
     )
 
     prompter = _FakePrompter(
@@ -1355,7 +1355,7 @@ def test_run_openclaw_onboard_v2_hides_use_current_llm_when_only_api_key_exists(
     monkeypatch.setattr("twinbox_core.mailbox.run_preflight", _fake_run_preflight)
     monkeypatch.setattr(
         "twinbox_core.openclaw_onboard.run_openclaw_deploy",
-        lambda **_: OpenClawDeployReport(ok=True, steps=[]),
+        lambda **_: OpenClawDeployReport(ok=True, steps=[], phase2_ready=True),
     )
 
     prompter = _FakePrompter(
@@ -1425,7 +1425,7 @@ def test_run_openclaw_onboard_journey_imports_llm_from_openclaw_json(
     monkeypatch.setattr("twinbox_core.mailbox.run_preflight", _fake_run_preflight)
     monkeypatch.setattr(
         "twinbox_core.openclaw_onboard.run_openclaw_deploy",
-        lambda **_: OpenClawDeployReport(ok=True, steps=[]),
+        lambda **_: OpenClawDeployReport(ok=True, steps=[], phase2_ready=True),
     )
 
     calls: list[dict[str, object]] = []
@@ -1496,7 +1496,7 @@ def test_run_openclaw_onboard_journey_openclaw_import_error_returns_to_llm_menu(
     monkeypatch.setattr("twinbox_core.mailbox.run_preflight", _fake_run_preflight)
     monkeypatch.setattr(
         "twinbox_core.openclaw_onboard.run_openclaw_deploy",
-        lambda **_: OpenClawDeployReport(ok=True, steps=[]),
+        lambda **_: OpenClawDeployReport(ok=True, steps=[], phase2_ready=True),
     )
 
     prompter = _FakePrompter(
@@ -1544,7 +1544,7 @@ def test_run_openclaw_onboard_v2_validates_existing_llm_before_continue(
     monkeypatch.setattr("twinbox_core.mailbox.run_preflight", _fake_run_preflight)
     monkeypatch.setattr(
         "twinbox_core.openclaw_onboard.run_openclaw_deploy",
-        lambda **_: OpenClawDeployReport(ok=True, steps=[]),
+        lambda **_: OpenClawDeployReport(ok=True, steps=[], phase2_ready=True),
     )
 
     validated: list[Path] = []
@@ -1605,7 +1605,7 @@ def test_run_openclaw_onboard_v2_stops_when_existing_llm_validation_fails(
     monkeypatch.setattr("twinbox_core.mailbox.run_preflight", _fake_run_preflight)
     monkeypatch.setattr(
         "twinbox_core.openclaw_onboard.run_openclaw_deploy",
-        lambda **_: OpenClawDeployReport(ok=True, steps=[]),
+        lambda **_: OpenClawDeployReport(ok=True, steps=[], phase2_ready=True),
     )
 
     def fake_validate_existing(*, env_file: Path, env: dict[str, str]) -> object:

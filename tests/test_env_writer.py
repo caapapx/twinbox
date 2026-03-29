@@ -108,7 +108,7 @@ def test_merge_env_file_new_file(tmp_path):
 # --- write_env_file ---
 
 def test_write_env_file_basic(tmp_path):
-    p = tmp_path / ".env"
+    p = tmp_path / "secrets.env"
     write_env_file(p, {"FOO": "bar", "BAZ": "qux"})
     content = p.read_text()
     assert "FOO=bar" in content
@@ -116,21 +116,21 @@ def test_write_env_file_basic(tmp_path):
 
 
 def test_write_env_file_permissions(tmp_path):
-    p = tmp_path / ".env"
+    p = tmp_path / "secrets.env"
     write_env_file(p, {"KEY": "val"})
     mode = stat.S_IMODE(p.stat().st_mode)
     assert mode == 0o600
 
 
 def test_write_env_file_quotes_values_with_spaces(tmp_path):
-    p = tmp_path / ".env"
+    p = tmp_path / "secrets.env"
     write_env_file(p, {"FOO": "hello world"})
     content = p.read_text()
     assert '"hello world"' in content
 
 
 def test_write_env_file_round_trip(tmp_path):
-    p = tmp_path / ".env"
+    p = tmp_path / "secrets.env"
     original = {"IMAP_HOST": "imap.gmail.com", "IMAP_PORT": "993", "IMAP_PASS": "app_secret"}
     write_env_file(p, original)
     loaded = load_env_file(p)
@@ -139,14 +139,14 @@ def test_write_env_file_round_trip(tmp_path):
 
 def test_write_env_file_atomic(tmp_path):
     """File should not have tmp files left over."""
-    p = tmp_path / ".env"
+    p = tmp_path / "secrets.env"
     write_env_file(p, {"KEY": "val"})
     remaining = list(tmp_path.iterdir())
     assert len(remaining) == 1
-    assert remaining[0].name == ".env"
+    assert remaining[0].name == "secrets.env"
 
 
 def test_write_env_file_creates_parent_dirs(tmp_path):
-    p = tmp_path / "deep" / "nested" / ".env"
+    p = tmp_path / "deep" / "nested" / "secrets.env"
     write_env_file(p, {"KEY": "val"})
     assert p.exists()

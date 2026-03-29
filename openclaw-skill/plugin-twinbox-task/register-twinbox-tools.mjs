@@ -32,7 +32,18 @@ export function toolOpts(pluginConfig) {
       ? join(cwd, "scripts", "twinbox")
       : "twinbox");
 
-  return { twinboxBin, cwd };
+  const openclawBin =
+    typeof pluginConfig?.openclawBin === "string" && pluginConfig.openclawBin.trim()
+      ? pluginConfig.openclawBin.trim()
+      : process.env.OPENCLAW_BIN || "openclaw";
+
+  return { twinboxBin, cwd, openclawBin };
+}
+
+function appendOpenclawBin(cliArgs, openclawBin) {
+  if (openclawBin && openclawBin !== "openclaw") {
+    cliArgs.push("--openclaw-bin", openclawBin);
+  }
 }
 
 export function runTwinbox(args, { twinboxBin, cwd }, extraEnv = {}) {
@@ -360,6 +371,71 @@ export function registerTwinboxTaskTools(api) {
       if (params.api_url) cliArgs.push("--api-url", params.api_url);
       const extraEnv = { TWINBOX_SETUP_API_KEY: params.api_key ?? "" };
       const r = await runTwinbox(cliArgs, opts, extraEnv);
+      return formatResult(r);
+    },
+  });
+
+  api.registerTool({
+    name: "twinbox_onboarding_start",
+    description:
+      "Start or resume Twinbox Phase 2 onboarding (JSON). Runs: twinbox openclaw onboarding-start. After this tool returns, you MUST reply with a visible text summary.",
+    parameters: Type.Object({}),
+    async execute() {
+      const cliArgs = ["openclaw", "onboarding-start"];
+      const r = await runTwinbox(cliArgs, opts);
+      return formatResult(r);
+    },
+  });
+
+  api.registerTool({
+    name: "twinbox_onboarding_status",
+    description:
+      "Twinbox onboarding progress and readiness (JSON). Runs: twinbox openclaw onboarding-status. After this tool returns, you MUST reply with a visible text summary.",
+    parameters: Type.Object({}),
+    async execute() {
+      const cliArgs = ["openclaw", "onboarding-status"];
+      const r = await runTwinbox(cliArgs, opts);
+      return formatResult(r);
+    },
+  });
+
+  api.registerTool({
+    name: "twinbox_onboarding_advance",
+    description:
+      "Advance Twinbox onboarding past non-push stages. Runs: twinbox openclaw onboarding-advance. After this tool returns, you MUST reply with a visible text summary.",
+    parameters: Type.Object({
+      profile_notes: Type.Optional(Type.String({ description: "Notes for profile_setup stage" })),
+      calibration_notes: Type.Optional(Type.String({ description: "Weekly focus / ignore guidance" })),
+      cc_downweight: Type.Optional(Type.Union([Type.Literal("on"), Type.Literal("off")])),
+    }),
+    async execute(...args) {
+      const params = args.length >= 2 ? args[1] : args[0];
+      const cliArgs = ["openclaw", "onboarding-advance"];
+      if (params?.profile_notes) cliArgs.push("--profile-notes", params.profile_notes);
+      if (params?.calibration_notes) cliArgs.push("--calibration-notes", params.calibration_notes);
+      if (params?.cc_downweight) cliArgs.push("--cc-downweight", params.cc_downweight);
+      const r = await runTwinbox(cliArgs, opts);
+      return formatResult(r);
+    },
+  });
+
+  api.registerTool({
+    name: "twinbox_onboarding_confirm_push",
+    description:
+      "Complete push_subscription: subscribe session, sync schedules, advance onboarding. Runs: twinbox openclaw onboarding-confirm-push SESSION. After this tool returns, you MUST reply with a visible text summary.",
+    parameters: Type.Object({
+      session_target: Type.String({ description: "OpenClaw session id to receive pushes" }),
+      daily: Type.Optional(Type.Union([Type.Literal("on"), Type.Literal("off")], { default: "on" })),
+      weekly: Type.Optional(Type.Union([Type.Literal("on"), Type.Literal("off")], { default: "on" })),
+    }),
+    async execute(...args) {
+      const params = args.length >= 2 ? args[1] : args[0];
+      const session = params?.session_target ?? "";
+      const daily = params?.daily ?? "on";
+      const weekly = params?.weekly ?? "on";
+      const cliArgs = ["openclaw", "onboarding-confirm-push", session, "--daily", daily, "--weekly", weekly];
+      appendOpenclawBin(cliArgs, opts.openclawBin);
+      const r = await runTwinbox(cliArgs, opts);
       return formatResult(r);
     },
   });

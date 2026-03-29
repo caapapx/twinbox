@@ -196,8 +196,8 @@ class OrchestrationTest(unittest.TestCase):
                 {"returncode": 0, "stdout": "ok", "stderr": ""},
             )()
             with patch("twinbox_core.orchestration.subprocess.run", return_value=completed), \
-                patch("twinbox_core.orchestration.get_active_subscriptions", return_value=[PushSubscription(session_id="sess-1")]), \
-                patch("twinbox_core.orchestration.dispatch_push", return_value={"sent": 1, "failed": 0, "skipped": 0}) as mock_dispatch:
+                patch("twinbox_core.orchestration.get_active_subscriptions", return_value=[PushSubscription(session_target="sess-1")]), \
+                patch("twinbox_core.orchestration.dispatch_push_daily", return_value={"sent": 1, "failed": 0, "skipped": 0}) as mock_dispatch:
                 exit_code, payload = run_scheduled_job(
                     self.repo_root,
                     temp_root,
@@ -240,7 +240,7 @@ class OrchestrationTest(unittest.TestCase):
             )()
             with patch("twinbox_core.orchestration.subprocess.run", return_value=completed), \
                 patch("twinbox_core.orchestration.get_active_subscriptions", return_value=[]), \
-                patch("twinbox_core.orchestration.dispatch_push") as mock_dispatch:
+                patch("twinbox_core.orchestration.dispatch_push_daily") as mock_dispatch:
                 exit_code, payload = run_scheduled_job(
                     self.repo_root,
                     temp_root,
@@ -282,8 +282,8 @@ class OrchestrationTest(unittest.TestCase):
                 {"returncode": 0, "stdout": "ok", "stderr": ""},
             )()
             with patch("twinbox_core.orchestration.subprocess.run", return_value=completed), \
-                patch("twinbox_core.orchestration.get_active_subscriptions", return_value=[PushSubscription(session_id="sess-1")]), \
-                patch("twinbox_core.orchestration.dispatch_push", side_effect=RuntimeError("push boom")):
+                patch("twinbox_core.orchestration.get_active_subscriptions", return_value=[PushSubscription(session_target="sess-1")]), \
+                patch("twinbox_core.orchestration.dispatch_push_daily", side_effect=RuntimeError("push boom")):
                 exit_code, payload = run_scheduled_job(
                     self.repo_root,
                     temp_root,
