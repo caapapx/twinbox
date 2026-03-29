@@ -553,6 +553,83 @@ def test_run_subtask_brief_includes_action_candidates_in_user_prompt(
     assert "- thread-A | score=88 | reason=waiting_on_me | why=今天必须回复 | action=回复客户" in captured["prompt"]
 
 
+def test_run_subtask_brief_aligns_weekly_action_fields_with_candidate_order(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = {"threads": [], "human_context": {}}
+    ctx_path = tmp_path / "context-pack.json"
+    ctx_path.write_text(json.dumps(context, ensure_ascii=False), encoding="utf-8")
+    out = tmp_path / "phase-4-out"
+    out.mkdir(parents=True)
+    (out / "action-candidates.json").write_text(
+        json.dumps(
+            {
+                "action_candidates": [
+                    {
+                        "thread_key": "direct-thread",
+                        "urgency_score": 80,
+                        "reason_code": "waiting_on_me",
+                        "why": "主收件线程",
+                        "action_hint": "先回复客户A",
+                    },
+                    {
+                        "thread_key": "cc-thread",
+                        "urgency_score": 54,
+                        "reason_code": "monitor_only",
+                        "why": "抄送线程",
+                        "action_hint": "再关注法务进展",
+                    },
+                ]
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "twinbox_core.phase4_value.call_llm",
+        lambda *a, **k: json.dumps(
+            {
+                "weekly_brief": {
+                    "period": "p",
+                    "total_threads_in_window": 0,
+                    "action_now": [
+                        {"thread_key": "cc-thread", "flow": "legal", "why": "先看抄送", "action": "关注法务进展"},
+                        {"thread_key": "direct-thread", "flow": "sales", "why": "客户在等", "action": "回复客户A"},
+                    ],
+                    "backlog": [],
+                    "important_changes": [
+                        {"thread_key": "cc-thread", "change": "法务已更新", "impact": "仍需关注"}
+                    ],
+                    "flow_summary": [],
+                    "top_actions": ["关注法务进展", "回复客户A"],
+                    "rhythm_observation": "r",
+                }
+            },
+            ensure_ascii=False,
+        ),
+    )
+    monkeypatch.setattr(
+        "twinbox_core.phase4_value.resolve_backend",
+        lambda **k: SimpleNamespace(backend="stub", model="stub-model"),
+    )
+
+    result = run_subtask(
+        kind="brief",
+        context_path=ctx_path,
+        output_dir=out,
+        env_file=None,
+        model_override="stub-model",
+    )
+
+    weekly = result["weekly_brief"]
+    assert [item["thread_key"] for item in weekly["action_now"]] == ["direct-thread", "cc-thread"]
+    assert weekly["top_actions"] == ["回复客户A", "关注法务进展"]
+    assert weekly["important_changes"] == [{"thread_key": "cc-thread", "change": "法务已更新", "impact": "仍需关注"}]
+
+
 def test_call_with_prompt_passes_system_prompt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 

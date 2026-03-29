@@ -841,6 +841,77 @@ def _render_action_candidates_prompt_block(output_dir: Path) -> str:
     return "\n".join(lines)
 
 
+def _load_action_candidates(output_dir: Path) -> list[dict[str, object]]:
+    path = output_dir / "action-candidates.json"
+    if not path.is_file():
+        return []
+    try:
+        payload = _load_object(path)
+    except Exception:
+        return []
+    candidates = payload.get("action_candidates", [])
+    if not isinstance(candidates, list):
+        return []
+    return [
+        item
+        for item in candidates
+        if isinstance(item, dict) and str(item.get("thread_key", "") or "").strip()
+    ]
+
+
+def _align_weekly_action_fields_with_candidates(
+    response: dict[str, object],
+    output_dir: Path,
+) -> dict[str, object]:
+    weekly_brief = response.get("weekly_brief", {})
+    if not isinstance(weekly_brief, dict):
+        return response
+
+    candidates = _load_action_candidates(output_dir)
+    if not candidates:
+        return response
+
+    candidate_order = {
+        str(item.get("thread_key", "") or ""): index
+        for index, item in enumerate(candidates)
+    }
+    candidate_map = {
+        str(item.get("thread_key", "") or ""): item
+        for item in candidates
+    }
+
+    action_now = weekly_brief.get("action_now", [])
+    aligned_action_now: list[dict[str, object]] = []
+    if isinstance(action_now, list):
+        aligned_action_now = [
+            item
+            for item in action_now
+            if isinstance(item, dict) and str(item.get("thread_key", "") or "") in candidate_order
+        ]
+        aligned_action_now.sort(
+            key=lambda item: candidate_order[str(item.get("thread_key", "") or "")]
+        )
+        weekly_brief["action_now"] = aligned_action_now
+
+    top_actions: list[str] = []
+    for item in aligned_action_now[:3]:
+        thread_key = str(item.get("thread_key", "") or "")
+        action_text = str(item.get("action", "") or "").strip()
+        if not action_text:
+            action_text = str(candidate_map.get(thread_key, {}).get("action_hint", "") or "").strip()
+        if action_text and action_text not in top_actions:
+            top_actions.append(action_text)
+
+    if not top_actions:
+        for candidate in candidates[:3]:
+            action_text = str(candidate.get("action_hint", "") or "").strip()
+            if action_text and action_text not in top_actions:
+                top_actions.append(action_text)
+
+    weekly_brief["top_actions"] = top_actions
+    return response
+
+
 def run_single(config: Phase4RunConfig) -> dict[str, object]:
     context = _load_object(config.context_path)
     had_threads = "threads" in context and isinstance(context["threads"], list)
@@ -964,6 +1035,7 @@ def run_subtask(
 
     if kind == "brief":
         response = _ensure_material_summary(response, context=context)
+        response = _align_weekly_action_fields_with_candidates(response, output_dir)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(response, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
