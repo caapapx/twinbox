@@ -11,9 +11,8 @@ from pathlib import Path
 from typing import Any
 
 from .artifacts import generated_at
-from .context_builder import _normalize_thread, run_phase2_loading, run_phase3_loading
+from .context_builder import _build_human_context, _normalize_thread, run_phase2_loading, run_phase3_loading
 from .mailbox import build_effective_env, find_himalaya_binary, render_himalaya_config, resolve_mailbox_paths
-from .onboarding import load_state
 from .paths import resolve_state_root
 from .routing_rules import apply_routing_rules
 
@@ -493,28 +492,13 @@ def run_phase4_loading(
             }
         )
 
-    facts_raw = (runtime_context / "manual-facts.yaml").read_text(encoding="utf-8").strip() if (runtime_context / "manual-facts.yaml").is_file() else ""
-    habits_raw = (runtime_context / "manual-habits.yaml").read_text(encoding="utf-8").strip() if (runtime_context / "manual-habits.yaml").is_file() else ""
+    human_context = _build_human_context(state_root)
+    facts_raw = str(human_context["facts_raw"] or "")
+    habits_raw = str(human_context["habits_raw"] or "")
     material_bundle = _read_material_extract_bundle(runtime_context / "material-extracts", runtime_context / "material-manifest.json")
-    has_facts = bool(facts_raw and facts_raw != "facts: []")
-    has_habits = bool(habits_raw and habits_raw != "habits: []")
+    has_facts = bool(human_context["has_facts"])
+    has_habits = bool(human_context["has_habits"])
     has_material_extracts = len(material_bundle.strip()) > 50
-
-    ob_state = load_state(state_root)
-    raw_notes = ob_state.profile_data.get("notes") if isinstance(ob_state.profile_data, dict) else None
-    onboarding_notes = raw_notes.strip() if isinstance(raw_notes, str) and raw_notes.strip() else ""
-    raw_calibration = ob_state.profile_data.get("calibration") if isinstance(ob_state.profile_data, dict) else None
-    onboarding_calibration = (
-        raw_calibration.strip() if isinstance(raw_calibration, str) and raw_calibration.strip() else ""
-    )
-
-    cal_path = runtime_context / "instance-calibration-notes.md"
-    calibration_raw = (
-        cal_path.read_text(encoding="utf-8").strip() if cal_path.is_file() else ""
-    )
-    if not calibration_raw and onboarding_calibration:
-        calibration_raw = onboarding_calibration
-    has_calibration = bool(calibration_raw)
 
     context = {
         "generated_at": generated_at(),
@@ -541,10 +525,10 @@ def run_phase4_loading(
             "manual_facts_raw": facts_raw if has_facts else None,
             "manual_habits_raw": habits_raw if has_habits else None,
             "material_extracts_notes": material_bundle if has_material_extracts else None,
-            "has_onboarding_profile_notes": bool(onboarding_notes),
-            "onboarding_profile_notes": onboarding_notes or None,
-            "has_calibration": has_calibration,
-            "calibration_notes": calibration_raw if has_calibration else None,
+            "has_onboarding_profile_notes": human_context["has_onboarding_profile_notes"],
+            "onboarding_profile_notes": human_context["onboarding_profile_notes"] or None,
+            "has_calibration": human_context["has_calibration"],
+            "calibration_notes": human_context["calibration_notes"] if human_context["has_calibration"] else None,
         },
     }
     output_path = _write_json(phase4_dir / "context-pack.json", context)

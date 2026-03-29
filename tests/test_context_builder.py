@@ -83,6 +83,7 @@ class ContextBuilderTest(unittest.TestCase):
             self.assertEqual(output["mailbox_summary"]["total_envelopes"], 2)
             self.assertTrue(output["human_context"]["has_facts"])
             self.assertEqual(context["top_contacts"][0]["key"], "alice@example.com")
+            self.assertTrue((root / "runtime/context/human-context.yaml").is_file())
 
     def test_phase2_loading_includes_calibration_notes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -185,6 +186,53 @@ class ContextBuilderTest(unittest.TestCase):
             self.assertTrue(hc["has_calibration"])
             self.assertIn("This calibration note is long enough", hc["calibration_notes"])
             self.assertNotEqual(hc["calibration_notes"], "should not win")
+
+    def test_phase2_loading_prefers_human_context_yaml_over_legacy_sources(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_phase1_inputs(root)
+            (root / "runtime/context/human-context.yaml").write_text(
+                "profile_notes: yaml profile note\n"
+                "calibration: yaml calibration\n"
+                "facts:\n"
+                "  - id: Y1\n"
+                "    type: role\n"
+                "    content: yaml fact\n"
+                "habits:\n"
+                "  - id: H2\n"
+                "    type: periodic\n"
+                "    content: yaml habit\n",
+                encoding="utf-8",
+            )
+            (root / "runtime").mkdir(parents=True, exist_ok=True)
+            (root / "runtime/onboarding-state.json").write_text(
+                json.dumps(
+                    {
+                        "current_stage": "material_import",
+                        "completed_stages": ["profile_setup"],
+                        "profile_data": {
+                            "notes": "legacy note",
+                            "calibration": "legacy calibration",
+                        },
+                        "mailbox_config": {},
+                        "materials": [],
+                        "routing_rules": [],
+                        "push_enabled": False,
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            run_phase2_loading(root)
+            output = json.loads(
+                (root / "runtime/validation/phase-2/context-pack.json").read_text(encoding="utf-8")
+            )
+            hc = output["human_context"]
+            self.assertEqual(hc["onboarding_profile_notes"], "yaml profile note")
+            self.assertEqual(hc["calibration_notes"], "yaml calibration")
+            self.assertIn("yaml fact", hc["manual_facts_raw"])
+            self.assertIn("yaml habit", hc["manual_habits_raw"])
 
     def test_phase3_loading_writes_context_pack(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

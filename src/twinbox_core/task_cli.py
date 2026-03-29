@@ -14,6 +14,7 @@ from typing import Any
 
 import yaml
 
+from .human_context_store import human_context_path, update_human_context_store, upsert_human_context_fact
 from .paths import resolve_state_root
 
 from .task_cli_daemon import dispatch_daemon, register_daemon_parser
@@ -965,13 +966,8 @@ def cmd_material_preview(args: argparse.Namespace) -> int:
 
 
 def cmd_context_upsert_fact(args: argparse.Namespace) -> int:
-    """Add or update manual fact to runtime/context/manual-facts.yaml."""
+    """Add or update manual fact in the unified human-context store."""
     canonical_root = _state_root()
-
-    facts_path = canonical_root / "runtime" / "context" / "manual-facts.yaml"
-    facts_data = {"facts": []}
-    if facts_path.exists():
-        facts_data = yaml.safe_load(facts_path.read_text(encoding="utf-8")) or {"facts": []}
 
     from datetime import datetime
     new_fact = {
@@ -982,18 +978,9 @@ def cmd_context_upsert_fact(args: argparse.Namespace) -> int:
         "content": args.content,
     }
 
-    # Update existing fact or append new one
-    facts = facts_data.setdefault("facts", [])
-    existing_idx = next((i for i, f in enumerate(facts) if f.get("id") == args.id), None)
-    if existing_idx is not None:
-        facts[existing_idx] = new_fact
-        print(f"已更新事实: {args.id}")
-    else:
-        facts.append(new_fact)
-        print(f"已添加事实: {args.id}")
-
-    facts_path.write_text(yaml.dump(facts_data, allow_unicode=True, sort_keys=False), encoding="utf-8")
-    print(f"保存到: {facts_path}")
+    _saved_fact, created = upsert_human_context_fact(canonical_root, new_fact)
+    print(f"{'已添加' if created else '已更新'}事实: {args.id}")
+    print(f"保存到: {human_context_path(canonical_root)}")
     return 0
 
 
@@ -1610,11 +1597,18 @@ def cmd_onboarding_next(args: argparse.Namespace) -> int:
 
     completed_stage = state.current_stage
     
-    # profile_setup persists conversational profile summaries for later phase loading.
-    if completed_stage == "profile_setup" and getattr(args, "profile_notes", None):
-        state.profile_data["notes"] = args.profile_notes
-    if completed_stage == "profile_setup" and getattr(args, "calibration_notes", None):
-        state.profile_data["calibration"] = args.calibration_notes
+    # profile_setup persists conversational profile summaries into the unified human-context store.
+    if completed_stage == "profile_setup":
+        profile_notes = getattr(args, "profile_notes", None)
+        calibration_notes = getattr(args, "calibration_notes", None)
+        if profile_notes is not None or calibration_notes is not None:
+            update_human_context_store(
+                state_root,
+                profile_notes=profile_notes,
+                calibration=calibration_notes,
+            )
+            state.profile_data.pop("notes", None)
+            state.profile_data.pop("calibration", None)
         
     complete_stage(state, state.current_stage)
     save_state(state_root, state)

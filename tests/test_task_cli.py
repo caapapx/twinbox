@@ -642,6 +642,30 @@ class TestQueueDigestThreadCli:
 
         assert main(["schedule", "update", "daily-refresh", "--cron", "30 9 * *", "--json"]) == 1
 
+    def test_context_upsert_fact_writes_human_context_yaml(self, monkeypatch, tmp_path, capsys):
+        monkeypatch.setenv("TWINBOX_STATE_ROOT", str(tmp_path))
+
+        assert main(
+            [
+                "context",
+                "upsert-fact",
+                "--id",
+                "customer-tier",
+                "--type",
+                "account",
+                "--content",
+                "A 级客户需优先回复",
+            ]
+        ) == 0
+        out = capsys.readouterr().out
+        human_context_path = tmp_path / "runtime" / "context" / "human-context.yaml"
+        payload = yaml.safe_load(human_context_path.read_text(encoding="utf-8"))
+
+        assert "已添加事实: customer-tier" in out
+        assert str(human_context_path) in out
+        assert payload["facts"][0]["id"] == "customer-tier"
+        assert payload["facts"][0]["content"] == "A 级客户需优先回复"
+
     def test_onboarding_next_profile_setup_persists_profile_and_calibration_notes(
         self, monkeypatch, tmp_path, capsys
     ):
@@ -667,11 +691,15 @@ class TestQueueDigestThreadCli:
         ) == 0
         payload = json.loads(capsys.readouterr().out)
         state = load_state(tmp_path)
+        human_context_path = tmp_path / "runtime" / "context" / "human-context.yaml"
+        human_context = yaml.safe_load(human_context_path.read_text(encoding="utf-8"))
 
         assert payload["completed_stage"] == "profile_setup"
         assert payload["current_stage"] == "material_import"
-        assert state.profile_data["notes"] == "  engineer; checks mail at 9:30  "
-        assert state.profile_data["calibration"] == "  本周重点关注部署审批，忽略 HR 通知。  "
+        assert "notes" not in state.profile_data
+        assert "calibration" not in state.profile_data
+        assert human_context["profile_notes"] == "engineer; checks mail at 9:30"
+        assert human_context["calibration"] == "本周重点关注部署审批，忽略 HR 通知。"
 
     def test_onboarding_next_ignores_calibration_notes_outside_profile_setup(
         self, monkeypatch, tmp_path, capsys

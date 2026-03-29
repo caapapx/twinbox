@@ -10,8 +10,10 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+import yaml
+
+from .human_context_store import load_human_context_store
 from .mailbox import load_env_file
-from .onboarding import load_state
 
 
 class ContextBuilderError(RuntimeError):
@@ -58,12 +60,12 @@ def _parse_yaml_simple_items(text: str) -> list[str]:
     items: list[str] = []
     current: list[str] = []
     for raw_line in text.splitlines():
-        if re.match(r"^\s+-\s+id:", raw_line):
+        if re.match(r"^\s*-\s+id:", raw_line):
             if current:
                 items.append("\n".join(current))
-            current = [re.sub(r"^\s+-\s+", "", raw_line)]
+            current = [re.sub(r"^\s*-\s+", "", raw_line)]
             continue
-        if current and re.match(r"^\s{4,}\S", raw_line):
+        if current and re.match(r"^\s{2,}\S", raw_line):
             current.append(raw_line.strip())
     if current:
         items.append("\n".join(current))
@@ -418,25 +420,16 @@ def _load_phase1_data(state_root: Path) -> Phase1Data:
 
 
 def _build_human_context(state_root: Path) -> dict[str, object]:
-    runtime_context = state_root / "runtime/context"
-    facts_raw = _read_text_if_exists(runtime_context / "manual-facts.yaml")
-    habits_raw = _read_text_if_exists(runtime_context / "manual-habits.yaml")
+    store = load_human_context_store(state_root)
+    facts = store.get("facts", [])
+    habits = store.get("habits", [])
+    facts_raw = yaml.safe_dump({"facts": facts}, allow_unicode=True, sort_keys=False).strip()
+    habits_raw = yaml.safe_dump({"habits": habits}, allow_unicode=True, sort_keys=False).strip()
     facts_items = _parse_yaml_simple_items(facts_raw)
     habits_items = _parse_yaml_simple_items(habits_raw)
 
-    onboarding_notes = ""
-    ob_state = load_state(state_root)
-    raw_notes = ob_state.profile_data.get("notes") if isinstance(ob_state.profile_data, dict) else None
-    if isinstance(raw_notes, str) and raw_notes.strip():
-        onboarding_notes = raw_notes.strip()
-    onboarding_calibration = ""
-    raw_calibration = ob_state.profile_data.get("calibration") if isinstance(ob_state.profile_data, dict) else None
-    if isinstance(raw_calibration, str) and raw_calibration.strip():
-        onboarding_calibration = raw_calibration.strip()
-
-    calibration_raw = _read_text_if_exists(runtime_context / "instance-calibration-notes.md")
-    if not calibration_raw and onboarding_calibration:
-        calibration_raw = onboarding_calibration
+    onboarding_notes = str(store.get("profile_notes", "") or "")
+    calibration_raw = str(store.get("calibration", "") or "")
     has_calibration = bool(calibration_raw)
 
     return {
