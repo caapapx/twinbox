@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -35,6 +36,70 @@ func TestRunInstallAcceptsHTTPArchiveSource(t *testing.T) {
 	pkgRoot := filepath.Join(stateRoot, "vendor", "twinbox_core")
 	assertFileContains(t, filepath.Join(pkgRoot, "__init__.py"), "# pkg")
 	assertFileContains(t, filepath.Join(pkgRoot, "task_cli.py"), "VALUE = 42")
+}
+
+func TestBuildFallbackCommandConfigPrefersCodeRootSrcAndStateVendor(t *testing.T) {
+	home := t.TempDir()
+	codeRoot := filepath.Join(home, "repo")
+	stateRoot := filepath.Join(home, "state")
+
+	t.Setenv("HOME", home)
+	t.Setenv("TWINBOX_CODE_ROOT", codeRoot)
+	t.Setenv("TWINBOX_STATE_ROOT", stateRoot)
+	t.Setenv("PYTHONPATH", "/already/here")
+
+	cfg := buildFallbackCommandConfig([]string{"task", "todo", "--json"})
+
+	if cfg.Dir != codeRoot {
+		t.Fatalf("Dir = %q, want %q", cfg.Dir, codeRoot)
+	}
+	if got, want := cfg.Env["TWINBOX_STATE_ROOT"], stateRoot; got != want {
+		t.Fatalf("TWINBOX_STATE_ROOT = %q, want %q", got, want)
+	}
+	if got, want := cfg.Env["TWINBOX_CANONICAL_ROOT"], stateRoot; got != want {
+		t.Fatalf("TWINBOX_CANONICAL_ROOT = %q, want %q", got, want)
+	}
+	pyPath := strings.Split(cfg.Env["PYTHONPATH"], string(os.PathListSeparator))
+	wantPrefix := []string{
+		filepath.Join(codeRoot, "src"),
+		filepath.Join(stateRoot, "vendor"),
+		"/already/here",
+	}
+	if len(pyPath) < len(wantPrefix) {
+		t.Fatalf("PYTHONPATH entries = %v, want prefix %v", pyPath, wantPrefix)
+	}
+	for i, want := range wantPrefix {
+		if pyPath[i] != want {
+			t.Fatalf("PYTHONPATH[%d] = %q, want %q (full=%v)", i, pyPath[i], want, pyPath)
+		}
+	}
+}
+
+func TestBuildFallbackCommandConfigAppliesProfileBeforePythonImport(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("PYTHONPATH", "")
+	t.Setenv("TWINBOX_STATE_ROOT", "")
+	t.Setenv("TWINBOX_HOME", "")
+	t.Setenv("TWINBOX_CODE_ROOT", "")
+
+	cfg := buildFallbackCommandConfig([]string{"--profile", "work", "task", "todo"})
+
+	wantHome := filepath.Join(home, ".twinbox")
+	wantState := filepath.Join(wantHome, "profiles", "work", "state")
+	if got := cfg.Env["TWINBOX_HOME"]; got != wantHome {
+		t.Fatalf("TWINBOX_HOME = %q, want %q", got, wantHome)
+	}
+	if got := cfg.Env["TWINBOX_STATE_ROOT"]; got != wantState {
+		t.Fatalf("TWINBOX_STATE_ROOT = %q, want %q", got, wantState)
+	}
+	if got := cfg.Env["TWINBOX_CANONICAL_ROOT"]; got != wantState {
+		t.Fatalf("TWINBOX_CANONICAL_ROOT = %q, want %q", got, wantState)
+	}
+	pyPath := strings.Split(cfg.Env["PYTHONPATH"], string(os.PathListSeparator))
+	if len(pyPath) == 0 || pyPath[0] != filepath.Join(wantHome, "vendor") {
+		t.Fatalf("PYTHONPATH = %v, want first entry %q", pyPath, filepath.Join(wantHome, "vendor"))
+	}
 }
 
 func buildTwinboxCoreTarball(t *testing.T) []byte {
