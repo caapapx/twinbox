@@ -29,6 +29,7 @@ Build a tarball from the repo (`scripts/package_vendor_tarball.sh`), then:
 ```
 
 Then run `twinbox-go …` directly, or `PYTHONPATH="$TWINBOX_STATE_ROOT/vendor" python3 -m twinbox_core.task_cli …` if you want to bypass Go.
+`install --archive` now also writes `vendor/MANIFEST.json` with `twinbox_version`; vendor-based fallback checks that manifest before execing Python.
 
 Override socket path:
 
@@ -41,6 +42,7 @@ Override socket path:
 - Same argv as `twinbox` after optional `--socket`.
 - Python remains the source of truth for behavior; this binary only saves cold-start cost when the daemon is running (`twinbox daemon start`).
 - `--profile NAME` is honored on the fallback path before Python import, so shared-vendor profile installs work without a repo checkout.
+- When running from vendor instead of repo `src/`, fallback requires `vendor/MANIFEST.json` and rejects a mismatched `twinbox_version`.
 
 ## Environment variables
 

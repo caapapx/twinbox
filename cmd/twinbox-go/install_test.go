@@ -36,6 +36,8 @@ func TestRunInstallAcceptsHTTPArchiveSource(t *testing.T) {
 	pkgRoot := filepath.Join(stateRoot, "vendor", "twinbox_core")
 	assertFileContains(t, filepath.Join(pkgRoot, "__init__.py"), "# pkg")
 	assertFileContains(t, filepath.Join(pkgRoot, "task_cli.py"), "VALUE = 42")
+	manifestPath := filepath.Join(stateRoot, "vendor", "MANIFEST.json")
+	assertFileContains(t, manifestPath, "\"twinbox_version\": \""+twinboxProtocolVersion+"\"")
 }
 
 func TestBuildFallbackCommandConfigPrefersCodeRootSrcAndStateVendor(t *testing.T) {
@@ -99,6 +101,42 @@ func TestBuildFallbackCommandConfigAppliesProfileBeforePythonImport(t *testing.T
 	pyPath := strings.Split(cfg.Env["PYTHONPATH"], string(os.PathListSeparator))
 	if len(pyPath) == 0 || pyPath[0] != filepath.Join(wantHome, "vendor") {
 		t.Fatalf("PYTHONPATH = %v, want first entry %q", pyPath, filepath.Join(wantHome, "vendor"))
+	}
+}
+
+func TestValidateFallbackVendorAttestationRejectsVersionMismatch(t *testing.T) {
+	home := t.TempDir()
+	stateRoot := filepath.Join(home, "state")
+	vendorRoot := filepath.Join(stateRoot, "vendor")
+	pkgRoot := filepath.Join(vendorRoot, "twinbox_core")
+	if err := os.MkdirAll(pkgRoot, 0o755); err != nil {
+		t.Fatalf("mkdir vendor: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(pkgRoot, "__init__.py"), []byte("# pkg\n"), 0o644); err != nil {
+		t.Fatalf("write package: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(vendorRoot, "MANIFEST.json"),
+		[]byte("{\"twinbox_version\":\"9.9.9\"}\n"),
+		0o644,
+	); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	cfg := fallbackCommandConfig{
+		Env: map[string]string{
+			"HOME":                   home,
+			"TWINBOX_STATE_ROOT":     stateRoot,
+			"TWINBOX_CANONICAL_ROOT": stateRoot,
+		},
+	}
+
+	err := validateFallbackVendorAttestation(cfg)
+	if err == nil {
+		t.Fatalf("validateFallbackVendorAttestation() = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "twinbox_version") {
+		t.Fatalf("error = %v, want mention twinbox_version", err)
 	}
 }
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -59,12 +60,16 @@ func fallbackExec(argv []string) {
 	if py == "" {
 		py = "python3"
 	}
+	cfg := buildFallbackCommandConfig(argv)
+	if err := validateFallbackVendorAttestation(cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "twinbox-go: %v\n", err)
+		os.Exit(1)
+	}
 	exe, err := exec.LookPath(py)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "twinbox-go: no daemon and cannot find python: %v\n", err)
 		os.Exit(127)
 	}
-	cfg := buildFallbackCommandConfig(argv)
 	cmd := exec.Command(exe, append([]string{"-m", "twinbox_core.task_cli"}, cfg.Argv...)...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -206,4 +211,75 @@ func envMapToList(env map[string]string) []string {
 		out = append(out, key+"="+value)
 	}
 	return out
+}
+
+func validateFallbackVendorAttestation(cfg fallbackCommandConfig) error {
+	if cfg.Dir != "" {
+		srcPath := filepath.Join(cfg.Dir, "src", "twinbox_core")
+		if info, err := os.Stat(srcPath); err == nil && info.IsDir() {
+			return nil
+		}
+	}
+
+	seen := map[string]struct{}{}
+	entries := make([]string, 0)
+	addEntry := func(path string) {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			return
+		}
+		path = filepath.Clean(path)
+		if _, ok := seen[path]; ok {
+			return
+		}
+		seen[path] = struct{}{}
+		entries = append(entries, path)
+	}
+	for _, entry := range filepath.SplitList(cfg.Env["PYTHONPATH"]) {
+		addEntry(entry)
+	}
+	if home := strings.TrimSpace(cfg.Env["TWINBOX_HOME"]); home != "" {
+		addEntry(filepath.Join(home, "vendor"))
+	}
+	if stateRoot := strings.TrimSpace(cfg.Env["TWINBOX_STATE_ROOT"]); stateRoot != "" {
+		addEntry(filepath.Join(stateRoot, "vendor"))
+	}
+	if home := strings.TrimSpace(cfg.Env["HOME"]); home != "" {
+		addEntry(filepath.Join(home, ".twinbox", "vendor"))
+	}
+
+	for _, entry := range entries {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		pkgPath := filepath.Join(entry, "twinbox_core")
+		info, err := os.Stat(pkgPath)
+		if err != nil || !info.IsDir() {
+			continue
+		}
+		manifestPath := filepath.Join(entry, "MANIFEST.json")
+		body, err := os.ReadFile(manifestPath)
+		if err != nil {
+			return fmt.Errorf("vendor MANIFEST missing for %s", entry)
+		}
+		var manifest map[string]any
+		if err := json.Unmarshal(body, &manifest); err != nil {
+			return fmt.Errorf("vendor MANIFEST invalid for %s: %w", entry, err)
+		}
+		version := strings.TrimSpace(fmt.Sprint(manifest["twinbox_version"]))
+		if version == "" || version == "<nil>" {
+			return fmt.Errorf("vendor MANIFEST missing twinbox_version for %s", entry)
+		}
+		if version != twinboxProtocolVersion {
+			return fmt.Errorf(
+				"vendor MANIFEST twinbox_version mismatch for %s: got %s want %s",
+				entry,
+				version,
+				twinboxProtocolVersion,
+			)
+		}
+		return nil
+	}
+	return nil
 }

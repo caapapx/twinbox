@@ -3,6 +3,7 @@ package main
 import (
 	"archive/tar"
 	"compress/gzip"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -42,6 +43,10 @@ func runInstall(args []string) int {
 	}
 	if err := extractTwinboxCoreTarball(*archivePath, vendorDir); err != nil {
 		fmt.Fprintf(os.Stderr, "twinbox-go install: %v\n", err)
+		return 1
+	}
+	if err := writeVendorManifest(vendorDir); err != nil {
+		fmt.Fprintf(os.Stderr, "twinbox-go install: write manifest: %v\n", err)
 		return 1
 	}
 	fmt.Printf("extracted twinbox_core -> %s\n", destPkg)
@@ -118,4 +123,35 @@ func openArchiveSource(path string) (io.ReadCloser, error) {
 		return resp.Body, nil
 	}
 	return os.Open(path)
+}
+
+func writeVendorManifest(vendorDir string) error {
+	fileCount, err := countVendorFiles(filepath.Join(vendorDir, "twinbox_core"))
+	if err != nil {
+		return err
+	}
+	manifest := map[string]any{
+		"installed_at":    time.Now().UTC().Format(time.RFC3339),
+		"file_count":      fileCount,
+		"twinbox_version": twinboxProtocolVersion,
+	}
+	body, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(vendorDir, "MANIFEST.json"), append(body, '\n'), 0o644)
+}
+
+func countVendorFiles(root string) (int, error) {
+	total := 0
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.Mode().IsRegular() {
+			total++
+		}
+		return nil
+	})
+	return total, err
 }
