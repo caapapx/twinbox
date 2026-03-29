@@ -1105,6 +1105,7 @@ class TestQueueDigestThreadCli:
         out = capsys.readouterr().out
 
         assert out.startswith("# 每周简报\n")
+        assert "> 当前周视图快照：基于当前邮箱状态生成，不是本周 daily 的自动累计。" in out
         assert "## Action Now" in out
         assert "## Backlog" in out
         assert "## Important Changes" in out

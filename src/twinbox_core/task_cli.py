@@ -166,6 +166,8 @@ def _render_weekly_digest_markdown(brief: dict[str, Any]) -> list[str]:
     lines = [
         "# 每周简报",
         "",
+        "> 当前周视图快照：基于当前邮箱状态生成，不是本周 daily 的自动累计。",
+        "",
         "## Overview",
         "",
         f"- Period: {brief.get('period', 'unknown')}",
