@@ -87,9 +87,11 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 | 自定义周报模板（标题/章节顺序/措辞） | 先展示 `config/weekly-template.md`，再把用户确认的新模板用 `twinbox context import-material FILE --intent template_hint` 导入 |
 | 配置 Twinbox integration 默认值 | `twinbox config integration-set --use-fragment yes|no [--fragment-path PATH] --json` |
 | 配置 OpenClaw 默认值 | `twinbox config openclaw-set [--home PATH] [--bin NAME] [--strict|--no-strict] [--sync-env|--no-sync-env] [--restart-gateway|--no-restart-gateway] --json` |
-| OpenClaw 安装总向导（唯一公开向导入口；OpenClaw 风格显式步骤向导：Security（默认 No、须显式选 Yes 才继续）、Quickstart/Manual、Mailbox、LLM、Twinbox tools integration、Apply setup + 更强 handoff；已有 Mailbox/LLM 值会先进入 `Existing config detected` / `Config handling`；LLM 步可选 **Import from OpenClaw**（读 OpenClaw home 下 `openclaw.json` 默认模型，约束同 `config import-llm-from-openclaw`）；手动配置时覆盖输入顺序为 `API URL -> API key -> Model ID`；选择沿用现有 LLM 配置继续时，会重新解析校验当前配置并同步 onboarding 状态） | `twinbox onboard openclaw --json` |
-| OpenClaw 宿主接线高级入口（roots + `openclaw.json` + 按 OS/CPU 的 `himalaya` 检查/内置 Linux 解压 + SKILL 真源在 state root + 对 `~/.openclaw/.../SKILL.md` 软链或复制 + 可选重启 Gateway）| `twinbox deploy openclaw --json`（高级/脚本化入口；`--dry-run`；`--no-restart`；`--no-env-sync`；`--strict`；可选 `--fragment` / `--no-fragment` 合并 `openclaw-skill/openclaw.fragment.json`） |
-| 撤销上述宿主接线（不删 `~/.twinbox`；非全量卸载）| `twinbox deploy openclaw --rollback --json`（可选 `--remove-config` 删 `~/.config/twinbox`） |
+| OpenClaw 安装总向导（唯一公开向导入口；**Apply setup 后默认完成**：OpenClaw 合并 + plugin/tools 可观测性 + **vendor-safe bridge user timer 安装 + health dry-run**；`phase2_ready=true` 才 handoff Phase 2；逃生口 `--skip-bridge`） | `twinbox onboard openclaw [--skip-bridge] --json` |
+| OpenClaw 宿主接线高级入口（与 onboard 共享同一套 prerequisite bundle；默认安装 bridge）| `twinbox deploy openclaw --json`（`--dry-run`；`--no-restart`；`--no-env-sync`；`--strict`；`--skip-bridge`；`--twinbox-bin`；可选 `--fragment` / `--no-fragment`） |
+| 撤销上述宿主接线（不删 `~/.twinbox`；**同时移除 bridge user units**）| `twinbox deploy openclaw --rollback --json`（可选 `--remove-config`） |
+| Vendor-safe OpenClaw bridge（systemd user 单元只调用已安装 `twinbox`，不依赖 repo `scripts/`） | `twinbox host bridge install|remove|status|poll [--dry-run] [--openclaw-bin …]` |
+| OpenClaw 内 Phase 2 onboarding 原生工具（对应 CLI：`twinbox openclaw …`） | 插件：`twinbox_onboarding_start` / `twinbox_onboarding_status` / `twinbox_onboarding_advance` / `twinbox_onboarding_confirm_push` |
 | Weekly brief lookup | `twinbox task weekly --json` |
 | Manage semantic routing rules / "以后别把这类邮件派给我" | `twinbox rule list --json` / `twinbox rule add --rule-json ...` |
 | Test a routing rule against recent threads | `twinbox rule test --rule-id RULE_ID --json` |
@@ -101,7 +103,8 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 | 多邮箱 profile（共享 vendor、独立 state） | `twinbox --profile NAME …`（`TWINBOX_STATE_ROOT=~/.twinbox/profiles/NAME/state`，`TWINBOX_HOME=~/.twinbox`） |
 | Phase loading（Python 入口） | `twinbox loading phase1` … `phase4`（全部走 Python；`scripts/phase1_loading.sh` / `phase4_loading.sh` 仅保留兼容 shim，phase1/4 仍使用 himalaya CLI 传输） |
 | 把 `twinbox_core` 同步到 vendor（宿主 PYTHONPATH） | `twinbox vendor install`；`twinbox vendor status --json`（`integrity_ok` / `file_count`）。装好后：`PYTHONPATH="$TWINBOX_HOME/vendor"` 或 `…/state/vendor`（无 profile 时二者常相同）+ `python3 -m twinbox_core.task_cli …` |
-| Subscribe to push notifications | `twinbox push subscribe SESSION_ID --json` |
+| Subscribe to push（**daily / weekly 可分别开关**；首次开 daily 会尝试把 `daily-refresh` 默认改为 hourly 且无既有 override 时） | `twinbox push subscribe SESSION_ID [--daily on|off] [--weekly on|off] --json` |
+| 调整已有订阅的 cadence | `twinbox push configure SESSION_TARGET --daily on|off --weekly on|off --json` |
 | List push subscriptions | `twinbox push list --json` |
 | Inspect one exact thread / “把这个线程内容返回给我看看” / “先读这个线程” | `twinbox thread inspect THREAD_ID --json` 或 OpenClaw 工具 `twinbox_thread_inspect` 且传 `thread_id` |
 | Explain why a thread is urgent / pending | `twinbox thread explain THREAD_ID --json` |
@@ -129,6 +132,7 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 - For schedule prompts, prefer native OpenClaw tools `twinbox_schedule_list` / `twinbox_schedule_update` / `twinbox_schedule_reset` / `twinbox_schedule_enable` / `twinbox_schedule_disable` over generic `cron` or workspace search
 - For onboarding mailbox setup, prefer native OpenClaw tool `twinbox_mailbox_setup` (passes password via env, never CLI args)
 - For onboarding LLM API config, prefer native OpenClaw tool `twinbox_config_set_llm` (passes api_key via env)
+- For onboarding after mailbox/LLM, prefer `twinbox_onboarding_start` / `twinbox_onboarding_status` / `twinbox_onboarding_advance`; **push_subscription** 用 `twinbox_onboarding_confirm_push`（事务性写订阅 + schedule ownership），避免仅依赖 `onboarding next` 的占位文案
 - Stay read-only unless the user explicitly asks for draft/action generation
 - **Never end a task turn with only file reads and no text answer.** A turn with `assistant.content=[]` or no text is a failure — always produce real command output followed by a summary
 
@@ -139,7 +143,7 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 - Hosted env should come from `skills.entries.twinbox.env`; `state root/twinbox.json` is the Twinbox config source, and any legacy `.env` is only a migration fallback
 - If `plugin-twinbox-task` is enabled, prefer an absolute `twinboxBin` pointing to `scripts/twinbox`; if unset, keep `cwd` accurate so the plugin can auto-detect `<cwd>/scripts/twinbox` instead of relying on Gateway PATH
 - Treat OpenClaw schedule execution as a Twinbox-managed bridge cron concern; current default definitions come from `config/schedules.yaml`, not skill metadata
-- The currently verified refresh path is `openclaw cron -> system-event -> host bridge/poller -> twinbox-orchestrate schedule --job ...`
+- Bridge poller 默认路径：`systemd user timer` → `twinbox host bridge poll` → `openclaw gateway call cron.*` → `twinbox-orchestrate schedule --job …`（vendor 安装不依赖 `scripts/twinbox_openclaw_bridge_poll.sh`）
 
 ## Guardrails
 
