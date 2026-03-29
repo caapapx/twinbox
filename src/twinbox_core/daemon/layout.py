@@ -21,6 +21,10 @@ def pid_path(state_root: Path) -> Path:
     return run_dir(state_root) / "daemon.pid"
 
 
+def supervisor_pid_path(state_root: Path) -> Path:
+    return run_dir(state_root) / "daemon-supervisor.pid"
+
+
 def log_path(state_root: Path) -> Path:
     return logs_dir(state_root) / "daemon.log"
 

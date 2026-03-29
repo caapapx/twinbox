@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from twinbox_core.daemon import TWINBOX_PROTOCOL_VERSION
-from twinbox_core.daemon.layout import pid_path, socket_path
+from twinbox_core.daemon.layout import pid_path, socket_path, supervisor_pid_path
 from twinbox_core.paths import resolve_daemon_state_root
 
 
@@ -39,6 +39,16 @@ def _read_pid_file(state_root: Path) -> str:
         return ""
 
 
+def _read_supervisor_pid_file(state_root: Path) -> str:
+    p = supervisor_pid_path(state_root)
+    if not p.is_file():
+        return ""
+    try:
+        return p.read_text(encoding="utf-8").strip().splitlines()[0].strip()
+    except OSError:
+        return ""
+
+
 def _cleanup_stale_paths(state_root: Path) -> None:
     try:
         socket_path(state_root).unlink(missing_ok=True)
@@ -46,6 +56,10 @@ def _cleanup_stale_paths(state_root: Path) -> None:
         pass
     try:
         pid_path(state_root).unlink(missing_ok=True)
+    except OSError:
+        pass
+    try:
+        supervisor_pid_path(state_root).unlink(missing_ok=True)
     except OSError:
         pass
 
@@ -96,7 +110,20 @@ def daemon_reachable(state_root: Path) -> bool:
     return isinstance(resp, dict) and resp.get("result", {}).get("status") == "ok"
 
 
-def cmd_start(state_root: Path) -> int:
+def _spawn_daemon_process(state_root: Path, argv: list[str]) -> subprocess.Popen[bytes]:
+    env = os.environ.copy()
+    env["TWINBOX_STATE_ROOT"] = str(state_root)
+    return subprocess.Popen(
+        argv,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+    )
+
+
+def cmd_start(state_root: Path, *, supervise: bool = False) -> int:
     if daemon_reachable(state_root):
         print("daemon already running", file=sys.stderr)
         return 1
@@ -104,24 +131,25 @@ def cmd_start(state_root: Path) -> int:
     if raw.isdigit() and _is_pid_alive(int(raw)):
         print("daemon already running (pid file)", file=sys.stderr)
         return 1
+    sup_raw = _read_supervisor_pid_file(state_root)
+    if sup_raw.isdigit() and _is_pid_alive(int(sup_raw)):
+        print("daemon supervisor already running", file=sys.stderr)
+        return 1
 
-    env = os.environ.copy()
-    env["TWINBOX_STATE_ROOT"] = str(state_root)
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "twinbox_core.daemon"],
-        env=env,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-        start_new_session=True,
+    argv = (
+        [sys.executable, "-m", "twinbox_core.daemon.supervisor"]
+        if supervise
+        else [sys.executable, "-m", "twinbox_core.daemon"]
     )
+    proc = _spawn_daemon_process(state_root, argv)
     err: bytes | None = None
     for _ in range(100):
         time.sleep(0.1)
         if daemon_reachable(state_root):
             if proc.stderr:
                 proc.stderr.close()
-            print("daemon started")
+            message = "daemon started (supervised)" if supervise else "daemon started"
+            print(message)
             return 0
         code = proc.poll()
         if code is not None:
@@ -144,6 +172,33 @@ def cmd_start(state_root: Path) -> int:
 
 
 def cmd_stop(state_root: Path) -> int:
+    sup_raw = _read_supervisor_pid_file(state_root)
+    if sup_raw.isdigit():
+        sup_pid = int(sup_raw)
+        if not _is_pid_alive(sup_pid):
+            try:
+                supervisor_pid_path(state_root).unlink(missing_ok=True)
+            except OSError:
+                pass
+        else:
+            try:
+                os.kill(sup_pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            for _ in range(50):
+                time.sleep(0.1)
+                if not _is_pid_alive(sup_pid):
+                    break
+            if _is_pid_alive(sup_pid):
+                try:
+                    os.kill(sup_pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            try:
+                supervisor_pid_path(state_root).unlink(missing_ok=True)
+            except OSError:
+                pass
+
     raw = _read_pid_file(state_root)
     if not raw or not raw.isdigit():
         _cleanup_stale_paths(state_root)
@@ -170,14 +225,19 @@ def cmd_stop(state_root: Path) -> int:
     return 0
 
 
-def cmd_restart(state_root: Path) -> int:
+def cmd_restart(state_root: Path, *, supervise: bool | None = None) -> int:
+    if supervise is None:
+        sup_raw = _read_supervisor_pid_file(state_root)
+        supervise = sup_raw.isdigit() and _is_pid_alive(int(sup_raw))
     cmd_stop(state_root)
-    return cmd_start(state_root)
+    return cmd_start(state_root, supervise=supervise)
 
 
 def cmd_status(state_root: Path, *, json_output: bool) -> int:
     raw = _read_pid_file(state_root)
     pid_alive = raw.isdigit() and _is_pid_alive(int(raw))
+    sup_raw = _read_supervisor_pid_file(state_root)
+    supervised = sup_raw.isdigit() and _is_pid_alive(int(sup_raw))
     ping_result: dict[str, Any] | None = None
     try:
         resp = rpc_call(state_root, "ping", {}, connect_timeout_sec=3.0, io_timeout_sec=5.0)
@@ -202,6 +262,8 @@ def cmd_status(state_root: Path, *, json_output: bool) -> int:
             },
             "active_connections": ping_result.get("active_connections", 0),
             "pid": int(raw) if raw.isdigit() else None,
+            "supervised": supervised,
+            "supervisor_pid": int(sup_raw) if supervised else None,
             "twinbox_version": TWINBOX_PROTOCOL_VERSION,
         }
     else:
@@ -211,6 +273,8 @@ def cmd_status(state_root: Path, *, json_output: bool) -> int:
             "cache_stats": {"hits": 0, "misses": 0, "size_mb": 0},
             "active_connections": 0,
             "pid": int(raw) if raw.isdigit() and pid_alive else None,
+            "supervised": supervised,
+            "supervisor_pid": int(sup_raw) if supervised else None,
             "twinbox_version": TWINBOX_PROTOCOL_VERSION,
         }
 
@@ -220,20 +284,22 @@ def cmd_status(state_root: Path, *, json_output: bool) -> int:
         print(body["status"])
         if body.get("pid") is not None:
             print(f"pid: {body['pid']}")
+        if body.get("supervised"):
+            print(f"supervisor_pid: {body['supervisor_pid']}")
         if body["status"] == "running":
             print(f"uptime_seconds: {body['uptime_seconds']}")
             print(f"active_connections: {body['active_connections']}")
     return 0
 
 
-def main_daemon_subcommand(sub: str, *, json_output: bool = False) -> int:
+def main_daemon_subcommand(sub: str, *, json_output: bool = False, supervise: bool = False) -> int:
     state_root = resolve_daemon_state_root()
     if sub == "start":
-        return cmd_start(state_root)
+        return cmd_start(state_root, supervise=supervise)
     if sub == "stop":
         return cmd_stop(state_root)
     if sub == "restart":
-        return cmd_restart(state_root)
+        return cmd_restart(state_root, supervise=supervise if supervise else None)
     if sub == "status":
         return cmd_status(state_root, json_output=json_output)
     print(f"unknown daemon subcommand: {sub}", file=sys.stderr)
