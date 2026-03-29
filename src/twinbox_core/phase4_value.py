@@ -841,6 +841,171 @@ def _write_action_candidates(output_dir: Path, response: dict[str, object]) -> N
     )
 
 
+def _daily_ledger_dir(output_dir: Path) -> Path:
+    return output_dir / "daily-ledger"
+
+
+def _build_daily_ledger_threads(response: dict[str, object]) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    seen_thread_keys: set[str] = set()
+
+    urgent = response.get("daily_urgent", [])
+    if isinstance(urgent, list):
+        for item in urgent:
+            if not isinstance(item, dict):
+                continue
+            thread_key = str(item.get("thread_key", "") or "").strip()
+            if not thread_key or thread_key in seen_thread_keys:
+                continue
+            seen_thread_keys.add(thread_key)
+            rows.append(
+                {
+                    "thread_key": thread_key,
+                    "state": str(item.get("stage", "") or "daily_urgent"),
+                    "urgency_score": int(item.get("urgency_score", 0) or 0),
+                    "reason_code": str(item.get("reason_code", "") or ""),
+                    "why": str(item.get("why", "") or ""),
+                    "action_hint": str(item.get("action_hint", "") or ""),
+                    "source": "daily_urgent",
+                }
+            )
+
+    pending = response.get("pending_replies", [])
+    if isinstance(pending, list):
+        for item in pending:
+            if not isinstance(item, dict):
+                continue
+            thread_key = str(item.get("thread_key", "") or "").strip()
+            if not thread_key or thread_key in seen_thread_keys:
+                continue
+            seen_thread_keys.add(thread_key)
+            rows.append(
+                {
+                    "thread_key": thread_key,
+                    "state": "pending_reply",
+                    "urgency_score": 0,
+                    "reason_code": str(item.get("reason_code", "") or ""),
+                    "why": str(item.get("why", "") or ""),
+                    "action_hint": str(item.get("suggested_action", "") or ""),
+                    "source": "pending_replies",
+                }
+            )
+
+    return rows
+
+
+def _write_daily_ledger_snapshot(output_dir: Path, response: dict[str, object]) -> None:
+    threads = _build_daily_ledger_threads(response)
+    if not threads:
+        return
+    ledger_dir = _daily_ledger_dir(output_dir)
+    ledger_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().astimezone()
+    payload = {
+        "generated_at": stamp.isoformat(timespec="seconds"),
+        "threads": threads,
+    }
+    filename = stamp.strftime("%Y%m%dT%H%M%S%z") + ".json"
+    (ledger_dir / filename).write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _weekly_period_bounds(period: object) -> tuple[datetime, datetime] | None:
+    text = str(period or "")
+    matches = re.findall(r"\d{4}-\d{2}-\d{2}", text)
+    if len(matches) < 2:
+        return None
+    try:
+        start = datetime.fromisoformat(matches[0])
+        end = datetime.fromisoformat(matches[1])
+    except ValueError:
+        return None
+    if end < start:
+        start, end = end, start
+    return start, end
+
+
+def _augment_weekly_brief_with_daily_ledger(
+    response: dict[str, object],
+    output_dir: Path,
+) -> dict[str, object]:
+    weekly_brief = response.get("weekly_brief", {})
+    if not isinstance(weekly_brief, dict):
+        return response
+    bounds = _weekly_period_bounds(weekly_brief.get("period"))
+    if bounds is None:
+        return response
+
+    ledger_dir = _daily_ledger_dir(output_dir)
+    if not ledger_dir.is_dir():
+        return response
+
+    start, end = bounds
+    current_keys = {
+        str(item.get("thread_key", "") or "")
+        for section_name in ("daily_urgent", "pending_replies")
+        for item in response.get(section_name, [])
+        if isinstance(item, dict) and str(item.get("thread_key", "") or "").strip()
+    }
+
+    important_changes = weekly_brief.get("important_changes", [])
+    if not isinstance(important_changes, list):
+        important_changes = []
+        weekly_brief["important_changes"] = important_changes
+    existing_keys = {
+        str(item.get("thread_key", "") or "")
+        for item in important_changes
+        if isinstance(item, dict) and str(item.get("thread_key", "") or "").strip()
+    }
+
+    historical: dict[str, tuple[datetime, dict[str, object]]] = {}
+    for path in sorted(ledger_dir.glob("*.json")):
+        try:
+            payload = _load_object(path)
+            generated_at = datetime.fromisoformat(str(payload.get("generated_at", "")))
+        except Exception:
+            continue
+        if generated_at.tzinfo is not None:
+            generated_at = generated_at.replace(tzinfo=None)
+        if generated_at < start or generated_at > end:
+            continue
+        threads = payload.get("threads", [])
+        if not isinstance(threads, list):
+            continue
+        for item in threads:
+            if not isinstance(item, dict):
+                continue
+            thread_key = str(item.get("thread_key", "") or "").strip()
+            if not thread_key:
+                continue
+            previous = historical.get(thread_key)
+            if previous is None or generated_at < previous[0]:
+                historical[thread_key] = (generated_at, item)
+
+    additions: list[dict[str, str]] = []
+    for thread_key, (_, item) in sorted(historical.items(), key=lambda pair: pair[1][0]):
+        if thread_key in current_keys or thread_key in existing_keys:
+            continue
+        why = str(item.get("why", "") or "").strip()
+        change = "本周早些时候进入今日行动面"
+        if why:
+            change += f": {why}"
+        additions.append(
+            {
+                "thread_key": thread_key,
+                "change": change,
+                "impact": "当前已退出当前行动面，周报保留该线程的本周轨迹",
+            }
+        )
+
+    if additions:
+        important_changes.extend(additions)
+        weekly_brief["important_changes"] = important_changes
+    return response
+
+
 def _render_action_candidates_prompt_block(output_dir: Path) -> str:
     path = output_dir / "action-candidates.json"
     if not path.is_file():
@@ -986,6 +1151,8 @@ def run_single(config: Phase4RunConfig) -> dict[str, object]:
     )
     response = _ensure_material_summary(response, context=context)
     response = _apply_recipient_role_weights(response, config.context_path)
+    _write_daily_ledger_snapshot(config.output_dir, response)
+    response = _augment_weekly_brief_with_daily_ledger(response, config.output_dir)
     print("LLM response saved.")
     print("Generating Phase 4 outputs...")
     render_phase4_outputs(
@@ -1036,6 +1203,7 @@ def run_subtask(
         response = _apply_recipient_role_weights(response, context_path)
         output_dir.mkdir(parents=True, exist_ok=True)
         _write_action_candidates(output_dir, response)
+        _write_daily_ledger_snapshot(output_dir, response)
         target = output_dir / "urgent-pending-raw.json"
         label = "urgent+pending"
     elif kind == "sla":
@@ -1099,6 +1267,12 @@ def merge_phase4_outputs(
         "sla_risks": loaded["sla-risks-raw.json"].get("sla_risks", []),
         "weekly_brief": loaded["weekly-brief-raw.json"].get("weekly_brief", {}),
     }
+    merged = _augment_weekly_brief_with_daily_ledger(merged, output_dir)
+    loaded["weekly-brief-raw.json"]["weekly_brief"] = merged.get("weekly_brief", {})
+    (output_dir / "weekly-brief-raw.json").write_text(
+        json.dumps(loaded["weekly-brief-raw.json"], ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
     render_phase4_outputs(
         output_dir=output_dir,
         doc_dir=doc_dir,

@@ -673,6 +673,151 @@ def test_run_subtask_brief_aligns_weekly_action_fields_with_candidate_order(
     assert weekly["important_changes"] == [{"thread_key": "cc-thread", "change": "法务已更新", "impact": "仍需关注"}]
 
 
+def test_run_subtask_urgent_writes_daily_ledger_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = {"threads": [], "human_context": {}}
+    ctx_path = tmp_path / "context-pack.json"
+    ctx_path.write_text(json.dumps(context, ensure_ascii=False), encoding="utf-8")
+    out = tmp_path / "phase-4-out"
+    out.mkdir(parents=True)
+
+    monkeypatch.setattr(
+        "twinbox_core.phase4_value.call_llm",
+        lambda *a, **k: json.dumps(
+            {
+                "daily_urgent": [
+                    {
+                        "thread_key": "invoice-issue",
+                        "urgency_score": 88,
+                        "reason_code": "waiting_on_me",
+                        "why": "需要先修发票异常",
+                        "action_hint": "联系供应商",
+                        "stage": "open",
+                    }
+                ],
+                "pending_replies": [],
+            },
+            ensure_ascii=False,
+        ),
+    )
+    monkeypatch.setattr(
+        "twinbox_core.phase4_value.resolve_backend",
+        lambda **k: SimpleNamespace(backend="stub", model="stub-model"),
+    )
+
+    run_subtask(
+        kind="urgent",
+        context_path=ctx_path,
+        output_dir=out,
+        env_file=None,
+        model_override="stub-model",
+    )
+
+    ledger_files = sorted((out / "daily-ledger").glob("*.json"))
+    assert len(ledger_files) == 1
+    payload = json.loads(ledger_files[0].read_text(encoding="utf-8"))
+    assert payload["threads"] == [
+        {
+            "thread_key": "invoice-issue",
+            "state": "open",
+            "urgency_score": 88,
+            "reason_code": "waiting_on_me",
+            "why": "需要先修发票异常",
+            "action_hint": "联系供应商",
+            "source": "daily_urgent",
+        }
+    ]
+
+
+def test_merge_phase4_outputs_replays_daily_ledger_history_into_weekly_brief() -> None:
+    urgent_pending = {"daily_urgent": [], "pending_replies": []}
+    risks = {"sla_risks": []}
+    brief = {
+        "weekly_brief": {
+            "period": "2026-03-18 ~ 2026-03-24",
+            "total_threads_in_window": 12,
+            "flow_summary": [],
+            "top_actions": [],
+            "action_now": [],
+            "backlog": [],
+            "important_changes": [],
+            "rhythm_observation": "周中最忙。",
+        }
+    }
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        output_dir = root / "runtime/validation/phase-4"
+        doc_dir = root / "docs/validation"
+        ledger_dir = output_dir / "daily-ledger"
+        ledger_dir.mkdir(parents=True)
+        doc_dir.mkdir(parents=True)
+
+        (output_dir / "urgent-pending-raw.json").write_text(json.dumps(urgent_pending, ensure_ascii=False), encoding="utf-8")
+        (output_dir / "sla-risks-raw.json").write_text(json.dumps(risks, ensure_ascii=False), encoding="utf-8")
+        (output_dir / "weekly-brief-raw.json").write_text(json.dumps(brief, ensure_ascii=False), encoding="utf-8")
+        (ledger_dir / "20260318T090000+0800.json").write_text(
+            json.dumps(
+                {
+                    "generated_at": "2026-03-18T09:00:00+08:00",
+                    "threads": [
+                        {
+                            "thread_key": "invoice-issue",
+                            "state": "open",
+                            "urgency_score": 88,
+                            "reason_code": "waiting_on_me",
+                            "why": "需要先修发票异常",
+                            "action_hint": "联系供应商",
+                            "source": "daily_urgent",
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        (ledger_dir / "20260310T090000+0800.json").write_text(
+            json.dumps(
+                {
+                    "generated_at": "2026-03-10T09:00:00+08:00",
+                    "threads": [
+                        {
+                            "thread_key": "old-thread",
+                            "state": "open",
+                            "urgency_score": 90,
+                            "reason_code": "waiting_on_me",
+                            "why": "超出本周范围",
+                            "action_hint": "忽略",
+                            "source": "daily_urgent",
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        merge_phase4_outputs(
+            output_dir=output_dir,
+            doc_dir=doc_dir,
+            env_file=None,
+            model_override="test-model",
+        )
+
+        updated = json.loads((output_dir / "weekly-brief-raw.json").read_text(encoding="utf-8"))
+        assert updated["weekly_brief"]["important_changes"] == [
+            {
+                "thread_key": "invoice-issue",
+                "change": "本周早些时候进入今日行动面: 需要先修发票异常",
+                "impact": "当前已退出当前行动面，周报保留该线程的本周轨迹",
+            }
+        ]
+
+
 def test_call_with_prompt_passes_system_prompt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 

@@ -106,7 +106,7 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 | Inspect one exact thread / “把这个线程内容返回给我看看” / “先读这个线程” | `twinbox thread inspect THREAD_ID --json` 或 OpenClaw 工具 `twinbox_thread_inspect` 且传 `thread_id` |
 | Explain why a thread is urgent / pending | `twinbox thread explain THREAD_ID --json` |
 | Daily digest | `twinbox digest daily --json`（人类可读模式为 Markdown；稳定消费优先 `--json`） |
-| Weekly brief | `twinbox digest weekly --json`（人类可读模式为 Markdown，按默认 `config/weekly-template.md` 或最新 `template_hint` 的标题/章节顺序渲染；当前表示“当前周视图快照”，不是 daily 自动累计；稳定消费优先 `--json`） |
+| Weekly brief | `twinbox digest weekly --json`（人类可读模式为 Markdown，按默认 `config/weekly-template.md` 或最新 `template_hint` 的标题/章节顺序渲染；若已有 `runtime/validation/phase-4/daily-ledger/` snapshots，会把本周早些时候已退出 action surface 的线程轨迹补回 `important_changes`；仍不是 daily 自动累计；稳定消费优先 `--json`） |
 | Suggest next actions | `twinbox action suggest --json` |
 | Materialize one suggested action | `twinbox action materialize ACTION_ID --json` |
 | Review items | `twinbox review list --json` / `twinbox review show REVIEW_ID --json` |
