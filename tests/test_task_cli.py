@@ -979,6 +979,25 @@ class TestQueueDigestThreadCli:
         assert payload["digest_type"] == "daily"
         assert isinstance(payload["sections"], dict)
 
+    def test_digest_daily_human_output_uses_markdown_sections(
+        self, write_phase4, capsys, sample_urgent_item, sample_pending_item, sample_sla_item
+    ):
+        write_phase4("daily-urgent.yaml", {"generated_at": "2026-03-23T08:30:00", "daily_urgent": [sample_urgent_item]})
+        write_phase4(
+            "pending-replies.yaml",
+            {"generated_at": "2026-03-23T08:30:00", "pending_replies": [sample_pending_item]},
+        )
+        write_phase4("sla-risks.yaml", {"generated_at": "2026-03-23T08:30:00", "sla_risks": [sample_sla_item]})
+
+        assert main(["digest", "daily"]) == 0
+        out = capsys.readouterr().out
+
+        assert out.startswith("# 每日摘要\n")
+        assert "## 紧急事项" in out
+        assert "## 待回复" in out
+        assert "## SLA 风险" in out
+        assert "=" * 40 not in out
+
     def test_digest_pulse_missing_file_exits_1(self, phase4_root):
         assert main(["digest", "pulse", "--json"]) == 1
 
@@ -1009,8 +1028,90 @@ class TestQueueDigestThreadCli:
         assert payload["digest_type"] == "pulse"
         assert "notify_payload" in payload
 
+    def test_digest_pulse_human_output_uses_markdown_sections(self, phase4_root, capsys):
+        (phase4_root / "activity-pulse.json").write_text(
+            json.dumps(
+                {
+                    "generated_at": "2026-03-24T10:00:00+08:00",
+                    "notify_payload": {
+                        "generated_at": "2026-03-24T10:00:00+08:00",
+                        "stale": False,
+                        "urgent_top_k": [],
+                        "pending_count": 1,
+                        "summary": "有 1 条需要关注",
+                    },
+                    "notifiable_items": [{"thread_key": "项目A", "why": "等待你确认"}],
+                    "recent_activity": [],
+                    "needs_attention": [],
+                    "thread_index": [],
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        assert main(["digest", "pulse"]) == 0
+        out = capsys.readouterr().out
+
+        assert out.startswith("# 日内脉冲\n")
+        assert "## 概览" in out
+        assert "## 待推送线程" in out
+        assert "=" * 40 not in out
+
     def test_digest_weekly_missing_file_exits_1(self, phase4_root):
         assert main(["digest", "weekly", "--json"]) == 1
+
+    def test_digest_weekly_human_output_renders_full_markdown_sections(self, phase4_root, capsys):
+        (phase4_root / "weekly-brief-raw.json").write_text(
+            json.dumps(
+                {
+                    "generated_at": "2026-03-24T10:00:00+08:00",
+                    "weekly_brief": {
+                        "period": "2026-03-18 ~ 2026-03-24",
+                        "total_threads_in_window": 12,
+                        "material_summary": {
+                            "sources": ["周会纪要"],
+                            "period_hint": "上周",
+                            "table_headers": ["项目", "状态"],
+                            "row_count": 2,
+                            "column_stats": [{"column": "状态", "summary": "1 个阻塞, 1 个推进中"}],
+                            "open_risks": ["审批仍待确认"],
+                            "notes": "材料来自周会纪要",
+                        },
+                        "flow_summary": [
+                            {"flow": "deploy", "name": "部署", "count": 3, "highlight": "审批链条仍是主要阻塞"}
+                        ],
+                        "action_now": [
+                            {"thread_key": "项目A", "flow": "deploy", "why": "今天要确认", "action": "回复审批意见"}
+                        ],
+                        "backlog": [
+                            {"thread_key": "项目B", "flow": "support", "why": "仍需跟进", "next_step": "周三前追问供应商"}
+                        ],
+                        "important_changes": [
+                            {"thread_key": "项目C", "change": "需求已确认", "impact": "可进入部署"}
+                        ],
+                        "top_actions": ["回复项目A", "跟进项目B"],
+                        "rhythm_observation": "本周上午审批类线程明显增多。",
+                    },
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        assert main(["digest", "weekly"]) == 0
+        out = capsys.readouterr().out
+
+        assert out.startswith("# 每周简报\n")
+        assert "## Action Now" in out
+        assert "## Backlog" in out
+        assert "## Important Changes" in out
+        assert "## Flow Summary" in out
+        assert "## Material Summary" in out
+        assert "## Rhythm Observation" in out
+        assert "=" * 40 not in out
 
     def test_thread_inspect_not_found_exits_1(self, phase4_root):
         assert main(["thread", "inspect", "missing-thread", "--json"]) == 1

@@ -154,6 +154,143 @@ def _load_json_artifact(path: Path) -> dict[str, Any]:
     return content if isinstance(content, dict) else {}
 
 
+def _append_markdown_section(lines: list[str], title: str, body_lines: list[str]) -> None:
+    if not body_lines:
+        return
+    lines.extend([f"## {title}", ""])
+    lines.extend(body_lines)
+    lines.append("")
+
+
+def _render_weekly_digest_markdown(brief: dict[str, Any]) -> list[str]:
+    lines = [
+        "# 每周简报",
+        "",
+        "## Overview",
+        "",
+        f"- Period: {brief.get('period', 'unknown')}",
+        f"- Total threads in window: {brief.get('total_threads_in_window', 0)}",
+        "",
+    ]
+
+    material_summary = brief.get("material_summary", {})
+    if isinstance(material_summary, dict) and material_summary:
+        material_lines: list[str] = []
+        sources = material_summary.get("sources", [])
+        if isinstance(sources, list) and sources:
+            material_lines.append(f"Sources: {', '.join(str(item) for item in sources)}")
+        source_type = material_summary.get("source_type")
+        if source_type:
+            material_lines.append(f"Source type: {source_type}")
+        table_title = material_summary.get("table_title")
+        if table_title:
+            material_lines.append(f"Title: {table_title}")
+        table_section = material_summary.get("table_section")
+        if table_section:
+            material_lines.append(f"Section: {table_section}")
+        material_lines.append(f"Period hint: {material_summary.get('period_hint', 'N/A')}")
+        material_lines.append(f"Row count: {material_summary.get('row_count', 0)}")
+        headers = material_summary.get("table_headers", [])
+        if isinstance(headers, list) and headers:
+            material_lines.append("Headers: " + " | ".join(str(item) for item in headers))
+        material_lines.append("")
+
+        column_stats = material_summary.get("column_stats", [])
+        if isinstance(column_stats, list) and column_stats:
+            material_lines.extend(
+                [
+                    "### Column Stats",
+                    "",
+                    "| Column | Summary |",
+                    "|--------|---------|",
+                ]
+            )
+            for item in column_stats:
+                if not isinstance(item, dict):
+                    continue
+                material_lines.append(
+                    f"| {item.get('column', '')} | {item.get('summary', '')} |"
+                )
+            material_lines.append("")
+
+        open_risks = material_summary.get("open_risks", [])
+        if isinstance(open_risks, list) and open_risks:
+            material_lines.extend(["### Open Risks", ""])
+            for item in open_risks:
+                material_lines.append(f"- {item}")
+            material_lines.append("")
+
+        notes = material_summary.get("notes")
+        if notes:
+            material_lines.extend(["### Notes", "", str(notes)])
+        _append_markdown_section(lines, "Material Summary", material_lines)
+
+    flow_summary = brief.get("flow_summary", [])
+    if isinstance(flow_summary, list) and flow_summary:
+        flow_lines = [
+            "| Flow | Name | Count | Highlight |",
+            "|------|------|-------|-----------|",
+        ]
+        for item in flow_summary:
+            if not isinstance(item, dict):
+                continue
+            flow_lines.append(
+                f"| {item.get('flow', '')} | {item.get('name', '')} | {item.get('count', 0)} | {item.get('highlight', '')} |"
+            )
+        _append_markdown_section(lines, "Flow Summary", flow_lines)
+
+    top_actions = brief.get("top_actions", [])
+    if isinstance(top_actions, list) and top_actions:
+        _append_markdown_section(lines, "Top Actions", [f"- {action}" for action in top_actions])
+
+    action_now = brief.get("action_now", [])
+    if isinstance(action_now, list) and action_now:
+        action_now_lines = []
+        for item in action_now:
+            if not isinstance(item, dict):
+                continue
+            action_now_lines.append(
+                "- "
+                + f"[{item.get('flow', 'UNMODELED')}] "
+                + f"{item.get('thread_key', 'unknown')}: "
+                + f"{item.get('action', '')} ({item.get('why', '')})"
+            )
+        _append_markdown_section(lines, "Action Now", action_now_lines)
+
+    backlog = brief.get("backlog", [])
+    if isinstance(backlog, list) and backlog:
+        backlog_lines = []
+        for item in backlog:
+            if not isinstance(item, dict):
+                continue
+            backlog_lines.append(
+                "- "
+                + f"[{item.get('flow', 'UNMODELED')}] "
+                + f"{item.get('thread_key', 'unknown')}: "
+                + f"{item.get('next_step', '')} ({item.get('why', '')})"
+            )
+        _append_markdown_section(lines, "Backlog", backlog_lines)
+
+    important_changes = brief.get("important_changes", [])
+    if isinstance(important_changes, list) and important_changes:
+        important_change_lines = []
+        for item in important_changes:
+            if not isinstance(item, dict):
+                continue
+            important_change_lines.append(
+                "- "
+                + f"{item.get('thread_key', 'unknown')}: "
+                + f"{item.get('change', '')} -> {item.get('impact', '')}"
+            )
+        _append_markdown_section(lines, "Important Changes", important_change_lines)
+
+    rhythm_observation = brief.get("rhythm_observation")
+    if rhythm_observation:
+        _append_markdown_section(lines, "Rhythm Observation", [str(rhythm_observation)])
+
+    return lines
+
+
 def _is_stale(generated_at_str: str, max_age_hours: int = 24) -> bool:
     """Check if artifact is stale based on generated_at timestamp."""
     try:
@@ -1980,40 +2117,34 @@ def cmd_digest_daily(args: argparse.Namespace) -> int:
 
         print(json.dumps(output, ensure_ascii=False, indent=2))
     else:
-        lines = ["每日摘要", "=" * 40, ""]
+        lines = ["# 每日摘要", ""]
 
         if urgent_path.exists():
             urgent_data = yaml.safe_load(urgent_path.read_text(encoding="utf-8"))
             urgent_items = urgent_data.get("daily_urgent", [])
-            lines.extend([
-                f"紧急事项 ({len(urgent_items)} 项):",
-                "",
-            ])
-            for item in urgent_items[:5]:  # Show top 5
-                lines.append(f"- {item.get('thread_key', 'unknown')}: {item.get('why', '')}")
-            lines.append("")
+            urgent_lines = [
+                f"- {item.get('thread_key', 'unknown')}: {item.get('why', '')}"
+                for item in urgent_items[:5]
+            ]
+            _append_markdown_section(lines, f"紧急事项 ({len(urgent_items)} 项)", urgent_lines)
 
         if pending_path.exists():
             pending_data = yaml.safe_load(pending_path.read_text(encoding="utf-8"))
             pending_items = pending_data.get("pending_replies", [])
-            lines.extend([
-                f"待回复 ({len(pending_items)} 项):",
-                "",
-            ])
-            for item in pending_items[:5]:  # Show top 5
-                lines.append(f"- {item.get('thread_key', 'unknown')}")
-            lines.append("")
+            pending_lines = [
+                f"- {item.get('thread_key', 'unknown')}"
+                for item in pending_items[:5]
+            ]
+            _append_markdown_section(lines, f"待回复 ({len(pending_items)} 项)", pending_lines)
 
         if sla_path.exists():
             sla_data = yaml.safe_load(sla_path.read_text(encoding="utf-8"))
             sla_items = sla_data.get("sla_risks", [])
-            lines.extend([
-                f"SLA 风险 ({len(sla_items)} 项):",
-                "",
-            ])
-            for item in sla_items[:5]:  # Show top 5
-                lines.append(f"- {item.get('thread_key', 'unknown')}")
-            lines.append("")
+            sla_lines = [
+                f"- {item.get('thread_key', 'unknown')}"
+                for item in sla_items[:5]
+            ]
+            _append_markdown_section(lines, f"SLA 风险 ({len(sla_items)} 项)", sla_lines)
 
         print("\n".join(lines))
 
@@ -2049,19 +2180,22 @@ def cmd_digest_pulse(args: argparse.Namespace) -> int:
     notify = pulse.get("notify_payload", {})
     notifiable = pulse.get("notifiable_items", [])
     lines = [
-        "日内脉冲",
-        "=" * 40,
+        "# 日内脉冲",
         "",
-        f"生成时间: {pulse.get('generated_at', '')}",
-        f"状态: {'过期' if stale else '最新'}",
-        f"推送摘要: {notify.get('summary', '')}",
-        f"待推送线程: {len(notifiable)}",
+        "## 概览",
+        "",
+        f"- 生成时间: {pulse.get('generated_at', '')}",
+        f"- 状态: {'过期' if stale else '最新'}",
+        f"- 推送摘要: {notify.get('summary', '')}",
+        f"- 待推送线程: {len(notifiable)}",
         "",
     ]
+    notifiable_lines = []
     for item in notifiable:
         if not isinstance(item, dict):
             continue
-        lines.append(f"- {item.get('thread_key', 'unknown')}: {item.get('why', '')}")
+        notifiable_lines.append(f"- {item.get('thread_key', 'unknown')}: {item.get('why', '')}")
+    _append_markdown_section(lines, "待推送线程", notifiable_lines)
     print("\n".join(lines))
     return 0
 
@@ -2093,28 +2227,7 @@ def cmd_digest_weekly(args: argparse.Namespace) -> int:
         }
         print(json.dumps(output, ensure_ascii=False, indent=2))
     else:
-        lines = [
-            "每周简报",
-            "=" * 40,
-            "",
-            f"周期: {brief.get('period', 'unknown')}",
-            f"线程总数: {brief.get('total_threads_in_window', 0)}",
-            "",
-            "必须处理的行动:",
-            "",
-        ]
-
-        for action in brief.get("top_actions", []):
-            lines.append(f"- {action}")
-
-        lines.extend([
-            "",
-            "本周重要变化:",
-            "",
-            brief.get("rhythm_observation", ""),
-        ])
-
-        print("\n".join(lines))
+        print("\n".join(_render_weekly_digest_markdown(brief)))
 
     return 0
 

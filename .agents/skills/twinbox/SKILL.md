@@ -102,8 +102,8 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 | List push subscriptions | `twinbox push list --json` |
 | Inspect one exact thread / “把这个线程内容返回给我看看” / “先读这个线程” | `twinbox thread inspect THREAD_ID --json` 或 OpenClaw 工具 `twinbox_thread_inspect` 且传 `thread_id` |
 | Explain why a thread is urgent / pending | `twinbox thread explain THREAD_ID --json` |
-| Daily digest | `twinbox digest daily --json` |
-| Weekly brief | `twinbox digest weekly --json` |
+| Daily digest | `twinbox digest daily --json`（人类可读模式为 Markdown；稳定消费优先 `--json`） |
+| Weekly brief | `twinbox digest weekly --json`（人类可读模式为 Markdown，含 `flow_summary` / `action_now` / `backlog` 等分节；稳定消费优先 `--json`） |
 | Suggest next actions | `twinbox action suggest --json` |
 | Materialize one suggested action | `twinbox action materialize ACTION_ID --json` |
 | Review items | `twinbox review list --json` / `twinbox review show REVIEW_ID --json` |
@@ -159,7 +159,7 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 - `twinbox schedule update daily-refresh --cron "30 9 * * *" --json`
 - `twinbox schedule reset daily-refresh --json`
 - `twinbox task progress QUERY --json`
-- `twinbox digest pulse --json`
+- `twinbox digest pulse --json`（人类可读模式为 Markdown；稳定消费优先 `--json`）
 - `twinbox-orchestrate roots`
 - `twinbox daemon status --json`（daemon 未启用时 `status=stopped` 属正常）
 - `twinbox-orchestrate contract --phase 4`
