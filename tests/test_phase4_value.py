@@ -406,6 +406,153 @@ def test_run_subtask_urgent_applies_recipient_role_weights(tmp_path: Path, monke
     assert result["daily_urgent"][0]["recipient_role"] == "cc_only"
 
 
+def test_run_subtask_urgent_writes_action_candidates_contract(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = {
+        "threads": [{"thread_key": "cc-thread", "recipient_role": "cc_only"}],
+        "human_context": {},
+    }
+    ctx_path = tmp_path / "context-pack.json"
+    ctx_path.write_text(json.dumps(context, ensure_ascii=False), encoding="utf-8")
+    out = tmp_path / "phase-4-out"
+    out.mkdir(parents=True)
+
+    urgent_json = json.dumps(
+        {
+            "daily_urgent": [
+                {
+                    "thread_key": "cc-thread",
+                    "flow": "LF1",
+                    "stage": "S1",
+                    "urgency_score": 100,
+                    "reason_code": "waiting_on_me",
+                    "why": "需要处理",
+                    "action_hint": "回复",
+                    "owner": "o",
+                    "waiting_on": "w",
+                    "evidence_source": "mail_evidence",
+                }
+            ],
+            "pending_replies": [
+                {
+                    "thread_key": "pending-only",
+                    "flow": "LF2",
+                    "waiting_on_me": True,
+                    "reason_code": "approval_needed",
+                    "why": "等你确认",
+                    "suggested_action": "批准",
+                    "evidence_source": "mail_evidence",
+                }
+            ],
+        },
+        ensure_ascii=False,
+    )
+    monkeypatch.setattr("twinbox_core.phase4_value.call_llm", lambda *a, **k: urgent_json)
+    monkeypatch.setattr(
+        "twinbox_core.phase4_value.resolve_backend",
+        lambda **k: SimpleNamespace(backend="stub", model="stub-model"),
+    )
+
+    run_subtask(
+        kind="urgent",
+        context_path=ctx_path,
+        output_dir=out,
+        env_file=None,
+        model_override="stub-model",
+    )
+
+    payload = json.loads((out / "action-candidates.json").read_text(encoding="utf-8"))
+    assert [item["thread_key"] for item in payload["action_candidates"]] == ["cc-thread", "pending-only"]
+    assert payload["action_candidates"][0] == {
+        "thread_key": "cc-thread",
+        "urgency_score": 60,
+        "reason_code": "waiting_on_me",
+        "why": "需要处理",
+        "action_hint": "回复",
+    }
+    assert payload["action_candidates"][1] == {
+        "thread_key": "pending-only",
+        "urgency_score": 0,
+        "reason_code": "approval_needed",
+        "why": "等你确认",
+        "action_hint": "批准",
+    }
+
+
+def test_run_subtask_brief_includes_action_candidates_in_user_prompt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, str] = {}
+    context = {"threads": [], "human_context": {}}
+    ctx_path = tmp_path / "context-pack.json"
+    ctx_path.write_text(json.dumps(context, ensure_ascii=False), encoding="utf-8")
+    out = tmp_path / "phase-4-out"
+    out.mkdir(parents=True)
+    (out / "action-candidates.json").write_text(
+        json.dumps(
+            {
+                "action_candidates": [
+                    {
+                        "thread_key": "thread-A",
+                        "urgency_score": 88,
+                        "reason_code": "waiting_on_me",
+                        "why": "今天必须回复",
+                        "action_hint": "回复客户",
+                    }
+                ]
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_llm(
+        prompt: str,
+        max_tokens: int = 4096,
+        system_prompt: str | None = None,
+        **kwargs: object,
+    ) -> str:
+        captured["prompt"] = prompt
+        captured["system_prompt"] = system_prompt or ""
+        return json.dumps(
+            {
+                "weekly_brief": {
+                    "period": "p",
+                    "total_threads_in_window": 0,
+                    "action_now": [],
+                    "backlog": [],
+                    "important_changes": [],
+                    "flow_summary": [],
+                    "top_actions": [],
+                    "rhythm_observation": "r",
+                }
+            },
+            ensure_ascii=False,
+        )
+
+    monkeypatch.setattr("twinbox_core.phase4_value.call_llm", fake_llm)
+    monkeypatch.setattr(
+        "twinbox_core.phase4_value.resolve_backend",
+        lambda **k: SimpleNamespace(backend="stub", model="stub-model"),
+    )
+
+    run_subtask(
+        kind="brief",
+        context_path=ctx_path,
+        output_dir=out,
+        env_file=None,
+        model_override="stub-model",
+    )
+
+    assert "shared action candidate list" in captured["system_prompt"].lower()
+    assert "## Shared action candidates:" in captured["prompt"]
+    assert "- thread-A | score=88 | reason=waiting_on_me | why=今天必须回复 | action=回复客户" in captured["prompt"]
+
+
 def test_call_with_prompt_passes_system_prompt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 

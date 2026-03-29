@@ -203,7 +203,9 @@ Rules:
 9. If some material rows (intent=reference only) cannot be mapped to mailbox thread_keys, keep them in material_summary instead of forcing them into action_now/backlog
 10. If some material rows cannot be mapped to mailbox thread_keys, keep them in material_summary instead of forcing them into action_now/backlog
 11. When a material column contains raw date ranges, preserve the raw ranges or summarize coverage counts; do not invent derived durations unless the counting basis is explicit
-12. Output ONLY JSON.
+12. If the user input includes a shared action candidate list, derive action_now and top_actions from that shared action candidate list instead of inventing a new action-ranked thread order
+13. Keep narrative sections (important_changes, flow_summary, rhythm_observation) free to summarize the broader weekly picture even when they mention threads outside the shared action candidate list
+14. Output ONLY JSON.
 """
     )
 
@@ -670,11 +672,14 @@ def _call_with_prompt(
     system_prompt: str,
     user_prefix: str,
     context_path: Path,
+    extra_user_content: str = "",
     env_file: Path | None,
     model_override: str | None,
     max_tokens: int,
 ) -> dict[str, object]:
     user_content = user_prefix + context_path.read_text(encoding="utf-8")
+    if extra_user_content:
+        user_content += extra_user_content
     return _parse_response(
         call_llm(
             user_content,
@@ -754,6 +759,86 @@ def _apply_recipient_role_weights(
                 item["recipient_role"] = role
 
     return response
+
+
+def _build_action_candidates(response: dict[str, object]) -> list[dict[str, object]]:
+    candidates: list[dict[str, object]] = []
+    seen_thread_keys: set[str] = set()
+
+    for item in response.get("daily_urgent", []):
+        if not isinstance(item, dict):
+            continue
+        thread_key = str(item.get("thread_key", "") or "")
+        if not thread_key or thread_key in seen_thread_keys:
+            continue
+        seen_thread_keys.add(thread_key)
+        candidates.append(
+            {
+                "thread_key": thread_key,
+                "urgency_score": item.get("urgency_score", 0) if isinstance(item.get("urgency_score"), (int, float)) else 0,
+                "reason_code": str(item.get("reason_code", "") or ""),
+                "why": str(item.get("why", "") or ""),
+                "action_hint": str(item.get("action_hint", "") or ""),
+            }
+        )
+
+    for item in response.get("pending_replies", []):
+        if not isinstance(item, dict):
+            continue
+        thread_key = str(item.get("thread_key", "") or "")
+        if not thread_key or thread_key in seen_thread_keys:
+            continue
+        seen_thread_keys.add(thread_key)
+        candidates.append(
+            {
+                "thread_key": thread_key,
+                "urgency_score": 0,
+                "reason_code": str(item.get("reason_code", "") or ""),
+                "why": str(item.get("why", "") or ""),
+                "action_hint": str(item.get("suggested_action", "") or ""),
+            }
+        )
+
+    return candidates
+
+
+def _write_action_candidates(output_dir: Path, response: dict[str, object]) -> None:
+    payload = {"action_candidates": _build_action_candidates(response)}
+    (output_dir / "action-candidates.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _render_action_candidates_prompt_block(output_dir: Path) -> str:
+    path = output_dir / "action-candidates.json"
+    if not path.is_file():
+        return ""
+    try:
+        payload = _load_object(path)
+    except Exception:
+        return ""
+
+    candidates = payload.get("action_candidates", [])
+    if not isinstance(candidates, list) or not candidates:
+        return ""
+
+    lines = [
+        "\n\n## Shared action candidates:",
+        "Use this shared action candidate list for weekly action-ranked fields (`action_now`, `top_actions`).",
+    ]
+    for item in candidates[:10]:
+        if not isinstance(item, dict):
+            continue
+        lines.append(
+            "- "
+            + f"{item.get('thread_key', '')} | "
+            + f"score={item.get('urgency_score', 0)} | "
+            + f"reason={item.get('reason_code', '')} | "
+            + f"why={item.get('why', '')} | "
+            + f"action={item.get('action_hint', '')}"
+        )
+    return "\n".join(lines)
 
 
 def run_single(config: Phase4RunConfig) -> dict[str, object]:
@@ -847,6 +932,8 @@ def run_subtask(
             max_tokens=4096,
         )
         response = _apply_recipient_role_weights(response, context_path)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        _write_action_candidates(output_dir, response)
         target = output_dir / "urgent-pending-raw.json"
         label = "urgent+pending"
     elif kind == "sla":
@@ -865,6 +952,7 @@ def run_subtask(
             system_prompt=phase4_brief_system_prompt(),
             user_prefix=PHASE4_MAILBOX_USER_PREFIX,
             context_path=prompt_context_path,
+            extra_user_content=_render_action_candidates_prompt_block(output_dir),
             env_file=env_file,
             model_override=model_override,
             max_tokens=2048,
