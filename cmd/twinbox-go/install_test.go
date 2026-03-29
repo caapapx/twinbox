@@ -12,6 +12,30 @@ import (
 	"testing"
 )
 
+func TestCommandDisplayNameDefaultsToTwinbox(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name  string
+		argv0 string
+		want  string
+	}{
+		{name: "empty", argv0: "", want: "twinbox"},
+		{name: "basename", argv0: "/tmp/release/twinbox", want: "twinbox"},
+		{name: "legacy-manual-name", argv0: "/tmp/release/twinbox-go", want: "twinbox-go"},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := commandDisplayName(tc.argv0); got != tc.want {
+				t.Fatalf("commandDisplayName(%q) = %q, want %q", tc.argv0, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestRunInstallAcceptsHTTPArchiveSource(t *testing.T) {
 	stateRoot := t.TempDir()
 	archiveBytes := buildTwinboxCoreTarball(t)

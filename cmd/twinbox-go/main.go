@@ -10,6 +10,18 @@ import (
 	"time"
 )
 
+func commandDisplayName(argv0 string) string {
+	name := strings.TrimSpace(filepath.Base(argv0))
+	if name == "" || name == "." || name == string(os.PathSeparator) {
+		return "twinbox"
+	}
+	return name
+}
+
+func commandName() string {
+	return commandDisplayName(os.Args[0])
+}
+
 func main() {
 	args := os.Args[1:]
 	if len(args) > 0 && args[0] == "install" {
@@ -19,7 +31,7 @@ func main() {
 	socketFlag := ""
 	for len(args) > 0 && args[0] == "--socket" {
 		if len(args) < 2 {
-			fmt.Fprintln(os.Stderr, "twinbox-go: --socket requires a path")
+			fmt.Fprintf(os.Stderr, "%s: --socket requires a path\n", commandName())
 			os.Exit(2)
 		}
 		socketFlag = args[1]
@@ -36,7 +48,7 @@ func main() {
 
 	res, err := cliInvokeRPC(socketPath, args, connectTO, rpcTO)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "twinbox-go: daemon rpc: %v; falling back to python\n", err)
+		fmt.Fprintf(os.Stderr, "%s: daemon rpc: %v; falling back to python\n", commandName(), err)
 		fallbackExec(args)
 		return
 	}
@@ -62,12 +74,12 @@ func fallbackExec(argv []string) {
 	}
 	cfg := buildFallbackCommandConfig(argv)
 	if err := validateFallbackVendorAttestation(cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "twinbox-go: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s: %v\n", commandName(), err)
 		os.Exit(1)
 	}
 	exe, err := exec.LookPath(py)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "twinbox-go: no daemon and cannot find python: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s: no daemon and cannot find python: %v\n", commandName(), err)
 		os.Exit(127)
 	}
 	cmd := exec.Command(exe, append([]string{"-m", "twinbox_core.task_cli"}, cfg.Argv...)...)
@@ -80,7 +92,7 @@ func fallbackExec(argv []string) {
 		if x, ok := err.(*exec.ExitError); ok {
 			os.Exit(x.ExitCode())
 		}
-		fmt.Fprintf(os.Stderr, "twinbox-go: exec: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s: exec: %v\n", commandName(), err)
 		os.Exit(1)
 	}
 }

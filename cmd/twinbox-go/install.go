@@ -20,7 +20,7 @@ func runInstall(args []string) int {
 	archivePath := fs.String("archive", "", "Path to .tar.gz containing top-level twinbox_core/")
 	_ = fs.Parse(args)
 	if *archivePath == "" {
-		fmt.Fprintln(os.Stderr, "twinbox-go install: --archive <path> is required")
+		fmt.Fprintf(os.Stderr, "%s install: --archive <path> is required\n", commandName())
 		return 2
 	}
 	root := strings.TrimSpace(*stateRoot)
@@ -34,19 +34,19 @@ func runInstall(args []string) int {
 	vendorDir := filepath.Join(root, "vendor")
 	destPkg := filepath.Join(vendorDir, "twinbox_core")
 	if err := os.MkdirAll(vendorDir, 0o700); err != nil {
-		fmt.Fprintf(os.Stderr, "twinbox-go install: mkdir vendor: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s install: mkdir vendor: %v\n", commandName(), err)
 		return 1
 	}
 	if err := os.RemoveAll(destPkg); err != nil {
-		fmt.Fprintf(os.Stderr, "twinbox-go install: clear dest: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s install: clear dest: %v\n", commandName(), err)
 		return 1
 	}
 	if err := extractTwinboxCoreTarball(*archivePath, vendorDir); err != nil {
-		fmt.Fprintf(os.Stderr, "twinbox-go install: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s install: %v\n", commandName(), err)
 		return 1
 	}
 	if err := writeVendorManifest(vendorDir); err != nil {
-		fmt.Fprintf(os.Stderr, "twinbox-go install: write manifest: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s install: write manifest: %v\n", commandName(), err)
 		return 1
 	}
 	fmt.Printf("extracted twinbox_core -> %s\n", destPkg)

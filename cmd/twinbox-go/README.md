@@ -1,21 +1,21 @@
-# twinbox-go (thin CLI)
+# twinbox (Go thin CLI)
 
 Optional Go entry that prefers the Twinbox Unix-socket daemon (`cli_invoke` JSON-RPC) and falls back to `python3 -m twinbox_core.task_cli` when the socket is unavailable.
-When used as the only binary on `PATH`, the fallback path now seeds `PYTHONPATH` from `TWINBOX_CODE_ROOT/src`, `TWINBOX_HOME/vendor`, `TWINBOX_STATE_ROOT/vendor`, and the default `~/.twinbox/vendor`, so it can replace `scripts/twinbox` on vendor-based hosts.
+When delivered as the only binary on `PATH`, build it as `twinbox`; the fallback path seeds `PYTHONPATH` from `TWINBOX_CODE_ROOT/src`, `TWINBOX_HOME/vendor`, `TWINBOX_STATE_ROOT/vendor`, and the default `~/.twinbox/vendor`, so it can replace `scripts/twinbox` on vendor-based hosts. The source directory remains `cmd/twinbox-go/`, but the user-facing command should now be `twinbox`.
 
 ## Build
 
 ```bash
 cd cmd/twinbox-go
-go build -o twinbox-go .
+go build -o twinbox .
 ```
 
 ## Usage
 
 ```bash
 export TWINBOX_STATE_ROOT=/path/to/state   # or rely on ~/.config/twinbox/state-root
-./twinbox-go task todo --json
-./twinbox-go --profile work task todo --json
+./twinbox task todo --json
+./twinbox --profile work task todo --json
 ```
 
 ### Vendor install (local tarball or HTTP URL)
@@ -23,18 +23,18 @@ export TWINBOX_STATE_ROOT=/path/to/state   # or rely on ~/.config/twinbox/state-
 Build a tarball from the repo (`scripts/package_vendor_tarball.sh`), then:
 
 ```bash
-./twinbox-go install --archive /path/to/twinbox_core-0.1.0.tar.gz
-./twinbox-go install --archive https://example.com/twinbox_core-0.1.0.tar.gz
+./twinbox install --archive /path/to/twinbox_core-0.1.0.tar.gz
+./twinbox install --archive https://example.com/twinbox_core-0.1.0.tar.gz
 # optional: --state-root /path/to/state  (default: $TWINBOX_STATE_ROOT or ~/.twinbox)
 ```
 
-Then run `twinbox-go …` directly, or `PYTHONPATH="$TWINBOX_STATE_ROOT/vendor" python3 -m twinbox_core.task_cli …` if you want to bypass Go.
+Then run `twinbox …` directly, or `PYTHONPATH="$TWINBOX_STATE_ROOT/vendor" python3 -m twinbox_core.task_cli …` if you want to bypass Go.
 `install --archive` now also writes `vendor/MANIFEST.json` with `twinbox_version`; vendor-based fallback checks that manifest before execing Python.
 
 Override socket path:
 
 ```bash
-./twinbox-go --socket /path/to/daemon.sock task todo --json
+./twinbox --socket /path/to/daemon.sock task todo --json
 ```
 
 ## Coexistence with Python
@@ -43,6 +43,7 @@ Override socket path:
 - Python remains the source of truth for behavior; this binary only saves cold-start cost when the daemon is running (`twinbox daemon start`).
 - `--profile NAME` is honored on the fallback path before Python import, so shared-vendor profile installs work without a repo checkout.
 - When running from vendor instead of repo `src/`, fallback requires `vendor/MANIFEST.json` and rejects a mismatched `twinbox_version`.
+- A manually named legacy build like `twinbox-go` still works; diagnostics reuse the actual executable basename.
 
 ## Environment variables
 
