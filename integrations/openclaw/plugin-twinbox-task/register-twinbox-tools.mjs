@@ -75,6 +75,25 @@ export function formatResult({ code, stdout, stderr }) {
   return { content: [{ type: "text", text }] };
 }
 
+/** Default OpenClaw chat session for twinbox agent main (see integrations/openclaw/README.md). */
+const DEFAULT_TWINBOX_PUSH_SESSION = "agent:twinbox:main";
+
+/**
+ * @param {{ session_target?: string } | undefined} params
+ */
+export function resolvePushSessionTarget(params) {
+  const explicit = params?.session_target;
+  if (explicit != null && String(explicit).trim() !== "") {
+    return String(explicit).trim();
+  }
+  const env =
+    process.env.TWINBOX_PUSH_SESSION_TARGET?.trim() ||
+    process.env.OPENCLAW_SESSION_ID?.trim() ||
+    process.env.OPENCLAW_SESSION?.trim();
+  if (env) return env;
+  return DEFAULT_TWINBOX_PUSH_SESSION;
+}
+
 /** @param {{ pluginConfig?: object, registerTool: (t: object) => void }} api */
 export function registerTwinboxTaskTools(api) {
   const opts = toolOpts(api.pluginConfig);
@@ -479,15 +498,20 @@ export function registerTwinboxTaskTools(api) {
   api.registerTool({
     name: "twinbox_onboarding_confirm_push",
     description:
-      "Complete push_subscription: subscribe session, sync schedules, advance onboarding. Runs: twinbox openclaw onboarding-confirm-push SESSION. After this tool returns, you MUST reply with a visible text summary.",
+      "Complete push_subscription: subscribe session, sync schedules, advance onboarding. Runs: twinbox openclaw onboarding-confirm-push SESSION. session_target is OPTIONAL: if omitted or unknown, the plugin uses TWINBOX_PUSH_SESSION_TARGET / OPENCLAW_SESSION_ID / OPENCLAW_SESSION env, else agent:twinbox:main (standard twinbox agent main chat). Do NOT stall to look up session — call this tool when the user says 确认. After this tool returns, you MUST reply with a visible text summary.",
     parameters: Type.Object({
-      session_target: Type.String({ description: "OpenClaw session id to receive pushes" }),
+      session_target: Type.Optional(
+        Type.String({
+          description:
+            "OpenClaw session id for push routing; omit to use env or agent:twinbox:main",
+        }),
+      ),
       daily: Type.Optional(Type.Union([Type.Literal("on"), Type.Literal("off")], { default: "on" })),
       weekly: Type.Optional(Type.Union([Type.Literal("on"), Type.Literal("off")], { default: "on" })),
     }),
     async execute(...args) {
       const params = args.length >= 2 ? args[1] : args[0];
-      const session = params?.session_target ?? "";
+      const session = resolvePushSessionTarget(params);
       const daily = params?.daily ?? "on";
       const weekly = params?.weekly ?? "on";
       const cliArgs = ["openclaw", "onboarding-confirm-push", session, "--daily", daily, "--weekly", weekly];

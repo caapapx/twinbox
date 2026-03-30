@@ -11,7 +11,8 @@ description: >-
   calibration_notes derived from their message, then write visible text —
   never leave the stage stuck and never end tool-only. At routing_rules,
   prefer twinbox_onboarding_finish_routing_rules (one tool) over separate
-  rule_add plus advance. Never say you will
+  rule_add plus advance. At push_subscription, call twinbox_onboarding_confirm_push
+  when the user confirms; session_target is optional (defaults apply). Never say you will
   import material or advance onboarding without calling the matching tool in
   the same turn (some hosted models often stop after the sentence and drop
   the chain). Use for: email preflight,
@@ -47,6 +48,7 @@ These models often **stop after narration** (“现在导入到 Twinbox:”“�
 - **After `exec` / shell writes a file** (e.g. `/tmp/...md`): the **same turn** must continue with **`twinbox_context_import_material`** (plugin) or **`twinbox context import-material PATH --intent reference|template_hint`** — do **not** stop after “文件已创建”.
 - **After import-material** during onboarding: if the material step is complete, **same or next turn** call **`twinbox_onboarding_advance`** (when appropriate) and summarize **`completed_stage` / `current_stage` / `prompt`** in visible text.
 - **At `routing_rules`:** when the user describes a filter (or says **skip** / **跳过**), **same turn:** prefer **`twinbox_onboarding_finish_routing_rules`** (`rule_json` or `skip_rules: true`) — one plugin execution does add + advance; fallback **`twinbox_rule_add`** then **`twinbox_onboarding_advance`** → **visible summary**. Do not stop after asking “要不要配规则” once they already answered.
+- **At `push_subscription`:** when the user says **确认** (or agrees to daily/weekly), **same turn:** call **`twinbox_onboarding_confirm_push`** — **`session_target` is optional** on the plugin (uses `TWINBOX_PUSH_SESSION_TARGET` / `OPENCLAW_SESSION_ID` / `OPENCLAW_SESSION`, else **`agent:twinbox:main`**). Do **not** stall to “fetch session info”; call the tool and summarize JSON.
 - **Canonical order:** write or obtain file path → **import-material** → (if needed) **onboarding_advance** → **visible summary**. Skipping the middle link is the usual failure mode.
 
 ### Onboarding: advancing after the user replies (critical)
@@ -72,6 +74,15 @@ When **`current_stage` is `routing_rules`** and the user message is a **concrete
 **Why it sometimes “worked” and sometimes not:** tool invocation is **probabilistic** per turn; two chained tools double the failure rate. The atomic tool above reduces that to **one** call.
 
 **Recovery if the UI is empty** after the user sent a rule line: **`twinbox_onboarding_finish_routing_rules`** with **`rule_json`** from their message, or shell **`twinbox rule add …`** then **`twinbox openclaw onboarding-advance --json`**.
+
+#### Near-automatic push_subscription
+
+When **`current_stage` is `push_subscription`** and the user confirms (e.g. **确认**):
+
+1. **Same turn:** call **`twinbox_onboarding_confirm_push`** with optional **`daily` / `weekly`** (`on`/`off`). **Omit `session_target`** unless you have a specific id — the plugin defaults to **`agent:twinbox:main`** (or env overrides). Do **not** block on “looking up session” in chat.
+2. **After the tool returns:** visible summary of subscription + **`completed_stage`** / **`current_stage`**.
+
+**Shell (no plugin):** `twinbox openclaw onboarding-confirm-push agent:twinbox:main --daily on --weekly on --json` (adjust session if you use a non-main target).
 
 **Persistence details for profile_setup:** CLI flags **`--profile-notes`** / **`--calibration-notes`** / **`--cc-downweight`** map to `runtime/context/human-context.yaml` (`profile_notes` / `calibration`) plus `twinbox.json.preferences.cc_downweight.enabled`. Phase 2/3 **and Phase 4** **`context-pack.json`** expose these as `human_context.onboarding_profile_notes` / `human_context.calibration_notes`. Legacy `manual-facts.yaml` / `manual-habits.yaml` / `instance-calibration-notes.md` / onboarding `profile_data.*` migrate on first read; afterward the unified file is authoritative. For stages without these flags, use `twinbox context upsert-fact` / `profile-set` if you need durable prose. For **material_import**, show `config/weekly-template.md` first; if the user wants different sections, turn that into Markdown and import with **`twinbox_context_import_material`** (plugin) or `twinbox context import-material FILE --intent template_hint`, then rerun Phase 4 or wait for weekly refresh — **same turn as the file exists**, no “下一步再导入”.
 
@@ -183,7 +194,7 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 - For schedule prompts, prefer native OpenClaw tools `twinbox_schedule_list` / `twinbox_schedule_update` / `twinbox_schedule_reset` / `twinbox_schedule_enable` / `twinbox_schedule_disable` over generic `cron` or workspace search
 - For onboarding mailbox setup, prefer native OpenClaw tool `twinbox_mailbox_setup` (passes password via env, never CLI args)
 - For onboarding LLM API config, prefer native OpenClaw tool `twinbox_config_set_llm` (passes api_key via env)
-- For onboarding after mailbox/LLM, prefer `twinbox_onboarding_start` / `twinbox_onboarding_status` / `twinbox_onboarding_advance`; **push_subscription** 用 `twinbox_onboarding_confirm_push`（事务性写订阅 + schedule ownership），避免仅依赖 `onboarding next` 的占位文案
+- For onboarding after mailbox/LLM, prefer `twinbox_onboarding_start` / `twinbox_onboarding_status` / `twinbox_onboarding_advance`; **push_subscription** 用 `twinbox_onboarding_confirm_push`（`session_target` 可省略，插件默认 `agent:twinbox:main` 或读 env），避免仅依赖 `onboarding next` 的占位文案
 - After the user answers **profile_setup** in natural language, **do not** end the turn without **`twinbox_onboarding_advance`** (or equivalent `onboarding next` / `openclaw onboarding-advance`) **and** a visible summary — the user should not need to name the CLI
 - After **writing or staging a file** for Twinbox (e.g. `exec` to `/tmp/...`), **do not** end the turn without **`twinbox_context_import_material`** (or `twinbox context import-material …`) **and** a visible summary — never stop at “现在导入…”
 - Prefer **`twinbox_context_import_material`** over generic shell for the same path so the model sees a **named tool** and is less likely to drop the chain

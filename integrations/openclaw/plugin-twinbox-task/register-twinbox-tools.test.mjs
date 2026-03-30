@@ -4,7 +4,12 @@ import { join } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { registerTwinboxTaskTools, toolOpts, formatResult } from "./register-twinbox-tools.mjs";
+import {
+  registerTwinboxTaskTools,
+  toolOpts,
+  formatResult,
+  resolvePushSessionTarget,
+} from "./register-twinbox-tools.mjs";
 
 test("toolOpts uses env TWINBOX_CODE_ROOT when cwd omitted", () => {
   const prev = process.env.TWINBOX_CODE_ROOT;
@@ -37,6 +42,24 @@ test("toolOpts prefers cwd/scripts/twinbox when twinboxBin omitted", () => {
     cwd: dir,
     openclawBin: "openclaw",
   });
+});
+
+test("resolvePushSessionTarget uses explicit, env, then default", () => {
+  const prevT = process.env.TWINBOX_PUSH_SESSION_TARGET;
+  const prevO = process.env.OPENCLAW_SESSION_ID;
+  delete process.env.TWINBOX_PUSH_SESSION_TARGET;
+  delete process.env.OPENCLAW_SESSION_ID;
+  try {
+    assert.equal(resolvePushSessionTarget({}), "agent:twinbox:main");
+    assert.equal(resolvePushSessionTarget({ session_target: "  sid  " }), "sid");
+    process.env.TWINBOX_PUSH_SESSION_TARGET = "from-env";
+    assert.equal(resolvePushSessionTarget({}), "from-env");
+  } finally {
+    if (prevT === undefined) delete process.env.TWINBOX_PUSH_SESSION_TARGET;
+    else process.env.TWINBOX_PUSH_SESSION_TARGET = prevT;
+    if (prevO === undefined) delete process.env.OPENCLAW_SESSION_ID;
+    else process.env.OPENCLAW_SESSION_ID = prevO;
+  }
 });
 
 test("formatResult prefers stdout then stderr", () => {
