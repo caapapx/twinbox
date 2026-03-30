@@ -402,7 +402,7 @@ export function registerTwinboxTaskTools(api) {
   api.registerTool({
     name: "twinbox_onboarding_advance",
     description:
-      "Advance Twinbox onboarding past non-push stages. Runs: twinbox openclaw onboarding-advance. After this tool returns, you MUST reply with a visible text summary.",
+      "When the user has just replied in natural language at profile_setup (or similar stages), call this in the SAME turn: pass profile_notes and/or calibration_notes quoted from their message so the stage persists. Runs: twinbox openclaw onboarding-advance. After this tool returns, you MUST reply with a visible text summary (astron-code-latest often returns an empty bubble if you only call tools and print nothing).",
     parameters: Type.Object({
       profile_notes: Type.Optional(Type.String({ description: "Notes for profile_setup stage" })),
       calibration_notes: Type.Optional(Type.String({ description: "Weekly focus / ignore guidance" })),
