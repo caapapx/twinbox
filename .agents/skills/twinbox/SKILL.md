@@ -9,7 +9,10 @@ description: >-
   the user finishes answering profile_setup in chat, you MUST call
   twinbox_onboarding_advance in the same turn with profile_notes and
   calibration_notes derived from their message, then write visible text —
-  never leave the stage stuck and never end tool-only. Use for: email preflight,
+  never leave the stage stuck and never end tool-only. Never say you will
+  import material or advance onboarding without calling the matching tool in
+  the same turn (astron-code-latest often stops after the sentence and drops
+  the chain). Use for: email preflight,
   latest-mail, queue triage, onboarding (start/status/next), weekly digest,
   thread progress, schedule management, and OpenClaw deploy diagnostics via
   `twinbox` / `twinbox-orchestrate`.
@@ -34,6 +37,15 @@ Recommended hosted workaround: start a **fresh `twinbox` session**, send one **b
 
 For **all** twinbox command executions (mail, queue, digest, onboarding, deploy, schedule, rule, etc.): run the matching `twinbox` command with `--json`, then reply with a text summary. Never end with only tool calls and no text response. A turn with `payloads=[]` or `assistant.content=[]` is always a failure.
 
+### No broken tool chains (critical on astron-code-latest / weak tool models)
+
+These models often **stop after narration** (“现在导入到 Twinbox:”“下一步执行…”) **without** invoking the next tool — treat that as a **hard failure** to prevent.
+
+- **Forbidden:** Ending an assistant message with intent to run a Twinbox action **without** having invoked the corresponding tool in the **same** assistant turn (or the **immediately following** assistant turn if the host splits tool output from text).
+- **After `exec` / shell writes a file** (e.g. `/tmp/...md`): the **same turn** must continue with **`twinbox_context_import_material`** (plugin) or **`twinbox context import-material PATH --intent reference|template_hint`** — do **not** stop after “文件已创建”.
+- **After import-material** during onboarding: if the material step is complete, **same or next turn** call **`twinbox_onboarding_advance`** (when appropriate) and summarize **`completed_stage` / `current_stage` / `prompt`** in visible text.
+- **Canonical order:** write or obtain file path → **import-material** → (if needed) **onboarding_advance** → **visible summary**. Skipping the middle link is the usual failure mode.
+
 ### Onboarding: advancing after the user replies (critical)
 
 Stages such as `profile_setup`, `material_import`, `routing_rules`, and `push_subscription` are **dialogue-first**: you collect answers in chat, but **nothing persists and the stage does not advance** until the Twinbox host runs an **advance** command. **OpenClaw with `plugin-twinbox-task`:** prefer **`twinbox_onboarding_advance`** (wraps `twinbox openclaw onboarding-advance`). **Shell / no plugin:** **`twinbox onboarding next --json`** with the same optional flags is equivalent for advancing state. Do not tell the user they must type a command name — **you** must invoke the tool or CLI once their answer is ready.
@@ -46,7 +58,7 @@ When **`current_stage` is `profile_setup`** and the user’s message contains th
 2. **Immediately after the tool returns, same turn:** write a **visible** reply summarizing **`completed_stage`**, **`current_stage`**, and the next **`prompt`** (quote or paraphrase). **Tool-only turns are always a failure** on `astron-code-latest`–class models (empty bubble).
 3. **If the platform cannot attach text after tools in one response:** in the **very next** assistant message, call **`twinbox_onboarding_advance`** if not already done, then summarize — **do not** wait for the user to ask for “advance” or “next command.”
 
-**Persistence details for profile_setup:** CLI flags **`--profile-notes`** / **`--calibration-notes`** / **`--cc-downweight`** map to `runtime/context/human-context.yaml` (`profile_notes` / `calibration`) plus `twinbox.json.preferences.cc_downweight.enabled`. Phase 2/3 **and Phase 4** **`context-pack.json`** expose these as `human_context.onboarding_profile_notes` / `human_context.calibration_notes`. Legacy `manual-facts.yaml` / `manual-habits.yaml` / `instance-calibration-notes.md` / onboarding `profile_data.*` migrate on first read; afterward the unified file is authoritative. For stages without these flags, use `twinbox context upsert-fact` / `profile-set` if you need durable prose. For **material_import**, show `config/weekly-template.md` first; if the user wants different sections, turn that into Markdown and `twinbox context import-material FILE --intent template_hint`, then rerun Phase 4 or wait for weekly refresh.
+**Persistence details for profile_setup:** CLI flags **`--profile-notes`** / **`--calibration-notes`** / **`--cc-downweight`** map to `runtime/context/human-context.yaml` (`profile_notes` / `calibration`) plus `twinbox.json.preferences.cc_downweight.enabled`. Phase 2/3 **and Phase 4** **`context-pack.json`** expose these as `human_context.onboarding_profile_notes` / `human_context.calibration_notes`. Legacy `manual-facts.yaml` / `manual-habits.yaml` / `instance-calibration-notes.md` / onboarding `profile_data.*` migrate on first read; afterward the unified file is authoritative. For stages without these flags, use `twinbox context upsert-fact` / `profile-set` if you need durable prose. For **material_import**, show `config/weekly-template.md` first; if the user wants different sections, turn that into Markdown and import with **`twinbox_context_import_material`** (plugin) or `twinbox context import-material FILE --intent template_hint`, then rerun Phase 4 or wait for weekly refresh — **same turn as the file exists**, no “下一步再导入”.
 
 **Recovery if the UI went idle** after the user sent their profile (no assistant text, empty bubble): (1) **`twinbox_onboarding_advance`** with `profile_notes` / `calibration_notes` from the user’s **last** message; (2) **`twinbox_onboarding_status`** then **`twinbox_onboarding_advance`** (or `twinbox onboarding status --json` then `twinbox onboarding next --json` with the same profile flags). If the Gateway still drops payloads, run **`twinbox openclaw onboarding-advance --profile-notes '…' --calibration-notes '…' --json`** on the **host shell** and paste stdout into chat.
 
@@ -106,15 +118,15 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 | 配置邮箱凭据（自动探测或显式主机参数，写入 `twinbox.json`）| `twinbox mailbox setup --email EMAIL --json` 或 `twinbox config mailbox-set --email EMAIL --json`（密码从 `TWINBOX_SETUP_IMAP_PASS` 注入）或 OpenClaw 工具 `twinbox_mailbox_setup` |
 | 配置 LLM API（写入 `twinbox.json`）| `twinbox config set-llm --provider openai|anthropic --model MODEL --api-url URL --json`（key 从 `TWINBOX_SETUP_API_KEY` 注入；必须显式传 model 和 api-url，Twinbox 不再内置默认 LLM 配置）或 OpenClaw 工具 `twinbox_config_set_llm`；与 OpenClaw 默认模型一致时可 `twinbox config import-llm-from-openclaw --json`（需 `openclaw.json` 内联 `apiKey`）或插件 `twinbox_config_import_llm_from_openclaw` |
 | 配置 Twinbox 偏好（含 CC 降权） | `twinbox config set-preferences --cc-downweight on|off --json` |
-| 导入会议纪要/项目台账等外部材料进入周报 | `twinbox context import-material FILE --intent reference`（随后跑 `twinbox-orchestrate run --phase 4` 或等常规调度） |
-| 自定义周报模板（标题/章节顺序/措辞） | 先展示 `config/weekly-template.md`，再把用户确认的新模板用 `twinbox context import-material FILE --intent template_hint` 导入 |
+| 导入会议纪要/项目台账等外部材料进入周报 | OpenClaw 有插件时优先 **`twinbox_context_import_material`**（`source_path` + `intent`）；否则 `twinbox context import-material FILE --intent reference`（随后跑 `twinbox-orchestrate run --phase 4` 或等常规调度） |
+| 自定义周报模板（标题/章节顺序/措辞） | 先展示 `config/weekly-template.md`，再把用户确认的新模板用 **`twinbox_context_import_material`**（`intent=template_hint`）或 `twinbox context import-material FILE --intent template_hint` 导入 |
 | 配置 Twinbox integration 默认值 | `twinbox config integration-set --use-fragment yes|no [--fragment-path PATH] --json` |
 | 配置 OpenClaw 默认值 | `twinbox config openclaw-set [--home PATH] [--bin NAME] [--strict|--no-strict] [--sync-env|--no-sync-env] [--restart-gateway|--no-restart-gateway] --json` |
 | OpenClaw 安装总向导（唯一公开向导入口；**Apply setup 后默认完成**：OpenClaw 合并 + plugin/tools 可观测性 + **vendor-safe bridge user timer 安装 + health dry-run**；`phase2_ready=true` 才 handoff Phase 2；逃生口 `--skip-bridge`；部署成功后默认尝试 **daemon start**，`--no-start-daemon` 跳过） | `twinbox onboard openclaw [--skip-bridge] [--no-start-daemon] --json` |
 | OpenClaw 宿主接线高级入口（与 onboard 共享同一套 prerequisite bundle；默认安装 bridge；成功后默认 **daemon start**，`--no-start-daemon` 跳过）| `twinbox deploy openclaw --json`（`--dry-run`；`--no-restart`；`--no-env-sync`；`--strict`；`--skip-bridge`；`--twinbox-bin`；`--no-start-daemon`；可选 `--fragment` / `--no-fragment`） |
 | 撤销上述宿主接线（不删 `~/.twinbox`；**同时移除 bridge user units**）| `twinbox deploy openclaw --rollback --json`（可选 `--remove-config`） |
 | Vendor-safe OpenClaw bridge（systemd user 单元只调用已安装 `twinbox`，不依赖 repo `scripts/`） | `twinbox host bridge install|remove|status|poll [--dry-run] [--openclaw-bin …]` |
-| OpenClaw 内 Phase 2 onboarding 原生工具（对应 CLI：`twinbox openclaw …`） | 插件：`twinbox_onboarding_start` / `twinbox_onboarding_status` / `twinbox_onboarding_advance` / `twinbox_onboarding_confirm_push` |
+| OpenClaw 内 Phase 2 onboarding 与上下文材料（对应 CLI：`twinbox openclaw …` / `twinbox context …`） | 插件：`twinbox_context_import_material` / `twinbox_onboarding_start` / `twinbox_onboarding_status` / `twinbox_onboarding_advance` / `twinbox_onboarding_confirm_push` |
 | Weekly brief lookup | `twinbox task weekly --json` |
 | Manage semantic routing rules / "以后别把这类邮件派给我" | `twinbox rule list --json` / `twinbox rule add --rule-json ...` |
 | Test a routing rule against recent threads | `twinbox rule test --rule-id RULE_ID --json` |
@@ -158,6 +170,8 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 - For onboarding LLM API config, prefer native OpenClaw tool `twinbox_config_set_llm` (passes api_key via env)
 - For onboarding after mailbox/LLM, prefer `twinbox_onboarding_start` / `twinbox_onboarding_status` / `twinbox_onboarding_advance`; **push_subscription** 用 `twinbox_onboarding_confirm_push`（事务性写订阅 + schedule ownership），避免仅依赖 `onboarding next` 的占位文案
 - After the user answers **profile_setup** in natural language, **do not** end the turn without **`twinbox_onboarding_advance`** (or equivalent `onboarding next` / `openclaw onboarding-advance`) **and** a visible summary — the user should not need to name the CLI
+- After **writing or staging a file** for Twinbox (e.g. `exec` to `/tmp/...`), **do not** end the turn without **`twinbox_context_import_material`** (or `twinbox context import-material …`) **and** a visible summary — never stop at “现在导入…”
+- Prefer **`twinbox_context_import_material`** over generic shell for the same path so the model sees a **named tool** and is less likely to drop the chain
 - Stay read-only unless the user explicitly asks for draft/action generation
 - **Never end a task turn with only file reads and no text answer.** A turn with `assistant.content=[]` or no text is a failure — always produce real command output followed by a summary
 

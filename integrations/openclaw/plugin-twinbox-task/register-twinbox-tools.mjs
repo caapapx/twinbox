@@ -376,6 +376,28 @@ export function registerTwinboxTaskTools(api) {
   });
 
   api.registerTool({
+    name: "twinbox_context_import_material",
+    description:
+      "Import a host file into Twinbox material-extracts (weekly reference or template). Call in the SAME turn you have a real path (e.g. after writing /tmp/...md). Do NOT say you will import in the next message — that pattern causes empty bubbles on astron-code-latest. reference = 会议纪要/台账/周报素材; template_hint = 自定义周报章节. Runs: twinbox context import-material SOURCE --intent INTENT. After this tool returns, MUST output visible text (stdout summary); then twinbox_onboarding_advance if material_import is done.",
+    parameters: Type.Object({
+      source_path: Type.String({ description: "Absolute or ~ path to file on the Gateway host" }),
+      intent: Type.Optional(
+        Type.Union([Type.Literal("reference"), Type.Literal("template_hint")], {
+          description: "reference = digest material; template_hint = weekly template structure",
+        }),
+      ),
+    }),
+    async execute(...args) {
+      const params = args.length >= 2 ? args[1] : args[0];
+      const intent = params?.intent ?? "reference";
+      const source = params?.source_path ?? "";
+      const cliArgs = ["context", "import-material", source, "--intent", intent];
+      const r = await runTwinbox(cliArgs, opts);
+      return formatResult(r);
+    },
+  });
+
+  api.registerTool({
     name: "twinbox_onboarding_start",
     description:
       "Start or resume Twinbox Phase 2 onboarding (JSON). Runs: twinbox openclaw onboarding-start. After this tool returns, you MUST reply with a visible text summary.",

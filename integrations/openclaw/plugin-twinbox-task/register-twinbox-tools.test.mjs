@@ -68,6 +68,7 @@ test("registerTwinboxTaskTools registers expected tools and task/thread helpers 
   assert.deepEqual(names, [
     "twinbox_config_import_llm_from_openclaw",
     "twinbox_config_set_llm",
+    "twinbox_context_import_material",
     "twinbox_latest_mail",
     "twinbox_mailbox_setup",
     "twinbox_mailbox_status",
