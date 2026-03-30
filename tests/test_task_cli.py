@@ -769,7 +769,7 @@ class TestQueueDigestThreadCli:
         )
         monkeypatch.setattr(
             "twinbox_core.mailbox.run_preflight",
-            lambda state_root=None: (0, {"status": "ok"}),
+            lambda state_root=None, **kwargs: (0, {"status": "ok"}),
         )
 
         assert main(["mailbox", "setup", "--email", "user@example.com", "--json"]) == 0
@@ -807,7 +807,7 @@ class TestQueueDigestThreadCli:
         )
         monkeypatch.setattr(
             "twinbox_core.mailbox.run_preflight",
-            lambda state_root=None: (0, {"status": "ok"}),
+            lambda state_root=None, **kwargs: (0, {"status": "ok"}),
         )
 
         assert main(["mailbox", "setup", "--email", "user@example.com", "--json"]) == 0
@@ -855,7 +855,7 @@ class TestQueueDigestThreadCli:
         )
         monkeypatch.setattr(
             "twinbox_core.mailbox.run_preflight",
-            lambda state_root=None: (0, {"status": "ok"}),
+            lambda state_root=None, **kwargs: (0, {"status": "ok"}),
         )
 
         assert main(["mailbox", "setup", "--email", "user@example.com"]) == 0
@@ -863,6 +863,43 @@ class TestQueueDigestThreadCli:
 
         assert ("progress", "Detecting mailbox settings") in events
         assert ("progress", "Checking mailbox settings") in events
+
+    def test_mailbox_setup_uses_merged_mailbox_secret_for_preflight(
+        self, monkeypatch, tmp_path, capsys
+    ):
+        monkeypatch.setenv("TWINBOX_STATE_ROOT", str(tmp_path))
+        monkeypatch.setenv("IMAP_PASS", "stale-process-secret")
+        monkeypatch.setenv("SMTP_PASS", "stale-process-secret")
+        monkeypatch.setenv("TWINBOX_SETUP_IMAP_PASS", "fresh-secret")
+        seen_preflight_env: dict[str, str] = {}
+
+        monkeypatch.setattr(
+            "twinbox_core.mailbox_detect.detect_to_env",
+            lambda email, verbose=False: {
+                "IMAP_HOST": "imap.example.com",
+                "IMAP_PORT": "993",
+                "IMAP_ENCRYPTION": "tls",
+                "SMTP_HOST": "smtp.example.com",
+                "SMTP_PORT": "465",
+                "SMTP_ENCRYPTION": "tls",
+            },
+        )
+
+        def fake_run_preflight(state_root=None, env=None, **kwargs):
+            del state_root, kwargs
+            seen_preflight_env.update(env or {})
+            if (env or {}).get("IMAP_PASS") != "fresh-secret":
+                return 4, {"status": "fail"}
+            return 0, {"status": "ok"}
+
+        monkeypatch.setattr("twinbox_core.mailbox.run_preflight", fake_run_preflight)
+
+        assert main(["mailbox", "setup", "--email", "user@example.com", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+
+        assert payload["status"] == "ok"
+        assert seen_preflight_env["IMAP_PASS"] == "fresh-secret"
+        assert seen_preflight_env["SMTP_PASS"] == "fresh-secret"
 
     def test_config_set_llm_json_writes_twinbox_json(self, monkeypatch, tmp_path, capsys):
         monkeypatch.setenv("TWINBOX_STATE_ROOT", str(tmp_path))

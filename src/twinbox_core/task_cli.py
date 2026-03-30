@@ -1529,7 +1529,9 @@ def cmd_config_mailbox_set(args: argparse.Namespace) -> int:
     merged = merge_env_file(paths.env_file, updates)
     write_env_file(paths.env_file, merged)
     preflight_progress = _create_cli_progress("Checking mailbox settings", enabled=not args.json)
-    exit_code, preflight = run_preflight(state_root=args.state_root)
+    validation_env = dict(os.environ)
+    validation_env.update(merged)
+    exit_code, preflight = run_preflight(state_root=args.state_root, env=validation_env)
     if exit_code == 0:
         preflight_progress.finish("Mailbox settings validated")
     else:
