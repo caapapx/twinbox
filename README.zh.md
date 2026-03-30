@@ -122,7 +122,10 @@ source ~/.bashrc
 
 ```bash
 twinbox install --archive twinbox_core.tar.gz
+# 本仓库打出来的包名一般为 dist/twinbox_core-<version>.tar.gz（版本见 pyproject.toml）
 ```
+
+`install --archive` 会把内容解压到 **`$TWINBOX_STATE_ROOT/vendor/`**（含 `twinbox_core`、`integrations/openclaw/` 及已打包的插件 `dist/`、`SKILL.md`、引导脚本等），并写入 **`~/.config/twinbox/code-root`** 指向该 vendor 目录，这样 deploy / onboard 在不 clone 仓库时也能解析同一棵树（开发可用 **`TWINBOX_CODE_ROOT`** 覆盖）。**维护者：** 用 `scripts/package_vendor_tarball.sh` 打归档、用 `scripts/build_go_twinbox.sh` 编 Go 入口，详见 `cmd/twinbox-go/README.md`。
 
 日常使用不要用 `sudo` 执行 `twinbox`，否则状态目录可能会写到 `/root/.twinbox`。
 
@@ -136,7 +139,7 @@ twinbox install --archive twinbox_core.tar.gz
 twinbox onboard openclaw
 ```
 
-作用概览：检查 OpenClaw 环境；初始化或复用 `~/.twinbox`；合并 `openclaw.json`；同步 `SKILL.md`；按配置重启 Gateway；安装调用 **`twinbox host bridge poll`** 的 **systemd user** 单元（vendor/no-clone 也可用）。请用 `twinbox onboard openclaw --json` 核对 **`phase2_ready` 为 true** 后再认为宿主接线完成。细节见 [integrations/openclaw/DEPLOY.md](integrations/openclaw/DEPLOY.md)。**这一阶段不会替你完成邮箱登录或 LLM 配置。**
+作用概览：检查 OpenClaw 环境；初始化或复用 `~/.twinbox`；合并 `openclaw.json`；同步 `SKILL.md`；按配置重启 Gateway；安装调用 **`twinbox host bridge poll`** 的 **systemd user** 单元（vendor/no-clone 也可用）；最后一步 deploy 成功后**会尝试启动 JSON-RPC daemon**，若不需要可加 **`--no-start-daemon`**。请用 `twinbox onboard openclaw --json` 核对 **`phase2_ready` 为 true** 后再认为宿主接线完成。细节见 [integrations/openclaw/DEPLOY.md](integrations/openclaw/DEPLOY.md)。**这一阶段不会替你完成邮箱登录或 LLM 配置。**
 
 **阶段二：Twinbox 引导（在 OpenClaw 对话里继续）**
 

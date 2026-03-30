@@ -118,7 +118,10 @@ When you already have `twinbox_core.tar.gz` (or an equivalent runtime archive), 
 
 ```bash
 twinbox install --archive twinbox_core.tar.gz
+# Versioned bundle from this repo: dist/twinbox_core-<version>.tar.gz (see pyproject.toml)
 ```
+
+`install --archive` unpacks into `$TWINBOX_STATE_ROOT/vendor/` (Python package, `integrations/openclaw/` including the bundled plugin, `SKILL.md`, bootstrap scripts) and writes **`~/.config/twinbox/code-root`** to that vendor directory so deploy/onboarding resolve the same tree without a git checkout (development override: **`TWINBOX_CODE_ROOT`**). **Maintainers:** build the archive with `scripts/package_vendor_tarball.sh` and the Go CLI with `scripts/build_go_twinbox.sh` (see `cmd/twinbox-go/README.md`).
 
 Do not run `twinbox` with `sudo` in normal use; otherwise state may be written to `/root/.twinbox`.
 
@@ -132,7 +135,7 @@ If you mainly use Twinbox together with OpenClaw, start here. The full path has 
 twinbox onboard openclaw
 ```
 
-What it does: checks the OpenClaw environment; initializes or reuses `~/.twinbox`; merges `openclaw.json`; syncs `SKILL.md`; restarts the gateway when configured; installs the **OpenClaw cron bridge** user units that call **`twinbox host bridge poll`** (works in vendor/no-clone installs). Use `twinbox onboard openclaw --json` and confirm **`"phase2_ready": true`** before treating host wiring as done. See [integrations/openclaw/DEPLOY.md](integrations/openclaw/DEPLOY.md). **It does not complete mailbox login or LLM setup for you.**
+What it does: checks the OpenClaw environment; initializes or reuses `~/.twinbox`; merges `openclaw.json`; syncs `SKILL.md`; restarts the gateway when configured; installs the **OpenClaw cron bridge** user units that call **`twinbox host bridge poll`** (works in vendor/no-clone installs); after the final deploy step, **starts the JSON-RPC daemon** unless you pass **`--no-start-daemon`**. Use `twinbox onboard openclaw --json` and confirm **`"phase2_ready": true`** before treating host wiring as done. See [integrations/openclaw/DEPLOY.md](integrations/openclaw/DEPLOY.md). **It does not complete mailbox login or LLM setup for you.**
 
 **Stage 2: Twinbox onboarding (continue in OpenClaw chat)**
 
