@@ -232,10 +232,12 @@ See the CLI doc for more (`task progress`, `task mailbox-status`, ...).
 
 | Command | Purpose |
 | --- | --- |
-| `twinbox daemon start --supervise` | start with a supervisor that restarts on exit |
+| `twinbox daemon start` | start daemon (default: **no** supervisor) |
+| `twinbox daemon start --supervise` | optional: lightweight supervisor restarts daemon after unexpected exit |
 | `twinbox daemon stop` | stop |
-| `twinbox daemon restart --supervise` | restart with supervision |
-| `twinbox daemon status --json` | state (includes supervised mode) |
+| `twinbox daemon restart` | restart (default: no supervisor unless you pass `--supervise`) |
+| `twinbox daemon restart --supervise` | restart under supervision |
+| `twinbox daemon status --json` | state (includes supervised mode if you used `--supervise`) |
 
 #### 6. Delivery and vendor sync
 
