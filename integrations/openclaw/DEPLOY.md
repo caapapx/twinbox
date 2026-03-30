@@ -209,9 +209,12 @@ twinbox deploy openclaw --rollback --json
 | 项 | 说明 |
 |----|------|
 | 位置 | [plugin-twinbox-task/](./plugin-twinbox-task/) |
-| 入口 | [index.mjs](./plugin-twinbox-task/index.mjs)、[register-twinbox-tools.mjs](./plugin-twinbox-task/register-twinbox-tools.mjs) |
+| 网关实际加载 | **[`dist/index.mjs`](./plugin-twinbox-task/dist/index.mjs)**（esbuild 打包，依赖已内联）。**宿主不需要 `npm ci`**；与 `twinbox install --archive` / vendor 解压同一份文件即可。 |
+| 源码（仅维护者） | [index.mjs](./plugin-twinbox-task/index.mjs)、[register-twinbox-tools.mjs](./plugin-twinbox-task/register-twinbox-tools.mjs) — 改源码后在本目录执行 `npm ci && npm run build` 并提交新的 `dist/`。 |
 | 配置 | `twinboxBin`：可选，建议写 Gateway 宿主机上的绝对路径；`cwd`：Twinbox code root。若未显式配置 `twinboxBin`，插件会先尝试 `<cwd>/scripts/twinbox`，再退回 PATH 中的 `twinbox` |
 | 测试 | `node --test integrations/openclaw/plugin-twinbox-task/register-twinbox-tools.test.mjs` |
+
+详见 [plugin-twinbox-task/README.md](./plugin-twinbox-task/README.md)。
 
 安装方式以 OpenClaw 当前插件文档为准（见 [DEPLOY-APPENDIX.md §A.1](./DEPLOY-APPENDIX.md)）。插件与 Markdown skill 可并存。
 

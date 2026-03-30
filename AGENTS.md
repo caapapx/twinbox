@@ -64,7 +64,7 @@
    - 用户侧命令名固定为 **`twinbox`**。Go 源码目录可保留 `cmd/twinbox-go/`，但交付产物必须构建为 `dist/twinbox`（而非 `twinbox-go`）。
    - `twinbox` 二进制默认按用户级安装到 `PATH`（推荐 `~/.local/bin`），**不要**放在 `~/.twinbox` 这类 state root 下，也不要在日常流程里用 `sudo twinbox ...`。
    - 用户级安装后，需把 `~/.local/bin` 持久化到 shell 启动文件（当前约定：`~/.bashrc`，例如 `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc`），避免重开终端后命令丢失。
-   - Python 运行时与 OpenClaw 宿主资源通过归档交付：执行 `scripts/package_vendor_tarball.sh` 产出 `dist/twinbox_core-<version>.tar.gz`（内含 `twinbox_core/`、`integrations/openclaw/`、根 `SKILL.md`、`scripts/install_openclaw_twinbox_init.sh`；排除 `__pycache__` 与插件 `node_modules`），供 `twinbox install --archive ...` 解压到 `vendor/` 并写入 `~/.config/twinbox/code-root` 指向该目录；开发时仍可用 `TWINBOX_CODE_ROOT` 指向 git 仓库。
+   - Python 运行时与 OpenClaw 宿主资源通过归档交付：执行 `scripts/package_vendor_tarball.sh` 产出 `dist/twinbox_core-<version>.tar.gz`（内含 `twinbox_core/`、`integrations/openclaw/`、根 `SKILL.md`、`scripts/install_openclaw_twinbox_init.sh`；排除 `__pycache__` 与插件 `node_modules`），供 `twinbox install --archive ...` 解压到 `vendor/` 并写入 `~/.config/twinbox/code-root` 指向该目录；开发时仍可用 `TWINBOX_CODE_ROOT` 指向 git 仓库。**OpenClaw 插件**在网关侧只加载已提交的 `plugin-twinbox-task/dist/index.mjs`（esbuild 打包），**用户侧不需要 `npm ci`**；仅维护者改插件源码时需在本目录 `npm ci && npm run build` 并提交新的 `dist/`。
 9. **Go CLI 变更后的默认构建与安装**（自动化助手与本地开发者）：凡修改 **`cmd/twinbox-go/`** 下代码，或修复 **仅能通过 Go 薄壳复现/验证** 的 CLI 行为（含 `main.go` 的 RPC 绕行、`install` 子命令等），在提交前**默认**应完成：
    - **构建并覆盖仓库内交付路径**：在仓库根执行 **`bash scripts/build_go_twinbox.sh`**（或等价：`cd cmd/twinbox-go && go build -o ../../dist/twinbox .`），产物为 **`dist/twinbox`**。
    - **同步用户可执行文件**（开发机常用）：同一脚本加 **`--install`**（或环境变量 **`TWINBOX_GO_INSTALL=1`**），将二进制复制到 **`TWINBOX_GO_BIN_DEST`**（默认 **`$HOME/.local/bin/twinbox`**），避免 PATH 上仍是旧构建。
