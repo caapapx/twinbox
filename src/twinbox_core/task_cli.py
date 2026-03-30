@@ -946,6 +946,24 @@ def cmd_queue_dismiss(args: argparse.Namespace) -> int:
 
     snapshot = _pulse_snapshot_for_thread(args.thread_id)
     if not snapshot:
+        if args.json:
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "thread_id": args.thread_id,
+                        "error": f"Thread not found in activity pulse: {args.thread_id!r}",
+                        "recovery_tool": "twinbox_daytime_sync",
+                        "recovery_hint": (
+                            "Use a thread_id from `twinbox task todo --json` or "
+                            "`twinbox task latest-mail --json` after mail sync."
+                        ),
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 0
         print(f"错误: 未找到线程 '{args.thread_id}'", file=sys.stderr)
         return 1
     queue_tags = snapshot.get("queue_tags", [])
@@ -975,6 +993,24 @@ def cmd_queue_complete(args: argparse.Namespace) -> int:
 
     snapshot = _pulse_snapshot_for_thread(args.thread_id)
     if not snapshot:
+        if args.json:
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "thread_id": args.thread_id,
+                        "error": f"Thread not found in activity pulse: {args.thread_id!r}",
+                        "recovery_tool": "twinbox_daytime_sync",
+                        "recovery_hint": (
+                            "Use a thread_id from `twinbox task todo --json` or "
+                            "`twinbox task latest-mail --json` after mail sync."
+                        ),
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 0
         print(f"错误: 未找到线程 '{args.thread_id}'", file=sys.stderr)
         return 1
     complete_thread(
@@ -2466,9 +2502,30 @@ def cmd_thread_explain(args: argparse.Namespace) -> int:
 
 def cmd_thread_progress(args: argparse.Namespace) -> int:
     """Search current thread progress by thread key, subject, or business keyword."""
-    from .daytime_slice import search_activity_pulse
+    from .daytime_slice import DaytimeSliceError, search_activity_pulse
 
-    matches = search_activity_pulse(args.query, limit=args.limit)
+    try:
+        matches = search_activity_pulse(args.query, limit=args.limit)
+    except DaytimeSliceError as exc:
+        if args.json:
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "error": str(exc),
+                        "recovery_tool": "twinbox_daytime_sync",
+                        "recovery_hint": (
+                            "Mail data not yet generated. Call twinbox_daytime_sync() "
+                            "to run the first sync, then re-run thread progress."
+                        ),
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 0
+        print(f"错误: {exc}", file=sys.stderr)
+        return 1
 
     if args.json:
         print(json.dumps(matches, ensure_ascii=False, indent=2))
@@ -2569,6 +2626,24 @@ def cmd_digest_pulse(args: argparse.Namespace) -> int:
     try:
         pulse = load_activity_pulse()
     except DaytimeSliceError as exc:
+        if args.json:
+            print(
+                json.dumps(
+                    {
+                        "digest_type": "pulse",
+                        "ok": False,
+                        "error": str(exc),
+                        "recovery_tool": "twinbox_daytime_sync",
+                        "recovery_hint": (
+                            "Mail data not yet generated. Call twinbox_daytime_sync() "
+                            "to run the first sync, then re-open digest pulse."
+                        ),
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 0
         print(f"错误: {exc}", file=sys.stderr)
         return 1
 
@@ -2619,6 +2694,24 @@ def cmd_digest_weekly(args: argparse.Namespace) -> int:
     weekly_path = validation_root / "weekly-brief-raw.json"
 
     if not weekly_path.exists():
+        if args.json:
+            print(
+                json.dumps(
+                    {
+                        "digest_type": "weekly",
+                        "ok": False,
+                        "error": "weekly-brief-raw.json not found",
+                        "recovery_tool": "twinbox_daytime_sync",
+                        "recovery_hint": (
+                            "Weekly brief not yet generated. Call twinbox_daytime_sync(job='nightly-full') "
+                            "to run a full pipeline, then re-open digest weekly."
+                        ),
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 0
         print("错误: 未找到 weekly-brief-raw.json", file=sys.stderr)
         return 1
 
@@ -2808,9 +2901,27 @@ def cmd_task_todo(args: argparse.Namespace) -> int:
 
 def cmd_task_progress(args: argparse.Namespace) -> int:
     """Deterministic task entrypoint for progress lookup."""
-    from .daytime_slice import search_activity_pulse
+    from .daytime_slice import DaytimeSliceError, search_activity_pulse
 
-    matches = search_activity_pulse(args.query, limit=args.limit)
+    try:
+        matches = search_activity_pulse(args.query, limit=args.limit)
+    except DaytimeSliceError as exc:
+        if getattr(args, "json", False):
+            err_payload = {
+                "task": "progress",
+                "query": args.query,
+                "ok": False,
+                "error": str(exc),
+                "recovery_tool": "twinbox_daytime_sync",
+                "recovery_hint": (
+                    "Mail data not yet generated. Call twinbox_daytime_sync() "
+                    "to run the first sync, then re-call twinbox task progress."
+                ),
+            }
+            print(json.dumps(err_payload, ensure_ascii=False, indent=2))
+            return 0
+        print(f"错误: {exc}", file=sys.stderr)
+        return 1
     role_map = _recipient_role_map()
     enriched_matches = []
     for item in matches:

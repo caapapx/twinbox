@@ -176,7 +176,7 @@ Twinbox 邮件状态由 **OpenClaw 宿主上的 `twinbox` / `twinbox-orchestrate
 
 - 用户确认线程**已完成**或**忽略**时，必须持久化队列状态：运行 `twinbox queue complete` / `queue dismiss` 加 `--json`，或调用 OpenClaw 工具 `twinbox_queue_complete` / `twinbox_queue_dismiss`。从 `task todo`、`task latest-mail` 或 `thread inspect` 解析 `thread_id` —— 每周简报的文字行不是线程 key。
 - `runtime/context/user-queue-state.yaml` 在首次成功 `queue complete` 或 `queue dismiss` 时**创建**；之前不存在是正常的。
-- 先运行命令（`--json`），然后用纯文字为用户总结 stdout
+- 先运行命令（`--json`），然后用纯文字为用户总结 stdout；**缺失邮件工件**（如 `activity-pulse.json` / `weekly-brief-raw.json`）或**队列中找不到 thread_id** 时，`--json` 仍 **exit 0**，stdout 为单帧 JSON（含 `ok: false`、`recovery_tool` / `recovery_hint`），与 `task latest-mail` 一致——勿仅依赖非零退出码判断失败。
 - 常见用户提问优先用 `twinbox task ...`；这些是薄封装，不是第二条流水线
 - 查询最新邮件情况（含中文各种变体）时，先用 `twinbox task latest-mail --json`；除非连接性是明确问题，否则不要从 `preflight` 开始。用户明确要求"未读"时传 `--unread-only` 或工具参数 `unread_only: true`。**OpenClaw 插件 `twinbox_latest_mail`：** 若 `activity-pulse.json` 缺失，插件会在同一次工具调用内自动运行 `daytime-sync` 并重试——不要反复叙述「让我执行」；等工具输出即可。
 - 查看某个线程的完整内容/详情/状态时，优先 `twinbox thread inspect THREAD_ID --json` 或 `twinbox_thread_inspect`；非精确查找时才用 `task progress`。

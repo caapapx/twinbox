@@ -523,6 +523,13 @@ class TestQueueDigestThreadCli:
         assert payload["thread_key"] == "项目北辰资源申请"
         assert payload["status"] == "dismissed"
 
+    def test_queue_dismiss_unknown_thread_json_is_structured(self, phase4_root, capsys):
+        assert main(["queue", "dismiss", "no-such-thread", "--reason", "x", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["ok"] is False
+        assert payload["thread_id"] == "no-such-thread"
+        assert payload["recovery_tool"] == "twinbox_daytime_sync"
+
     def test_queue_complete_and_restore_return_json_contract(self, phase4_root, capsys):
         (phase4_root / "activity-pulse.json").write_text(
             json.dumps(
@@ -564,6 +571,12 @@ class TestQueueDigestThreadCli:
         assert main(["queue", "restore", "Invoice #2026-003", "--json"]) == 0
         restored = json.loads(capsys.readouterr().out)
         assert restored["status"] == "restored"
+
+    def test_queue_complete_unknown_thread_json_is_structured(self, phase4_root, capsys):
+        assert main(["queue", "complete", "ghost-thread", "--action-taken", "n/a", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["ok"] is False
+        assert payload["thread_id"] == "ghost-thread"
 
     def test_schedule_list_json_exposes_defaults_and_overrides(self, monkeypatch, tmp_path, capsys):
         monkeypatch.setenv("TWINBOX_STATE_ROOT", str(tmp_path))
@@ -1060,8 +1073,13 @@ class TestQueueDigestThreadCli:
         assert "## SLA 风险" in out
         assert "=" * 40 not in out
 
-    def test_digest_pulse_missing_file_exits_1(self, phase4_root):
-        assert main(["digest", "pulse", "--json"]) == 1
+    def test_digest_pulse_missing_file_json_recovery(self, phase4_root, capsys):
+        assert main(["digest", "pulse", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["digest_type"] == "pulse"
+        assert payload["ok"] is False
+        assert payload["recovery_tool"] == "twinbox_daytime_sync"
+        assert "activity-pulse" in payload["error"].lower()
 
     def test_digest_pulse_json_schema(self, phase4_root, capsys):
         (phase4_root / "activity-pulse.json").write_text(
@@ -1121,8 +1139,12 @@ class TestQueueDigestThreadCli:
         assert "## 待推送线程" in out
         assert "=" * 40 not in out
 
-    def test_digest_weekly_missing_file_exits_1(self, phase4_root):
-        assert main(["digest", "weekly", "--json"]) == 1
+    def test_digest_weekly_missing_file_json_recovery(self, phase4_root, capsys):
+        assert main(["digest", "weekly", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["digest_type"] == "weekly"
+        assert payload["ok"] is False
+        assert "weekly-brief" in payload["error"]
 
     def test_digest_weekly_human_output_renders_full_markdown_sections(self, phase4_root, capsys):
         state_root = phase4_root.parents[2]
@@ -1417,6 +1439,12 @@ class TestQueueDigestThreadCli:
         assert body["latest_message_ref"] == "INBOX#1752733651"
         assert body["unread_count"] == 3
         assert "MBZK-V0.9.3版本" in body["content_excerpt"]
+
+    def test_thread_progress_json_missing_pulse_recovery(self, phase4_root, capsys):
+        assert main(["thread", "progress", "x", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["ok"] is False
+        assert payload["recovery_tool"] == "twinbox_daytime_sync"
 
     def test_thread_progress_searches_activity_pulse(self, phase4_root, capsys):
         (phase4_root / "activity-pulse.json").write_text(
@@ -1763,6 +1791,14 @@ class TestTaskRoutes:
         payload = json.loads(capsys.readouterr().out)
         assert payload["urgent"]["items"][0]["thread_id"] == "[GRP] thread-urgent-group"
         assert payload["pending"]["items"][0]["thread_id"] == "[GRP] thread-pending-group"
+
+    def test_task_progress_json_missing_pulse_recovery(self, phase4_root, capsys):
+        assert main(["task", "progress", "anything", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["task"] == "progress"
+        assert payload["ok"] is False
+        assert payload["query"] == "anything"
+        assert payload["recovery_tool"] == "twinbox_daytime_sync"
 
     def test_task_progress_json_wraps_thread_progress(self, phase4_root, capsys):
         (phase4_root / "activity-pulse.json").write_text(
