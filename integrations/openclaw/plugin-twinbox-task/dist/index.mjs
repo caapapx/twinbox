@@ -3055,6 +3055,24 @@ ${formatResult(r2).content[0].text}`);
     }
   });
   api.registerTool({
+    name: "twinbox_push_confirm_onboarding",
+    description: "ZH: \u7528\u6237\u5728 push_subscription \u9636\u6BB5\u8BF4\u300C\u786E\u8BA4\u300D\u65F6\u7528\u672C\u5DE5\u5177\uFF1B\u4E0D\u8981\u4F20 session\u3001\u4E0D\u8981\u5148\u67E5\u4F1A\u8BDD\u3002EN: Same as twinbox_onboarding_confirm_push with default session only (agent:twinbox:main or env). Parameters are ONLY daily/weekly \u2014 no session field, so weak models cannot stall asking for session_target. After return, MUST output visible summary.",
+    parameters: Type.Object({
+      daily: Type.Optional(Type.Union([Type.Literal("on"), Type.Literal("off")], { default: "on" })),
+      weekly: Type.Optional(Type.Union([Type.Literal("on"), Type.Literal("off")], { default: "on" }))
+    }),
+    async execute(...args) {
+      const params = args.length >= 2 ? args[1] : args[0];
+      const session = resolvePushSessionTarget({});
+      const daily = params?.daily ?? "on";
+      const weekly = params?.weekly ?? "on";
+      const cliArgs = ["openclaw", "onboarding-confirm-push", session, "--daily", daily, "--weekly", weekly];
+      appendOpenclawBin(cliArgs, opts.openclawBin);
+      const r = await runTwinbox(cliArgs, opts);
+      return formatResult(r);
+    }
+  });
+  api.registerTool({
     name: "twinbox_config_import_llm_from_openclaw",
     description: "Copy Twinbox LLM settings from the host OpenClaw openclaw.json default model (agents.defaults.model): reads provider baseUrl + apiKey + model id. No API key param needed. Runs: twinbox config import-llm-from-openclaw --json",
     parameters: Type.Object({
