@@ -33,13 +33,13 @@ class OrchestrationTest(unittest.TestCase):
         # tests/test_orchestration.py -> repo root is parents[1]
         self.repo_root = Path(__file__).resolve().parents[1]
 
-    def test_resolve_roots_default_points_at_repo_with_scripts(self) -> None:
+    def test_resolve_roots_default_points_at_repo_with_core_package(self) -> None:
         import os
 
         old = os.environ.pop("TWINBOX_CODE_ROOT", None)
         try:
             code_root, _state = resolve_roots(None)
-            self.assertTrue((code_root / "scripts" / "phase4_loading.sh").is_file())
+            self.assertTrue((code_root / "src" / "twinbox_core" / "__init__.py").is_file())
         finally:
             if old is not None:
                 os.environ["TWINBOX_CODE_ROOT"] = old
@@ -75,7 +75,8 @@ class OrchestrationTest(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         output = buffer.getvalue()
         self.assertIn("Phase 4 Loading", output)
-        self.assertIn("phase4_thinking_parallel.sh", output)
+        self.assertIn("twinbox_core.phase4_value", output)
+        self.assertIn("parallel-run", output)
 
     def test_render_contract_text_mentions_cli_surface(self) -> None:
         rendered = render_contract_text(self.repo_root, self.repo_root, phase=2, serial_phase4=False)
@@ -91,21 +92,21 @@ class OrchestrationTest(unittest.TestCase):
         self.assertTrue(job.updates_dedupe)
         self.assertFalse(job.archive_on_success)
 
-    def test_daytime_sync_uses_incremental_phase1_script(self) -> None:
+    def test_daytime_sync_uses_incremental_python_module(self) -> None:
         job = get_scheduled_job("daytime-sync")
 
         steps = _scheduled_job_steps(job, self.repo_root)
 
         self.assertEqual(steps[0][0], "Phase 1 Incremental (daytime)")
-        self.assertIn("scripts/phase1_incremental.sh", steps[0][1][1])
+        self.assertIn("twinbox_core.incremental_sync", steps[0][1])
 
-    def test_nightly_full_keeps_full_phase1_loading_script(self) -> None:
+    def test_nightly_full_keeps_full_phase1_loading_module(self) -> None:
         job = get_scheduled_job("nightly-full")
 
         steps = _scheduled_job_steps(job, self.repo_root)
 
         self.assertEqual(steps[0][0], "Phase 1 Loading")
-        self.assertIn("scripts/phase1_loading.sh", steps[0][1][1])
+        self.assertIn("twinbox_core.loading_pipeline", steps[0][1])
 
     def test_run_scheduled_job_daytime_dry_run_returns_notify_payload(self) -> None:
         with TemporaryDirectory() as temp_dir:

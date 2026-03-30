@@ -15,6 +15,7 @@ from .context_builder import _build_human_context, _normalize_thread, run_phase2
 from .mailbox import build_effective_env, find_himalaya_binary, render_himalaya_config, resolve_mailbox_paths
 from .paths import resolve_state_root
 from .routing_rules import apply_routing_rules
+from .twinbox_config import config_path_for_state_root
 
 
 class LoadingPipelineError(RuntimeError):
@@ -360,12 +361,12 @@ def run_phase4_loading(
 
     envelopes_path = phase1_raw / "envelopes-merged.json"
     thread_samples_path = phase3_dir / "thread-stage-samples.json"
-    if not envelopes_path.is_file() or not thread_samples_path.is_file():
-        raise LoadingPipelineError("Missing Phase 1/3 outputs.\nRun Phase 1-3 first.")
+    if not envelopes_path.is_file():
+        raise LoadingPipelineError("Missing Phase 1 outputs.\nRun Phase 1 first.")
 
     envelopes_payload = _read_json(envelopes_path)
     sample_bodies_payload = _read_json(phase1_raw / "sample-bodies.json") if (phase1_raw / "sample-bodies.json").is_file() else []
-    thread_samples_payload = _read_json(thread_samples_path)
+    thread_samples_payload: object = _read_json(thread_samples_path) if thread_samples_path.is_file() else {}
     lifecycle_raw = (phase3_dir / "lifecycle-model.yaml").read_text(encoding="utf-8") if (phase3_dir / "lifecycle-model.yaml").is_file() else ""
     persona_raw = (state_root / "runtime" / "validation" / "phase-2" / "persona-hypotheses.yaml").read_text(encoding="utf-8") if (state_root / "runtime" / "validation" / "phase-2" / "persona-hypotheses.yaml").is_file() else ""
     phase3_context = _read_json(phase3_dir / "context-pack.json") if (phase3_dir / "context-pack.json").is_file() else {}
@@ -536,7 +537,7 @@ def run_phase4_loading(
         output_path,
         state_root / "config" / "routing-rules.yaml",
         output_path,
-        state_root / ".env",
+        config_path_for_state_root(state_root),
     )
     final_context = _read_json(output_path)
     print(f"Context pack: {len(thread_contexts)} threads, {len(recent)} recent envelopes")

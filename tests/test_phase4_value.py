@@ -879,5 +879,42 @@ def test_dry_run_sees_filtered_threads(tmp_path: Path, capsys: pytest.CaptureFix
     assert "threads after filter: 1" in captured
 
 
+def test_run_parallel_phase4_thinking_three_popen_then_merge(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sr = tmp_path
+    (sr / "runtime" / "validation" / "phase-4").mkdir(parents=True)
+    (sr / "docs" / "validation").mkdir(parents=True)
+    (sr / "runtime" / "validation" / "phase-4" / "context-pack.json").write_text("{}", encoding="utf-8")
+    (sr / ".env").write_text("LLM_API_KEY=x\n", encoding="utf-8")
+
+    popen_calls: list[list[str]] = []
+
+    class MockProc:
+        def wait(self) -> int:
+            return 0
+
+    def fake_popen(argv, env=None, **kwargs):
+        popen_calls.append(list(argv))
+        return MockProc()
+
+    run_calls: list[list[str]] = []
+
+    def fake_run(argv, **kwargs):
+        run_calls.append(list(argv))
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr("twinbox_core.phase4_value.subprocess.Popen", fake_popen)
+    monkeypatch.setattr("twinbox_core.phase4_value.subprocess.run", fake_run)
+
+    from twinbox_core.phase4_value import run_parallel_phase4_thinking
+
+    assert run_parallel_phase4_thinking(sr) == 0
+    assert len(popen_calls) == 3
+    joined = " ".join(" ".join(c) for c in popen_calls)
+    assert "think-urgent" in joined and "think-sla" in joined and "think-brief" in joined
+    assert any("merge" in c for c in run_calls)
+
+
 if __name__ == "__main__":
     unittest.main()

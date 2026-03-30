@@ -10,6 +10,8 @@ import os
 import threading
 from typing import Any
 
+from .imap_utf7 import mailbox_for_wire
+
 _lock = threading.Lock()
 _holder: tuple[tuple[str, int, str], imaplib.IMAP4_SSL] | None = None
 
@@ -64,7 +66,7 @@ def imap_probe_select_folder(effective_env: dict[str, str], folder: str) -> tupl
         if not host or not user:
             return False, "missing IMAP_HOST or IMAP_LOGIN"
         conn = get_shared_imap(host, port, user, password)
-        typ, data = conn.select(folder, readonly=True)
+        typ, data = conn.select(mailbox_for_wire(folder), readonly=True)
         if typ != "OK":
             return False, f"IMAP SELECT failed: {typ} {data!r}"
         return True, "imap_select_ok"

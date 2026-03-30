@@ -23,7 +23,7 @@ twinbox 是以线程为中心的邮件 Copilot 基础设施。核心路径：rea
 2. **提交信息**：`type: short description`。
 3. **Phase 1–4**：只读；禁止 send / move / delete / archive / flag。
 4. **文档**：新增前先查 `docs/README.md`，优先合并进现有文件；入口级路径变更须更新索引（见 AGENTS.md）。
-5. **验证与 Git**：相关校验（如 `pytest`、任务指定 smoke）高置信度通过后应 `git commit`；环境允许且用户未要求仅本地时应 `git push` 到**当前分支上游**；禁止对共享分支 `push --force`。提交粒度与 `git add` 范围见 AGENTS.md。
+5. **验证与 Git**：默认**不自动** `git commit` / `git push`；用户明确要求时再执行。相关校验通过后若要提交，仍遵守提交信息与粒度约定；禁止对共享分支 `push --force`。细则见 AGENTS.md。
 6. **OpenClaw / Skill**：改 CLI、核心行为或 Tool 时须同步 `SKILL.md` 并部署（步骤见 AGENTS.md）。
 
 ## Feature 分支（如 dev-go）

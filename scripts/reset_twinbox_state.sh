@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Reset Twinbox runtime state only.
 # Removes: runtime/, OpenClaw twinbox sessions.
-# Preserves: CLI install, ~/.config/twinbox/ roots, openclaw.json, skill file,
+# Preserves: CLI install, ~/.twinbox pointer files, openclaw.json, skill file,
 #            systemd units, cron jobs.
 #
 # Usage:
@@ -10,10 +10,13 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 
-# Read state root from config file (defaults to ~/.twinbox)
-_STATE_ROOT_FILE="${XDG_CONFIG_HOME:-${HOME}/.config}/twinbox/state-root"
-if [[ -f "${_STATE_ROOT_FILE}" ]]; then
-  STATE_ROOT="$(tr -d '\n' < "${_STATE_ROOT_FILE}")"
+# Read state root from ~/.twinbox/state-root, then legacy ~/.config/twinbox/state-root
+_STATE_ROOT_NEW="${HOME}/.twinbox/state-root"
+_STATE_ROOT_LEGACY="${XDG_CONFIG_HOME:-${HOME}/.config}/twinbox/state-root"
+if [[ -f "${_STATE_ROOT_NEW}" ]]; then
+  STATE_ROOT="$(tr -d '\n' < "${_STATE_ROOT_NEW}")"
+elif [[ -f "${_STATE_ROOT_LEGACY}" ]]; then
+  STATE_ROOT="$(tr -d '\n' < "${_STATE_ROOT_LEGACY}")"
 else
   STATE_ROOT="${HOME}/.twinbox"
 fi

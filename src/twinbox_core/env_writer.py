@@ -10,6 +10,7 @@ from .twinbox_config import (
     config_path_for_env_file,
     env_from_twinbox_config,
     load_config_or_legacy,
+    load_twinbox_config,
     write_env_as_twinbox_config,
 )
 
@@ -25,30 +26,15 @@ def mask_secret(value: str) -> str:
     return f"***...{value[-4:]}"
 
 
-def load_env_file(path: Path) -> dict[str, str]:
-    """Parse a .env file into a dict.
-
-    Supports:
-    - # comment lines
-    - export KEY=VALUE prefix
-    - single/double quoted values
-    - KEY=VALUE without quotes
-    """
-    if path.name == ".env":
-        config_path = config_path_for_env_file(path)
-        if config_path.exists():
-            return env_from_twinbox_config(load_config_or_legacy(path))
-
-    if not path.exists():
-        return {}
-
+def _parse_dotenv_file(path: Path) -> dict[str, str]:
+    """Parse a shell-style dotenv file (no twinbox.json indirection)."""
     values: dict[str, str] = {}
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#"):
             continue
         if line.startswith("export "):
-            line = line[len("export "):].strip()
+            line = line[len("export ") :].strip()
         if "=" not in line:
             continue
         key, value = line.split("=", 1)
@@ -60,11 +46,38 @@ def load_env_file(path: Path) -> dict[str, str]:
     return values
 
 
-def merge_env_file(path: Path, updates: dict[str, str]) -> dict[str, str]:
-    """Read existing .env and overlay updates. Returns merged dict.
+def load_env_file(path: Path) -> dict[str, str]:
+    """Load mailbox + LLM keys for pipeline resolution.
 
-    Keys not in updates are preserved from the existing file.
+    Preferred path is ``state_root/twinbox.json``. If that file is missing,
+    falls back to a legacy ``state_root/.env`` when present.
+
+    For historical reasons, passing ``state_root/.env`` still works: when
+    ``twinbox.json`` exists beside it, that JSON is the source of truth.
     """
+    if path.name == "twinbox.json":
+        if path.is_file():
+            return env_from_twinbox_config(load_twinbox_config(path))
+        legacy = path.parent / ".env"
+        if legacy.is_file():
+            return _parse_dotenv_file(legacy)
+        return {}
+
+    if path.name == ".env":
+        config_path = config_path_for_env_file(path)
+        if config_path.is_file():
+            return env_from_twinbox_config(load_config_or_legacy(path))
+        if path.is_file():
+            return _parse_dotenv_file(path)
+        return {}
+
+    if not path.is_file():
+        return {}
+    return _parse_dotenv_file(path)
+
+
+def merge_env_file(path: Path, updates: dict[str, str]) -> dict[str, str]:
+    """Read existing state config (twinbox.json or legacy .env) and overlay *updates*."""
     existing = load_env_file(path)
     merged = dict(existing)
     merged.update(updates)
@@ -72,13 +85,8 @@ def merge_env_file(path: Path, updates: dict[str, str]) -> dict[str, str]:
 
 
 def write_env_file(path: Path, env: dict[str, str]) -> None:
-    """Atomically write env dict to path as a .env file.
-
-    - Values containing spaces or special chars are double-quoted.
-    - File is written via tmp+rename for atomicity.
-    - chmod 0600 applied.
-    """
-    if path.name == ".env":
+    """Persist *env* into ``twinbox.json`` (mailbox + LLM). Legacy ``.env`` path is accepted."""
+    if path.name in (".env", "twinbox.json"):
         write_env_as_twinbox_config(path, env)
         return
 

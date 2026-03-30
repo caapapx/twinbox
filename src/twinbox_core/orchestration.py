@@ -10,6 +10,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -20,6 +21,156 @@ from twinbox_core.openclaw_bridge import OpenClawBridgeError, poll_openclaw_brid
 from twinbox_core.paths import PathResolutionError, resolve_existing_dir, resolve_state_root
 from twinbox_core.push_dispatcher import dispatch_push_daily, dispatch_push_weekly
 from twinbox_core.push_subscription import get_active_subscriptions
+from twinbox_core.twinbox_config import config_path_for_state_root
+
+
+def _orchestration_env(code_root: Path, state_root: Path) -> dict[str, str]:
+    env = os.environ.copy()
+    env["TWINBOX_CODE_ROOT"] = str(code_root)
+    env["TWINBOX_STATE_ROOT"] = str(state_root)
+    env["TWINBOX_CANONICAL_ROOT"] = str(state_root)
+    src = code_root / "src"
+    if src.is_dir():
+        prev = env.get("PYTHONPATH", "").strip()
+        env["PYTHONPATH"] = str(src) + (os.pathsep + prev if prev else "")
+    return env
+
+
+def _sr(state_root: Path) -> str:
+    return str(state_root.expanduser().resolve())
+
+
+def _state_config_arg(state_root: Path) -> str:
+    return str(config_path_for_state_root(state_root.expanduser().resolve()))
+
+
+def _argv_phase1_loading(state_root: Path) -> list[str]:
+    return [sys.executable, "-m", "twinbox_core.loading_pipeline", "phase1", "--state-root", _sr(state_root)]
+
+
+def _argv_phase1_thinking(state_root: Path) -> list[str]:
+    s = _sr(state_root)
+    return [
+        sys.executable,
+        "-m",
+        "twinbox_core.phase1_intent",
+        "--context",
+        f"{s}/runtime/context/phase1-context.json",
+        "--output-dir",
+        f"{s}/runtime/validation/phase-1",
+        "--batch-size",
+        "15",
+        "--env-file",
+        _state_config_arg(state_root),
+    ]
+
+
+def _argv_phase2_loading(state_root: Path) -> list[str]:
+    return [sys.executable, "-m", "twinbox_core.context_builder", "phase2", "--state-root", _sr(state_root)]
+
+
+def _argv_phase2_thinking(state_root: Path) -> list[str]:
+    s = _sr(state_root)
+    return [
+        sys.executable,
+        "-m",
+        "twinbox_core.phase2_persona",
+        "--context",
+        f"{s}/runtime/validation/phase-2/context-pack.json",
+        "--output-dir",
+        f"{s}/runtime/validation/phase-2",
+        "--doc-dir",
+        f"{s}/docs/validation",
+        "--diagram-dir",
+        f"{s}/docs/validation/diagrams",
+        "--env-file",
+        _state_config_arg(state_root),
+    ]
+
+
+def _argv_phase3_loading(state_root: Path) -> list[str]:
+    return [sys.executable, "-m", "twinbox_core.context_builder", "phase3", "--state-root", _sr(state_root)]
+
+
+def _argv_phase3_thinking(state_root: Path) -> list[str]:
+    s = _sr(state_root)
+    return [
+        sys.executable,
+        "-m",
+        "twinbox_core.phase3_lifecycle",
+        "--context",
+        f"{s}/runtime/validation/phase-3/context-pack.json",
+        "--output-dir",
+        f"{s}/runtime/validation/phase-3",
+        "--doc-dir",
+        f"{s}/docs/validation",
+        "--diagram-dir",
+        f"{s}/docs/validation/diagrams",
+        "--env-file",
+        _state_config_arg(state_root),
+    ]
+
+
+def _argv_phase4_loading(state_root: Path) -> list[str]:
+    return [sys.executable, "-m", "twinbox_core.loading_pipeline", "phase4", "--state-root", _sr(state_root)]
+
+
+def _argv_phase4_thinking_serial(state_root: Path) -> list[str]:
+    s = _sr(state_root)
+    mt = os.environ.get("LLM_MAX_TOKENS", "8192").strip() or "8192"
+    return [
+        sys.executable,
+        "-m",
+        "twinbox_core.phase4_value",
+        "single-run",
+        "--context",
+        f"{s}/runtime/validation/phase-4/context-pack.json",
+        "--output-dir",
+        f"{s}/runtime/validation/phase-4",
+        "--doc-dir",
+        f"{s}/docs/validation",
+        "--env-file",
+        _state_config_arg(state_root),
+        "--max-tokens",
+        mt,
+    ]
+
+
+def _argv_phase4_thinking_parallel(state_root: Path) -> list[str]:
+    return [
+        sys.executable,
+        "-m",
+        "twinbox_core.phase4_value",
+        "parallel-run",
+        "--state-root",
+        _sr(state_root),
+    ]
+
+
+def _argv_incremental_daytime(state_root: Path) -> list[str]:
+    return [
+        sys.executable,
+        "-m",
+        "twinbox_core.incremental_sync",
+        "--state-root",
+        _sr(state_root),
+        "--sample-body-count",
+        "30",
+    ]
+
+
+STEP_ARGV: dict[str, Callable[[Path], list[str]]] = {
+    "phase1_loading": _argv_phase1_loading,
+    "phase1_thinking": _argv_phase1_thinking,
+    "phase2_loading": _argv_phase2_loading,
+    "phase2_thinking": _argv_phase2_thinking,
+    "phase3_loading": _argv_phase3_loading,
+    "phase3_thinking": _argv_phase3_thinking,
+    "phase4_loading": _argv_phase4_loading,
+    "phase4_thinking_serial": _argv_phase4_thinking_serial,
+    "phase4_thinking_parallel": _argv_phase4_thinking_parallel,
+    "incremental_daytime": _argv_incremental_daytime,
+}
 
 
 @dataclass(frozen=True)
@@ -28,19 +179,22 @@ class StepContract:
 
     id: str
     label: str
-    script_path: str
+    step_key: str
     outputs: tuple[str, ...]
     notes: str | None = None
 
-    def argv(self, code_root: Path) -> list[str]:
-        return ["bash", str(code_root / self.script_path)]
+    def argv(self, state_root: Path) -> list[str]:
+        return STEP_ARGV[self.step_key](state_root)
 
-    def payload(self, code_root: Path) -> dict[str, object]:
+    def payload(self, state_root: Path) -> dict[str, object]:
+        argv = self.argv(state_root)
+        module = argv[2] if len(argv) > 2 else ""
         return {
             "id": self.id,
             "label": self.label,
-            "script": self.script_path,
-            "argv": self.argv(code_root),
+            "step_key": self.step_key,
+            "module": module,
+            "argv": argv,
             "outputs": list(self.outputs),
             "notes": self.notes,
         }
@@ -68,7 +222,7 @@ class PhaseContract:
             steps.append(self.thinking)
         return steps
 
-    def payload(self, code_root: Path, *, serial_phase4: bool) -> dict[str, object]:
+    def payload(self, state_root: Path, *, serial_phase4: bool) -> dict[str, object]:
         return {
             "number": self.number,
             "slug": self.slug,
@@ -77,11 +231,14 @@ class PhaseContract:
             "required_artifacts": list(self.required_artifacts),
             "produced_artifacts": list(self.produced_artifacts),
             "default_mode": "serial" if self.number != 4 or serial_phase4 else "parallel",
-            "steps": [step.payload(code_root) for step in self.selected_steps(serial_phase4=serial_phase4)],
+            "steps": [step.payload(state_root) for step in self.selected_steps(serial_phase4=serial_phase4)],
             "alternative_steps": (
                 []
                 if self.number != 4 or self.parallel_thinking is None
-                else [self.parallel_thinking.payload(code_root), self.thinking.payload(code_root)]
+                else [
+                    self.parallel_thinking.payload(state_root),
+                    self.thinking.payload(state_root),
+                ]
             ),
         }
 
@@ -125,13 +282,13 @@ PHASE_CONTRACTS: tuple[PhaseContract, ...] = (
         loading=StepContract(
             id="loading",
             label="Phase 1 Loading",
-            script_path="scripts/phase1_loading.sh",
+            step_key="phase1_loading",
             outputs=("runtime/context/phase1-context.json",),
         ),
         thinking=StepContract(
             id="thinking",
             label="Phase 1 Thinking",
-            script_path="scripts/phase1_thinking.sh",
+            step_key="phase1_thinking",
             outputs=(
                 "runtime/validation/phase-1/intent-classification.json",
                 "docs/validation/phase-1-report.md",
@@ -156,13 +313,13 @@ PHASE_CONTRACTS: tuple[PhaseContract, ...] = (
         loading=StepContract(
             id="loading",
             label="Phase 2 Loading",
-            script_path="scripts/phase2_loading.sh",
+            step_key="phase2_loading",
             outputs=("runtime/validation/phase-2/context-pack.json",),
         ),
         thinking=StepContract(
             id="thinking",
             label="Phase 2 Thinking",
-            script_path="scripts/phase2_thinking.sh",
+            step_key="phase2_thinking",
             outputs=(
                 "runtime/validation/phase-2/persona-hypotheses.yaml",
                 "runtime/validation/phase-2/business-hypotheses.yaml",
@@ -189,13 +346,13 @@ PHASE_CONTRACTS: tuple[PhaseContract, ...] = (
         loading=StepContract(
             id="loading",
             label="Phase 3 Loading",
-            script_path="scripts/phase3_loading.sh",
+            step_key="phase3_loading",
             outputs=("runtime/validation/phase-3/context-pack.json",),
         ),
         thinking=StepContract(
             id="thinking",
             label="Phase 3 Thinking",
-            script_path="scripts/phase3_thinking.sh",
+            step_key="phase3_thinking",
             outputs=(
                 "runtime/validation/phase-3/lifecycle-model.yaml",
                 "runtime/validation/phase-3/thread-stage-samples.json",
@@ -223,13 +380,13 @@ PHASE_CONTRACTS: tuple[PhaseContract, ...] = (
         loading=StepContract(
             id="loading",
             label="Phase 4 Loading",
-            script_path="scripts/phase4_loading.sh",
+            step_key="phase4_loading",
             outputs=("runtime/validation/phase-4/context-pack.json",),
         ),
         thinking=StepContract(
             id="thinking",
             label="Phase 4 Thinking",
-            script_path="scripts/phase4_thinking.sh",
+            step_key="phase4_thinking_serial",
             outputs=(
                 "runtime/validation/phase-4/daily-urgent.yaml",
                 "runtime/validation/phase-4/pending-replies.yaml",
@@ -241,7 +398,7 @@ PHASE_CONTRACTS: tuple[PhaseContract, ...] = (
         parallel_thinking=StepContract(
             id="parallel-thinking",
             label="Phase 4 Thinking (parallel)",
-            script_path="scripts/phase4_thinking_parallel.sh",
+            step_key="phase4_thinking_parallel",
             outputs=(
                 "runtime/validation/phase-4/daily-urgent.yaml",
                 "runtime/validation/phase-4/pending-replies.yaml",
@@ -253,8 +410,8 @@ PHASE_CONTRACTS: tuple[PhaseContract, ...] = (
     ),
 )
 
-CLI_ENTRYPOINT = "scripts/twinbox_orchestrate.sh"
-LEGACY_ENTRYPOINT = "scripts/run_pipeline.sh"
+CLI_ENTRYPOINT = "python -m twinbox_core.orchestration"
+LEGACY_ENTRYPOINT = "twinbox orchestrate"
 SCHEDULED_JOBS: tuple[ScheduledJob, ...] = (
     ScheduledJob(
         id="daytime-sync",
@@ -325,7 +482,9 @@ def contract_payload(
     phase: int | None,
     serial_phase4: bool,
 ) -> dict[str, object]:
-    phases = [contract.payload(code_root, serial_phase4=serial_phase4) for contract in selected_phase_contracts(phase)]
+    phases = [
+        contract.payload(state_root, serial_phase4=serial_phase4) for contract in selected_phase_contracts(phase)
+    ]
     return {
         "code_root": str(code_root),
         "state_root": str(state_root),
@@ -373,14 +532,11 @@ def run_steps(
     dry_run: bool,
     serial_phase4: bool,
 ) -> int:
-    env = os.environ.copy()
-    env["TWINBOX_CODE_ROOT"] = str(code_root)
-    env["TWINBOX_STATE_ROOT"] = str(state_root)
-    env["TWINBOX_CANONICAL_ROOT"] = str(state_root)
+    env = _orchestration_env(code_root, state_root)
 
     for contract in selected_phase_contracts(phase):
         for step in contract.selected_steps(serial_phase4=serial_phase4):
-            argv = step.argv(code_root)
+            argv = step.argv(state_root)
             if dry_run:
                 print(f"[dry-run] {step.label}: {shlex.join(argv)}")
                 continue
@@ -420,31 +576,19 @@ def _timestamp_slug() -> str:
     return datetime.now().astimezone().strftime("%Y-%m-%dT%H-%M-%S")
 
 
-def _scheduled_job_steps(job: ScheduledJob, code_root: Path) -> list[tuple[str, list[str]]]:
+def _scheduled_job_steps(job: ScheduledJob, state_root: Path) -> list[tuple[str, list[str]]]:
     if job.id == "daytime-sync":
         return [
-            (
-                "Phase 1 Incremental (daytime)",
-                ["bash", str(code_root / "scripts/phase1_incremental.sh"), "--sample-body-count", "30"],
-            ),
-            (
-                "Phase 3 Loading (daytime)",
-                ["bash", str(code_root / "scripts/phase3_loading.sh")],
-            ),
-            (
-                "Phase 4 Loading (daytime)",
-                ["bash", str(code_root / "scripts/phase4_loading.sh")],
-            ),
-            (
-                "Phase 4 Thinking (daytime, serial)",
-                ["bash", str(code_root / "scripts/phase4_thinking.sh")],
-            ),
+            ("Phase 1 Incremental (daytime)", _argv_incremental_daytime(state_root)),
+            ("Phase 3 Loading (daytime)", _argv_phase3_loading(state_root)),
+            ("Phase 4 Loading (daytime)", _argv_phase4_loading(state_root)),
+            ("Phase 4 Thinking (daytime, serial)", _argv_phase4_thinking_serial(state_root)),
         ]
 
     steps: list[tuple[str, list[str]]] = []
     for contract in selected_phase_contracts(None):
         for step in contract.selected_steps(serial_phase4=False):
-            steps.append((step.label, step.argv(code_root)))
+            steps.append((step.label, step.argv(state_root)))
     return steps
 
 
@@ -472,6 +616,25 @@ def _run_scheduled_steps(
         if completed.returncode != 0:
             return completed.returncode, results
     return 0, results
+
+
+_MAX_SCHEDULE_STEP_STDERR = 8000
+
+def _step_for_schedule_json_payload(step: dict[str, object]) -> dict[str, object]:
+    """Shape schedule JSON steps; include stderr on failure so agents see IMAP/traceback (not in workspace)."""
+    out: dict[str, object] = {
+        "label": step.get("label"),
+        "argv": step.get("argv"),
+        "returncode": step.get("returncode"),
+    }
+    rc = int(step.get("returncode") or 0)
+    if rc != 0:
+        stderr = str(step.get("stderr") or "")
+        if stderr:
+            if len(stderr) > _MAX_SCHEDULE_STEP_STDERR:
+                stderr = "…(truncated)\n" + stderr[-_MAX_SCHEDULE_STEP_STDERR:]
+            out["stderr"] = stderr
+    return out
 
 
 def parse_bridge_event_text(text: str) -> BridgeEvent:
@@ -638,10 +801,7 @@ def run_scheduled_job(
     retry_once: bool,
 ) -> tuple[int, dict[str, object]]:
     job = get_scheduled_job(job_id)
-    env = os.environ.copy()
-    env["TWINBOX_CODE_ROOT"] = str(code_root)
-    env["TWINBOX_STATE_ROOT"] = str(state_root)
-    env["TWINBOX_CANONICAL_ROOT"] = str(state_root)
+    env = _orchestration_env(code_root, state_root)
     run_id = uuid4().hex
     started_at = datetime.now().astimezone().isoformat(timespec="seconds")
 
@@ -657,7 +817,7 @@ def run_scheduled_job(
 
         for attempt_index in range(1, attempt_total + 1):
             step_exit, step_results = _run_scheduled_steps(
-                _scheduled_job_steps(job, code_root),
+                _scheduled_job_steps(job, state_root),
                 env=env,
                 dry_run=dry_run,
             )
@@ -764,19 +924,20 @@ def run_scheduled_job(
                 if dry_run
                 else (pulse_payload or {}).get("notify_payload", {})
             ),
+            "state_root": str(state_root.resolve()),
+            "diagnostic_hint": (
+                "Failed steps may include stderr. artifact_paths live under state_root on the host (not the OpenClaw "
+                "workspace); the read tool usually cannot open them. Do not stop mid-sentence after a colon with "
+                "an unrun plan; summarize stderr for the user or suggest: twinbox mailbox preflight --json / fix IMAP."
+                if final_exit != 0
+                else None
+            ),
             "attempts": [
                 {
                     "attempt": attempt["attempt"],
                     "returncode": attempt["returncode"],
                     "pulse_error": attempt.get("pulse_error"),
-                    "steps": [
-                        {
-                            "label": step["label"],
-                            "argv": step["argv"],
-                            "returncode": step["returncode"],
-                        }
-                        for step in attempt["steps"]
-                    ],
+                    "steps": [_step_for_schedule_json_payload(step) for step in attempt["steps"]],
                 }
                 for attempt in attempts
             ],

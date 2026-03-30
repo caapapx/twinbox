@@ -169,7 +169,7 @@ func TestRunInstallAcceptsHTTPArchiveSource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Abs: %v", err)
 	}
-	codeRootFile := filepath.Join(home, ".config", "twinbox", "code-root")
+	codeRootFile := filepath.Join(home, ".twinbox", "code-root")
 	got, err := os.ReadFile(codeRootFile)
 	if err != nil {
 		t.Fatalf("read code-root: %v", err)

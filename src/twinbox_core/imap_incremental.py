@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .artifacts import generated_at
+from .imap_utf7 import mailbox_for_wire
 from .merge_context import merge_incremental_context
 
 EXIT_OK = 0
@@ -204,7 +205,8 @@ def fetch_incremental_envelopes(
 
     try:
         for folder in folders:
-            status, select_data = client.select(folder, readonly=True)
+            wire = mailbox_for_wire(folder)
+            status, select_data = client.select(wire, readonly=True)
             if status != "OK":
                 folder_errors.append({"folder": folder, "step": "select", "detail": _decode_imap_detail(select_data)})
                 continue

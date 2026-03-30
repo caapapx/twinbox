@@ -50,12 +50,12 @@
    - 常用契约/指南：在 `docs/README.md` 的 **Read first** 或 **Layout** 增删一条链接，和/或在本文 **核心文档入口** 增删一条；或
    - 落在已有子包/子目录时：更新该目录的 **README.md**（例如 `integrations/openclaw/README.md`、`docs/guide/` 下说明）
    - **可不上抬到 Read first 的情况**：纯 `docs/archive/` 深埋归档、`docs/validation/` 实例报告，只需在主题文档或子索引中链入即可
-6. **验证通过后的 Git 落地**（与「只描述已完成」区分）：在完成本次任务约定校验且**明确成功**时，代理**应当**提交；在环境允许且用户未禁止时**应当**推送。
-   - **高置信度门槛**：已对变更范围跑过约定检查（例如相关 `pytest`、或任务指定的 smoke/脚本），失败已处理或已说明为何不跑
+6. **Git 提交与推送（默认不自动）**：代理**不要**在任务结束时自动执行 `git commit` 或 `git push`。完成改动后给出变更摘要即可；**仅当用户在本轮对话中明确要求**提交、推送、或「提交并推送」时，再执行相应 Git 操作。用户未提及时，假定由用户在本地自行 `commit` / `push`。
+   - **高置信度门槛**（用户要求提交时仍适用）：已对变更范围跑过约定检查（例如相关 `pytest`、或任务指定的 smoke/脚本），失败已处理或已说明为何不跑
    - **变更粒度**：优先按**可独立验收的一整块任务**（一个逻辑完整的修复或功能）组织提交；避免把互不相关的改动塞进同一 commit，也避免仅为「小步」而把同一任务拆成大量无意义碎提交。与「评测/任务是否以单个 commit 为粒度」无关——仓库关心的是**语义完整 + 可验证**，而非 commit 个数本身
    - **提交**：`git add` 仅包含本次任务相关改动；提交信息遵守 `type: short description`；推送前用 `git status` 确认无意外未提交文件
-   - **推送**：具备 `git` 写权限与网络、且用户**未**要求「勿推送 / 仅本地 / draft」时，执行 `git push` 到**当前分支已设置的上游**（如 `origin/dev-go`）；合并入仓库主线后，主分支通常为 `master`
-   - **环境受限**：沙箱禁用网络、无凭据、或推送被拒时，说明原因并保留本地 commit，由用户手动 `git push`
+   - **推送**：具备 `git` 写权限与网络、且用户**明确要求推送**、且**未**要求「勿推送 / 仅本地 / draft」时，执行 `git push` 到**当前分支已设置的上游**（如 `origin/dev-go`）；合并入仓库主线后，主分支通常为 `master`
+   - **环境受限**：沙箱禁用网络、无凭据、或推送被拒时，说明原因并保留本地改动，由用户手动 `git commit` / `git push`
    - **禁止**：对共享分支 `git push --force`；非用户明确要求不擅自 `git commit --no-verify` / 绕过 hook
 7. **Skill 与 OpenClaw 同步约束**：当新增或修改 CLI 命令、核心功能（如新增参数、修改规则逻辑）或 OpenClaw Tool (`register-twinbox-tools.mjs`) 时，**必须**执行以下同步操作：
    - 更新 `SKILL.md`（以及 `.agents/skills/twinbox/SKILL.md` 等相关副本）中对应的说明、参数和示例。
@@ -64,7 +64,7 @@
    - 用户侧命令名固定为 **`twinbox`**。Go 源码目录可保留 `cmd/twinbox-go/`，但交付产物必须构建为 `dist/twinbox`（而非 `twinbox-go`）。
    - `twinbox` 二进制默认按用户级安装到 `PATH`（推荐 `~/.local/bin`），**不要**放在 `~/.twinbox` 这类 state root 下，也不要在日常流程里用 `sudo twinbox ...`。
    - 用户级安装后，需把 `~/.local/bin` 持久化到 shell 启动文件（当前约定：`~/.bashrc`，例如 `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc`），避免重开终端后命令丢失。
-   - Python 运行时与 OpenClaw 宿主资源通过归档交付：执行 `scripts/package_vendor_tarball.sh` 产出 `dist/twinbox_core-<version>.tar.gz`（内含 `twinbox_core/`、`integrations/openclaw/`、根 `SKILL.md`、`scripts/install_openclaw_twinbox_init.sh`；排除 `__pycache__` 与插件 `node_modules`），供 `twinbox install --archive ...` 解压到 `vendor/` 并写入 `~/.config/twinbox/code-root` 指向该目录；开发时仍可用 `TWINBOX_CODE_ROOT` 指向 git 仓库。**OpenClaw 插件**在网关侧只加载已提交的 `plugin-twinbox-task/dist/index.mjs`（esbuild 打包），**用户侧不需要 `npm ci`**；仅维护者改插件源码时需在本目录 `npm ci && npm run build` 并提交新的 `dist/`。
+   - Python 运行时与 OpenClaw 宿主资源通过归档交付：执行 `scripts/package_vendor_tarball.sh` 产出 `dist/twinbox_core-<version>.tar.gz`（内含 `twinbox_core/`、`integrations/openclaw/`、根 `SKILL.md`、`scripts/install_openclaw_twinbox_init.sh`；排除 `__pycache__` 与插件 `node_modules`），供 `twinbox install --archive ...` 解压到 `vendor/` 并写入 `~/.twinbox/code-root` 指向该目录（旧版 `~/.config/twinbox/code-root` 仍可读）；开发时仍可用 `TWINBOX_CODE_ROOT` 指向 git 仓库。**OpenClaw 插件**在网关侧只加载已提交的 `plugin-twinbox-task/dist/index.mjs`（esbuild 打包），**用户侧不需要 `npm ci`**；仅维护者改插件源码时需在本目录 `npm ci && npm run build` 并提交新的 `dist/`。
 9. **Go CLI 变更后的默认构建与安装**（自动化助手与本地开发者）：凡修改 **`cmd/twinbox-go/`** 下代码，或修复 **仅能通过 Go 薄壳复现/验证** 的 CLI 行为（含 `main.go` 的 RPC 绕行、`install` 子命令等），在提交前**默认**应完成：
    - **构建并覆盖仓库内交付路径**：在仓库根执行 **`bash scripts/build_go_twinbox.sh`**（或等价：`cd cmd/twinbox-go && go build -o ../../dist/twinbox .`），产物为 **`dist/twinbox`**。
    - **同步用户可执行文件**（开发机常用）：同一脚本加 **`--install`**（或环境变量 **`TWINBOX_GO_INSTALL=1`**），将二进制复制到 **`TWINBOX_GO_BIN_DEST`**（默认 **`$HOME/.local/bin/twinbox`**），避免 PATH 上仍是旧构建。

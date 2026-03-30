@@ -79,7 +79,9 @@ class PathsTest(unittest.TestCase):
     def test_resolve_code_root_ascends_from_nested_repo_dir(self) -> None:
         """CWD under cmd/twinbox-go must not become the code root (fragment path)."""
         with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp) / "twinbox"
+            home = Path(tmp) / "home"
+            home.mkdir()
+            repo = home / "twinbox"
             (repo / "integrations" / "openclaw").mkdir(parents=True)
             (repo / "src" / "twinbox_core").mkdir(parents=True)
             go_dir = repo / "cmd" / "twinbox-go"
@@ -87,7 +89,7 @@ class PathsTest(unittest.TestCase):
 
             resolved = resolve_code_root(
                 go_dir,
-                env={},
+                env={"HOME": str(home)},
             )
 
             self.assertEqual(resolved, repo.resolve())
@@ -107,23 +109,47 @@ class PathsTest(unittest.TestCase):
 
             self.assertEqual(resolved, configured.resolve())
 
+    def test_resolve_state_root_falls_back_to_legacy_config_file(self) -> None:
+        """If ~/.twinbox/state-root is absent, still honor ~/.config/twinbox/state-root."""
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            home.mkdir()
+            default = home / "default"
+            state = home / "state"
+            config_home = home / ".config"
+            default.mkdir()
+            state.mkdir()
+            (config_home / "twinbox").mkdir(parents=True)
+            (config_home / "twinbox" / "state-root").write_text(str(state), encoding="utf-8")
+
+            resolved = resolve_state_root(
+                default,
+                env={"HOME": str(home), "XDG_CONFIG_HOME": str(config_home)},
+            )
+
+            self.assertEqual(resolved, state.resolve())
+
     def test_resolve_state_root_uses_new_config_file_before_legacy(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            default = root / "default"
-            state = root / "state"
-            legacy = root / "legacy"
-            config_home = root / "config"
+            home = root / "home"
+            home.mkdir()
+            default = home / "default"
+            state = home / "state"
+            legacy = home / "legacy"
+            config_home = home / ".config"
             default.mkdir()
             state.mkdir()
             legacy.mkdir()
+            (home / ".twinbox").mkdir(parents=True)
+            (home / ".twinbox" / "state-root").write_text(str(state), encoding="utf-8")
             (config_home / "twinbox").mkdir(parents=True)
-            (config_home / "twinbox" / "state-root").write_text(str(state), encoding="utf-8")
+            (config_home / "twinbox" / "state-root").write_text("bogus", encoding="utf-8")
             (config_home / "twinbox" / "canonical-root").write_text(str(legacy), encoding="utf-8")
 
             resolved = resolve_state_root(
                 default,
-                env={"XDG_CONFIG_HOME": str(config_home)},
+                env={"HOME": str(home), "XDG_CONFIG_HOME": str(config_home)},
             )
 
             self.assertEqual(resolved, state.resolve())
@@ -145,14 +171,16 @@ class PathsTest(unittest.TestCase):
     def test_resolve_daemon_state_root_falls_back_like_resolve_state_root(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            default = root / "default"
-            state = root / "state"
-            config_home = root / "config"
+            home = root / "home"
+            home.mkdir()
+            default = home / "default"
+            state = home / "state"
+            config_home = home / ".config"
             default.mkdir()
             state.mkdir()
-            (config_home / "twinbox").mkdir(parents=True)
-            (config_home / "twinbox" / "state-root").write_text(str(state), encoding="utf-8")
-            env = {"XDG_CONFIG_HOME": str(config_home)}
+            (home / ".twinbox").mkdir(parents=True)
+            (home / ".twinbox" / "state-root").write_text(str(state), encoding="utf-8")
+            env = {"HOME": str(home), "XDG_CONFIG_HOME": str(config_home)}
 
             r1 = resolve_state_root(default, env=env)
             r2 = resolve_daemon_state_root(default, env=env)
@@ -163,47 +191,52 @@ class PathsTest(unittest.TestCase):
     def test_resolve_canonical_root_uses_config_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            code_root = root / "code"
-            config_home = root / "config"
-            canonical = root / "canonical"
+            home = root / "home"
+            home.mkdir()
+            code_root = home / "code"
+            config_home = home / ".config"
+            canonical = home / "canonical"
             code_root.mkdir()
             canonical.mkdir()
-            (config_home / "twinbox").mkdir(parents=True)
-            (config_home / "twinbox" / "canonical-root").write_text(
-                str(canonical), encoding="utf-8"
-            )
+            (home / ".twinbox").mkdir(parents=True)
+            (home / ".twinbox" / "canonical-root").write_text(str(canonical), encoding="utf-8")
 
             resolved = resolve_canonical_root(
                 code_root,
-                env={"XDG_CONFIG_HOME": str(config_home)},
+                env={"HOME": str(home), "XDG_CONFIG_HOME": str(config_home)},
             )
 
             self.assertEqual(resolved, canonical.resolve())
 
     def test_resolve_canonical_root_falls_back_to_code_root(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            code_root = Path(tmp)
-            config_home = code_root / "config-home"
-            config_home.mkdir()
+            home = Path(tmp) / "home"
+            home.mkdir()
+            code_root = home / "cr"
+            code_root.mkdir()
 
-            resolved = resolve_canonical_root(code_root, env={"XDG_CONFIG_HOME": str(config_home)})
+            resolved = resolve_canonical_root(code_root, env={"HOME": str(home)})
 
             self.assertEqual(resolved, code_root.resolve())
 
     def test_init_roots_uses_parent_of_script_directory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            code_root = root / "repo"
-            config_home = root / "config-home"
+            home = root / "home"
+            home.mkdir()
+            code_root = home / "repo"
             scripts_dir = code_root / "scripts"
             scripts_dir.mkdir(parents=True)
-            config_home.mkdir()
-            script_path = scripts_dir / "phase4_loading.sh"
+            pkg = code_root / "src" / "twinbox_core"
+            pkg.mkdir(parents=True)
+            marker = pkg / "__init__.py"
+            marker.write_text("# marker\n", encoding="utf-8")
+            script_path = scripts_dir / "twinbox_paths.sh"
             script_path.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
 
             resolved_code_root, resolved_canonical_root = init_roots(
                 script_path,
-                env={"XDG_CONFIG_HOME": str(config_home)},
+                env={"HOME": str(home)},
             )
 
             self.assertEqual(resolved_code_root, code_root.resolve())

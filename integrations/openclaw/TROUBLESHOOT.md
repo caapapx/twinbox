@@ -8,7 +8,7 @@
 
 ### 1.1 两层 env 不可互换
 
-- **`state root/.env`**：Twinbox CLI 自身解析配置。
+- **`state root/twinbox.json`**：Twinbox CLI 的**主**配置（邮箱/LLM 等）；无 JSON 时才会回读历史 **`state root/.env`**。
 - **`skills.entries.twinbox.env`**：OpenClaw 在 **agent run** 中注入给 skill 的环境；缺省时 skill 可能被过滤，即使磁盘上已安装 `SKILL.md`。
 
 ### 1.2 本机曾观测（2026-03-25）
@@ -27,6 +27,46 @@
 
 `openclaw skills info twinbox` 与「agent 在自然语言里真的执行了 `twinbox mailbox preflight`」**不是**同一回事；不要将模型口头结论当作 preflight 结果。
 
+### 1.5 飞书 / 第三方会话里只看到「先同步邮件 / 让我执行」复读
+
+**成因**：该通道若未绑定与 **Twinbox 插件 + `twinbox` agent** 相同的 Gateway 配置，模型往往拿不到 `twinbox_*` 工具，只能按 skill 的短 `description` 口头编流程；在 `astron-code-latest` 等模型上还容易把同一段话重复两遍。
+
+**处理**：在 OpenClaw 里让飞书侧会话使用已加载 `plugin-twinbox-task` 的 **twinbox** agent（或等价路由），确认 `twinboxBin`、`code-root`、`skills.entries.twinbox.env` 与 [DEPLOY.md](./DEPLOY.md) 一致；改完后 **重启 Gateway** 并 **新开会话**。用 `openclaw agent --agent twinbox --message '…' --json` 对比：若 CLI 有工具调用而飞书没有，问题在通道/agent 绑定而非 Twinbox CLI。
+
+Gateway 若提示 `plugins.allow is empty`，应在 OpenClaw 配置里 **显式 allow** `twinbox-task-tools`（或你的插件 id），避免非确定性加载。
+
+### 1.6 探针：与 `twinbox_latest_mail` / 插件一致的真实命令（优先跑）
+
+以下顺序与插件行为一致，用于区分「模型复读」与「邮件链路真失败」。
+
+1. **最新邮件（与插件 `twinbox task latest-mail --json` 相同）**
+
+   ```bash
+   ~/.local/bin/twinbox task latest-mail --json
+   ```
+
+   - 若返回 `"ok": false` 且带 `"recovery_tool": "twinbox_daytime_sync"`：属预期首跑；**插件会在一次 `twinbox_latest_mail` 调用内**自动跑 `daytime-sync` 再重试，模型**不应**口头说「先同步邮件数据，然后…」。
+   - 自动同步仍失败后，`latest-mail` 会继续报缺 `activity-pulse`——此时应查 **第 2 步**（同步是否成功），而不是让模型用文字「再同步一遍」。
+
+2. **单独跑 daytime-sync（与插件内 `runOrchestrate(schedule --job daytime-sync)` 一致）**
+
+   ```bash
+   export TWINBOX_CODE_ROOT="$HOME/.twinbox/vendor"
+   cd "$TWINBOX_CODE_ROOT"
+   PYTHONPATH="$TWINBOX_CODE_ROOT" python3 -m twinbox_core.orchestration schedule --job daytime-sync --format json
+   ```
+
+   - 看 `status` 与 `attempts[].steps[].returncode`。失败时 **同一条 JSON** 内步骤可含 **`stderr`**（截断）、以及 **`diagnostic_hint`** / **`state_root`**。不要在 OpenClaw agent 里用 **workspace `read`** 去打开 `~/.twinbox/runtime/archive/...`（路径不在 workspace 内会失败）；以 JSON 里的 **stderr** 为准向用户说明。若助手在工具后以冒号结尾并停住（半轮停），多为托管模型行为，见 [DEPLOY.md](./DEPLOY.md) 已知限制。
+   - 若 **Phase 1 Incremental** 为 `1`，在宿主上直接跑同一条 argv（日志里可见）看 stderr；常见为 **IMAP 连接/文件夹**错误（例如 `imaplib.IMAP4.error`）。含 **非英文邮箱文件夹名**（中文等）时，历史上若出现 `BAD` / `Request not ending with`，请升级到已包含 **IMAP modified UTF-7** 编码的 `twinbox_core`（`imap_incremental` 在 `select` 前编码邮箱名）。**邮件同步未成功时，任何渠道都不会有真实「最新邮件摘要」。**
+
+3. **对照：Gateway + twinbox agent 是否真能走到工具**
+
+   ```bash
+   openclaw agent --agent twinbox --message '只调用 twinbox_latest_mail（无参数），不要输出解释性中文。' --json --timeout 120
+   ```
+
+   - 若此处 `result.payloads` 里已有「automatic daytime-sync」与 `latest-mail` 拼接输出，而 **飞书里仍只有复读、无工具结果**：问题在 **飞书会话 / 路由 / 模型**，不在 `twinbox` 二进制。
+
 ---
 
 ## 2. 「缺少 env」类回复
@@ -37,7 +77,7 @@
 
 ### 2.2 成因 B：state root 漂移到 workspace
 
-未配置 `~/.config/twinbox/state-root` 等时，在 workspace cwd 下可能回落到 `~/.openclaw/workspace/.env`。执行 [DEPLOY.md §3.4](./DEPLOY.md) 并核对 §1.1。
+未配置 `~/.config/twinbox/state-root` 等时，在 workspace cwd 下可能把 workspace 当成 state root，继而错误地去找 `~/.openclaw/workspace/.env` 或缺少 **`twinbox.json`**。执行 [DEPLOY.md §3.4](./DEPLOY.md) 并核对 §1.1。
 
 ### 2.3 `openclaw skills info` 前缀告警
 

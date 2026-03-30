@@ -57,6 +57,9 @@ class TestPhase4DirResolution:
         assert _get_phase4_dir() == tmp_path / "runtime" / "validation" / "phase-4"
 
     def test_fallback_to_cwd(self, monkeypatch, tmp_path):
+        home = tmp_path / "home"
+        home.mkdir()
+        monkeypatch.setenv("HOME", str(home))
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
         monkeypatch.delenv("TWINBOX_STATE_ROOT", raising=False)
         monkeypatch.delenv("TWINBOX_CANONICAL_ROOT", raising=False)
@@ -1515,40 +1518,16 @@ class TestOnboardingCli:
             def to_json_dict(self):
                 return {"ok": True, "next_action": "continue in twinbox agent"}
 
-        def fake_run_openclaw_onboard_v2(**kwargs):
+        def fake_run_openclaw_onboard(**kwargs):
             assert kwargs["dry_run"] is False
             return _FakeReport()
 
         monkeypatch.setattr(
-            "twinbox_core.openclaw_onboard.run_openclaw_onboard_v2",
-            fake_run_openclaw_onboard_v2,
+            "twinbox_core.openclaw_onboard.run_openclaw_onboard",
+            fake_run_openclaw_onboard,
         )
 
         assert main(["onboard", "openclaw", "--json"]) == 0
-        payload = json.loads(capsys.readouterr().out)
-        assert payload["ok"] is True
-        assert payload["next_action"] == "continue in twinbox agent"
-
-    def test_onboard_openclaw_v2_alias_routes_to_same_journey_shell(self, monkeypatch, tmp_path, capsys):
-        monkeypatch.setenv("TWINBOX_STATE_ROOT", str(tmp_path))
-        monkeypatch.setenv("TWINBOX_CANONICAL_ROOT", str(tmp_path))
-
-        class _FakeReport:
-            ok = True
-
-            def to_json_dict(self):
-                return {"ok": True, "next_action": "continue in twinbox agent"}
-
-        def fake_run_openclaw_onboard_v2(**kwargs):
-            assert kwargs["dry_run"] is False
-            return _FakeReport()
-
-        monkeypatch.setattr(
-            "twinbox_core.openclaw_onboard.run_openclaw_onboard_v2",
-            fake_run_openclaw_onboard_v2,
-        )
-
-        assert main(["onboard", "openclaw-v2", "--json"]) == 0
         payload = json.loads(capsys.readouterr().out)
         assert payload["ok"] is True
         assert payload["next_action"] == "continue in twinbox agent"

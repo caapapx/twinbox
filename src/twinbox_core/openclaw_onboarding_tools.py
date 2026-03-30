@@ -9,6 +9,7 @@ from twinbox_core.human_context_store import update_human_context_store
 from twinbox_core.mail_env_contract import missing_required_mail_values
 from twinbox_core.env_writer import load_env_file
 from twinbox_core.llm import LLMError, resolve_backend
+from twinbox_core.twinbox_config import config_path_for_state_root
 from twinbox_core.onboarding import (
     complete_stage,
     get_next_stage,
@@ -43,7 +44,7 @@ def json_onboarding_start(state_root: Path) -> dict[str, Any]:
 
 def json_onboarding_status(state_root: Path) -> dict[str, Any]:
     state = load_state(state_root)
-    env_file = state_root / ".env"
+    env_file = config_path_for_state_root(state_root)
     dotenv = load_env_file(env_file)
     missing_mail = missing_required_mail_values(dotenv)
     mailbox_ready = not missing_mail
@@ -106,12 +107,24 @@ def json_onboarding_advance(
 
     complete_stage(state, state.current_stage)
     save_state(state_root, state)
-    return {
+    result: dict[str, Any] = {
         "completed_stage": completed_stage_name,
         "current_stage": state.current_stage,
         "completed_stages": state.completed_stages,
         "prompt": get_stage_prompt(state.current_stage),
     }
+    if state.current_stage == "push_subscription":
+        result["tool_hint"] = (
+            "When user confirms: call twinbox_push_confirm_onboarding(daily='on', weekly='on'). "
+            "No session parameter. Do NOT look up session or stall."
+        )
+        result["user_question"] = (
+            "Twinbox 可以为您推送：\n"
+            "• 每日邮件摘要（daily digest）\n"
+            "• 每周工作简报（weekly brief）\n\n"
+            "默认两项均开启。确认开启，或告诉我想调整哪项？"
+        )
+    return result
 
 
 def json_onboarding_confirm_push(

@@ -16,13 +16,19 @@ export function toolOpts(pluginConfig) {
 
   let cwd = pluginConfig?.cwd || process.env.TWINBOX_CODE_ROOT;
 
-  // Fallback: read ~/.config/twinbox/code-root (same logic as twinbox script)
+  // Fallback: read ~/.twinbox/code-root, then legacy ~/.config/twinbox/code-root
   if (!cwd) {
-    try {
-      const codeRootFile = `${homedir()}/.config/twinbox/code-root`;
-      cwd = readFileSync(codeRootFile, "utf8").trim();
-    } catch {
-      // File doesn't exist or unreadable, leave cwd undefined
+    const candidates = [
+      `${homedir()}/.twinbox/code-root`,
+      `${homedir()}/.config/twinbox/code-root`,
+    ];
+    for (const codeRootFile of candidates) {
+      try {
+        cwd = readFileSync(codeRootFile, "utf8").trim();
+        if (cwd) break;
+      } catch {
+        /* try next */
+      }
     }
   }
 
@@ -37,7 +43,59 @@ export function toolOpts(pluginConfig) {
       ? pluginConfig.openclawBin.trim()
       : process.env.OPENCLAW_BIN || "openclaw";
 
-  return { twinboxBin, cwd, openclawBin };
+  const orchestrateInvoke = resolveOrchestrateInvoke(pluginConfig, cwd);
+
+  return { twinboxBin, cwd, openclawBin, orchestrateInvoke };
+}
+
+/** Prefer `python3` on Unix; `python` on Windows when TWINBOX_PYTHON is unset. */
+export function defaultPythonCommand() {
+  const raw =
+    typeof process.env.TWINBOX_PYTHON === "string" ? process.env.TWINBOX_PYTHON.trim() : "";
+  if (raw) return raw;
+  return process.platform === "win32" ? "python" : "python3";
+}
+
+/**
+ * @param {string | undefined} cwd TWINBOX_CODE_ROOT (git repo or vendor extract)
+ * @returns {{ command: string, argsPrefix: string[], env: Record<string, string> }}
+ */
+export function resolveOrchestrateInvoke(pluginConfig, cwd) {
+  const configured =
+    typeof pluginConfig?.orchestrateBin === "string" && pluginConfig.orchestrateBin.trim()
+      ? pluginConfig.orchestrateBin.trim()
+      : typeof process.env.TWINBOX_ORCHESTRATE_BIN === "string" &&
+          process.env.TWINBOX_ORCHESTRATE_BIN.trim()
+        ? process.env.TWINBOX_ORCHESTRATE_BIN.trim()
+        : null;
+  if (configured) {
+    return { command: configured, argsPrefix: [], env: {} };
+  }
+  if (cwd && existsSync(join(cwd, "scripts", "twinbox_orchestrate.sh"))) {
+    return { command: join(cwd, "scripts", "twinbox_orchestrate.sh"), argsPrefix: [], env: {} };
+  }
+  const pyPath = orchestratePythonPath(cwd);
+  if (pyPath) {
+    return {
+      command: defaultPythonCommand(),
+      argsPrefix: ["-m", "twinbox_core.orchestration"],
+      env: { PYTHONPATH: pyPath },
+    };
+  }
+  return { command: "twinbox-orchestrate", argsPrefix: [], env: {} };
+}
+
+/**
+ * Git repo: src/twinbox_core. Vendor tarball: twinbox_core/ at code root.
+ * @returns {string | null} PYTHONPATH segment (single root containing the package)
+ */
+export function orchestratePythonPath(cwd) {
+  if (!cwd) return null;
+  const srcPkg = join(cwd, "src", "twinbox_core");
+  const flatPkg = join(cwd, "twinbox_core");
+  if (existsSync(srcPkg)) return join(cwd, "src");
+  if (existsSync(flatPkg)) return cwd;
+  return null;
 }
 
 function appendOpenclawBin(cliArgs, openclawBin) {
@@ -68,11 +126,72 @@ export function runTwinbox(args, { twinboxBin, cwd }, extraEnv = {}) {
   });
 }
 
+export function runOrchestrate(args, { orchestrateInvoke, cwd }, extraEnv = {}) {
+  return new Promise((resolve, reject) => {
+    const prefix = orchestrateInvoke.argsPrefix || [];
+    const fullArgs = [...prefix, ...args];
+    const child = spawn(orchestrateInvoke.command, fullArgs, {
+      cwd,
+      shell: false,
+      env: { ...process.env, ...orchestrateInvoke.env, ...extraEnv },
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.on("data", (d) => {
+      stdout += d.toString();
+    });
+    child.stderr?.on("data", (d) => {
+      stderr += d.toString();
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      resolve({ code: code ?? 1, stdout, stderr });
+    });
+  });
+}
+
 export function formatResult({ code, stdout, stderr }) {
   const text =
     stdout.trim() ||
     (stderr.trim() ? `exit=${code}\n${stderr.trim()}` : `exit=${code} (no output)`);
   return { content: [{ type: "text", text }] };
+}
+
+/**
+ * When latest-mail JSON says pulse is missing, weak hosts often loop on "让我执行：" without
+ * calling twinbox_daytime_sync. Run daytime-sync inside this tool, then retry once.
+ */
+export function latestMailNeedsDaytimeSync(stdout, stderr, code) {
+  const out = (stdout || "").trim();
+  try {
+    const parsed = JSON.parse(out);
+    if (parsed && parsed.ok === false && parsed.recovery_tool === "twinbox_daytime_sync") {
+      return true;
+    }
+  } catch {
+    /* not JSON */
+  }
+  const err = `${stderr || ""}\n${out}`.toLowerCase();
+  return (
+    code !== 0 &&
+    (err.includes("activity-pulse") || err.includes("missing activity-pulse"))
+  );
+}
+
+export async function runLatestMailCli(cliArgs, opts) {
+  const r1 = await runTwinbox(cliArgs, opts);
+  if (!latestMailNeedsDaytimeSync(r1.stdout, r1.stderr, r1.code ?? 1)) {
+    return formatResult(r1);
+  }
+  const rSync = await runOrchestrate(["schedule", "--job", "daytime-sync", "--format", "json"], opts);
+  const r2 = await runTwinbox(cliArgs, opts);
+  const parts = [
+    "=== automatic daytime-sync (activity-pulse was missing; weak models must not narrate without this) ===",
+    formatResult(rSync).content[0].text,
+    "=== twinbox task latest-mail (after sync) ===",
+    formatResult(r2).content[0].text,
+  ];
+  return { content: [{ type: "text", text: parts.join("\n\n") }] };
 }
 
 /** Default OpenClaw chat session for twinbox agent main (see integrations/openclaw/README.md). */
@@ -101,7 +220,7 @@ export function registerTwinboxTaskTools(api) {
   api.registerTool({
     name: "twinbox_latest_mail",
     description:
-      "Latest mail / activity-pulse snapshot (read-only). Chinese triggers: 最新邮件、最新邮件情况、帮我查看下最新的邮件情况. Unread triggers (MUST set unread_only=true): 未读、最新未读、只看未读、未读邮件. Runs: twinbox task latest-mail [--unread-only] --json. After this tool returns, you MUST reply with a visible text summary (never end with empty assistant text).",
+      "Latest mail / activity-pulse snapshot. If activity-pulse.json is missing, this tool automatically runs daytime-sync once then retries latest-mail inside the same execution — do NOT say 让我执行, 先同步邮件数据然后查看最新邮件, or loop text; wait for the combined output. Never repeat the same sentence twice in one assistant message; call this tool immediately with at most one short lead-in. Chinese: 最新邮件、帮我看下最新的邮件. Unread (unread_only=true): 未读、只看未读. After return, MUST write a visible summary.",
     parameters: Type.Object({
       unread_only: Type.Optional(Type.Boolean({ description: "If true, only returns threads that contain unread emails." })),
     }),
@@ -111,8 +230,7 @@ export function registerTwinboxTaskTools(api) {
       if (params?.unread_only) {
         cliArgs.push("--unread-only");
       }
-      const r = await runTwinbox(cliArgs, opts);
-      return formatResult(r);
+      return runLatestMailCli(cliArgs, opts);
     },
   });
 
@@ -564,6 +682,26 @@ export function registerTwinboxTaskTools(api) {
       if (params.openclaw_json) cliArgs.push("--openclaw-json", params.openclaw_json);
       if (params.dry_run) cliArgs.push("--dry-run");
       const r = await runTwinbox(cliArgs, opts, {});
+      return formatResult(r);
+    },
+  });
+
+  api.registerTool({
+    name: "twinbox_daytime_sync",
+    description:
+      "Refresh Twinbox mail data (activity-pulse, Phase 1→3→4 daytime projection). Call this AUTOMATICALLY when twinbox_latest_mail or twinbox_todo returns 'Missing activity-pulse.json' or stale data. Chinese: 同步邮件、刷新邮件数据、运行同步. Takes ~30-120s. After return, MUST re-call the original task tool and summarize results.",
+    parameters: Type.Object({
+      job: Type.Optional(
+        Type.Union(
+          [Type.Literal("daytime-sync"), Type.Literal("nightly-full")],
+          { default: "daytime-sync", description: "daytime-sync (fast incremental, default) or nightly-full (complete rebuild)" },
+        ),
+      ),
+    }),
+    async execute(...args) {
+      const params = args.length >= 2 ? args[1] : args[0];
+      const job = params?.job ?? "daytime-sync";
+      const r = await runOrchestrate(["schedule", "--job", job, "--format", "json"], opts);
       return formatResult(r);
     },
   });

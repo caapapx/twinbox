@@ -14,6 +14,7 @@ import yaml
 
 from .human_context_store import load_human_context_store
 from .mailbox import load_env_file
+from .twinbox_config import config_path_for_state_root
 
 
 class ContextBuilderError(RuntimeError):
@@ -50,7 +51,7 @@ def _resolve_owner_addr(state_root: Path) -> str:
     owner_addr = str(os.environ.get("MAIL_ADDRESS", "") or "").strip().lower()
     if owner_addr:
         return owner_addr
-    return str(load_env_file(state_root / ".env").get("MAIL_ADDRESS", "") or "").strip().lower()
+    return str(load_env_file(config_path_for_state_root(state_root)).get("MAIL_ADDRESS", "") or "").strip().lower()
 
 
 def _parse_yaml_simple_items(text: str) -> list[str]:
@@ -339,9 +340,10 @@ def _load_phase1_data(state_root: Path) -> Phase1Data:
     phase1_context_path = state_root / "runtime/context/phase1-context.json"
     intent_classification_path = phase1_dir / "intent-classification.json"
 
-    if not phase1_context_path.is_file() or not intent_classification_path.is_file():
+    if not phase1_context_path.is_file():
         raise ContextBuilderError(
-            "Missing Phase 1 outputs.\nRun Phase 1 first: bash scripts/phase1_loading.sh && bash scripts/phase1_thinking.sh"
+            "Missing Phase 1 outputs.\nRun Phase 1 first: twinbox orchestrate run --phase 1 "
+            "(or: python -m twinbox_core.orchestration run --phase 1)"
         )
 
     owner_addr = _resolve_owner_addr(state_root)
@@ -374,7 +376,11 @@ def _load_phase1_data(state_root: Path) -> Phase1Data:
         return Phase1Data(census=census, contacts=contacts, bodies=[row for row in bodies if isinstance(row, dict)], envelopes=envelopes, intents=intents)
 
     phase1_context = _load_json(phase1_context_path)
-    intent_classification = _load_json(intent_classification_path)
+    intent_classification: dict[str, object] = (
+        _load_json(intent_classification_path)  # type: ignore[assignment]
+        if intent_classification_path.is_file()
+        else {}
+    )
     if not isinstance(phase1_context, dict) or not isinstance(intent_classification, dict):
         raise ContextBuilderError("Phase 1 context artifacts have unexpected structure")
 

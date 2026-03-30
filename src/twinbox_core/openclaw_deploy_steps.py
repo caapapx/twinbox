@@ -21,8 +21,10 @@ from .openclaw_json_io import (
     default_openclaw_fragment_path,
     load_openclaw_json_with_file_ops,
 )
+from .host_bridge import bridge_env_path, legacy_bridge_env_path
 from .openclaw_deploy_runtime import OpenClawDeployRuntime
 from .openclaw_deploy_types import DeployStepResult, OpenClawDeployReport
+from .paths import legacy_config_dir
 
 
 def skill_canonical_path(state_root: Path) -> Path:
@@ -496,24 +498,40 @@ def remove_skill_dir_step(
     return True
 
 
+def _twinbox_pointer_files_for_rollback() -> list[Path]:
+    """Small pointer files under ``~/.twinbox`` (never remove the whole state tree)."""
+    root = Path.home() / ".twinbox"
+    return [
+        root / "code-root",
+        root / "state-root",
+        root / "canonical-root",
+        bridge_env_path(),
+        legacy_bridge_env_path(),
+    ]
+
+
 def remove_twinbox_config_step(
     ctx: RollbackContext,
     report: OpenClawDeployReport,
     runtime: OpenClawDeployRuntime,
 ) -> bool:
+    legacy = legacy_config_dir()
+    pointer_files = _twinbox_pointer_files_for_rollback()
     if ctx.dry_run:
         append_step(
             report,
             "remove_twinbox_config",
             "dry_run",
             (
-                f"Would remove {ctx.config_path}"
+                f"Would remove pointer files + legacy {legacy}"
                 if ctx.remove_config
                 else "Skipped (--remove-config not set)"
             ),
             {
                 "remove_config": ctx.remove_config,
-                "exists": runtime.file_ops.is_dir(ctx.config_path),
+                "pointer_files": [str(p) for p in pointer_files],
+                "legacy_dir": str(legacy),
+                "legacy_exists": runtime.file_ops.is_dir(legacy),
             },
         )
         return True
@@ -523,28 +541,35 @@ def remove_twinbox_config_step(
             report,
             "remove_twinbox_config",
             "skipped",
-            "Preserved ~/.config/twinbox (pass --remove-config to delete)",
+            "Preserved ~/.twinbox pointer files (pass --remove-config to delete)",
         )
         return True
 
-    if not runtime.file_ops.is_dir(ctx.config_path):
+    removed: list[str] = []
+    try:
+        for p in pointer_files:
+            if runtime.file_ops.is_file(p):
+                runtime.file_ops.unlink(p)
+                removed.append(str(p))
+        if runtime.file_ops.is_dir(legacy):
+            runtime.file_ops.remove_tree(legacy)
+            removed.append(str(legacy))
+    except OSError as exc:
+        return fail_step(report, "remove_twinbox_config", str(exc))
+
+    if not removed:
         append_step(
             report,
             "remove_twinbox_config",
             "skipped",
-            "Config directory not present",
+            "No pointer files or legacy ~/.config/twinbox dir present",
         )
         return True
-
-    try:
-        runtime.file_ops.remove_tree(ctx.config_path)
-    except OSError as exc:
-        return fail_step(report, "remove_twinbox_config", str(exc))
 
     append_step(
         report,
         "remove_twinbox_config",
         "ok",
-        f"Removed {ctx.config_path}",
+        f"Removed {', '.join(removed)}",
     )
     return True

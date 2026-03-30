@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 CODE_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd -P)"
-CONFIG_DIR="${XDG_CONFIG_HOME:-${HOME}/.config}/twinbox"
+CONFIG_DIR="${TWINBOX_POINTER_DIR:-${HOME}/.twinbox}"
 CODE_ROOT_FILE="${CONFIG_DIR}/code-root"
 STATE_ROOT_FILE="${CONFIG_DIR}/state-root"
 CANONICAL_ROOT_FILE="${CONFIG_DIR}/canonical-root"
@@ -21,9 +21,9 @@ Usage:
 
 One-time Twinbox bootstrap:
   1. Create state root at ~/.twinbox (runtime data: .env, phase outputs, logs)
-  2. Persist ~/.config/twinbox/code-root  -> this repo
-  3. Persist ~/.config/twinbox/state-root -> ~/.twinbox
-  4. Keep   ~/.config/twinbox/canonical-root as legacy alias
+  2. Persist ~/.twinbox/code-root  -> this repo
+  3. Persist ~/.twinbox/state-root -> ~/.twinbox
+  4. Keep   ~/.twinbox/canonical-root as legacy alias (same as state-root when unset)
 
 Options:
   --verify    Also run mailbox preflight from OpenClaw workspace (requires

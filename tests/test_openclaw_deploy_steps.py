@@ -197,12 +197,19 @@ def _rollback_ctx(
         openclaw_home=oc,
         openclaw_json=oc / "openclaw.json",
         skill_dir=oc / "skills" / "twinbox",
-        config_path=tmp_path / ".config" / "twinbox",
+        config_path=tmp_path / ".twinbox",
         dry_run=dry_run,
         restart_gateway=False,
         remove_config=remove_config,
         openclaw_bin="openclaw",
     )
+
+
+def _prime_twinbox_pointer_files(ops: _MemFileOps, home: Path) -> None:
+    tb = home / ".twinbox"
+    for name in ("code-root", "state-root", "canonical-root", "twinbox-openclaw-bridge.env"):
+        ops.files[tb / name] = "/dummy\n"
+    ops.files[home / ".config" / "twinbox" / "twinbox-openclaw-bridge.env"] = "\n"
 
 
 def test_strip_openclaw_json_step_invalid_json_fails(tmp_path: Path) -> None:
@@ -872,7 +879,10 @@ def test_remove_skill_dir_step_rmtree_fails(tmp_path: Path) -> None:
     assert report.steps[-1].status == "failed"
 
 
-def test_remove_twinbox_config_step_dry_run_with_remove_flag(tmp_path: Path) -> None:
+def test_remove_twinbox_config_step_dry_run_with_remove_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
     cfg = tmp_path / ".config" / "twinbox"
     ops = _MemFileOps()
     ops.dirs.add(cfg)
@@ -885,7 +895,7 @@ def test_remove_twinbox_config_step_dry_run_with_remove_flag(tmp_path: Path) -> 
     step = next(s for s in report.steps if s.id == "remove_twinbox_config")
     assert step.status == "dry_run"
     assert step.detail.get("remove_config") is True
-    assert step.detail.get("exists") is True
+    assert step.detail.get("legacy_exists") is True
 
 
 def test_remove_twinbox_config_step_dry_run_without_remove_flag(tmp_path: Path) -> None:
@@ -917,7 +927,10 @@ def test_remove_twinbox_config_step_skipped_when_remove_config_false(tmp_path: P
     assert next(s for s in report.steps if s.id == "remove_twinbox_config").status == "skipped"
 
 
-def test_remove_twinbox_config_step_skipped_when_dir_missing(tmp_path: Path) -> None:
+def test_remove_twinbox_config_step_skipped_when_nothing_to_remove(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
     ops = _MemFileOps()
     rt = OpenClawDeployRuntime(file_ops=ops, command_runner=SubprocessCommandRunner())
     report = OpenClawDeployReport(ok=True)
@@ -926,15 +939,18 @@ def test_remove_twinbox_config_step_skipped_when_dir_missing(tmp_path: Path) -> 
     ok = remove_twinbox_config_step(ctx, report, rt)
     assert ok is True
     assert ops.remove_tree_calls == []
+    assert ops.unlink_calls == []
     step = next(s for s in report.steps if s.id == "remove_twinbox_config")
     assert step.status == "skipped"
-    assert "not present" in step.message
+    assert "No pointer files" in step.message
 
 
-def test_remove_twinbox_config_step_ok(tmp_path: Path) -> None:
+def test_remove_twinbox_config_step_ok(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
     cfg = tmp_path / ".config" / "twinbox"
     ops = _MemFileOps()
     ops.dirs.add(cfg)
+    _prime_twinbox_pointer_files(ops, tmp_path)
     rt = OpenClawDeployRuntime(file_ops=ops, command_runner=SubprocessCommandRunner())
     report = OpenClawDeployReport(ok=True)
     ctx = _rollback_ctx(tmp_path, dry_run=False, remove_config=True)
@@ -943,13 +959,16 @@ def test_remove_twinbox_config_step_ok(tmp_path: Path) -> None:
     assert ok is True
     assert ops.remove_tree_calls == [cfg]
     assert cfg not in ops.dirs
+    assert len(ops.unlink_calls) == 5
     assert next(s for s in report.steps if s.id == "remove_twinbox_config").status == "ok"
 
 
-def test_remove_twinbox_config_step_rmtree_fails(tmp_path: Path) -> None:
+def test_remove_twinbox_config_step_rmtree_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
     cfg = tmp_path / ".config" / "twinbox"
     ops = _MemFileOpsRemoveTreeFails()
     ops.dirs.add(cfg)
+    _prime_twinbox_pointer_files(ops, tmp_path)
     rt = OpenClawDeployRuntime(file_ops=ops, command_runner=SubprocessCommandRunner())
     report = OpenClawDeployReport(ok=True)
     ctx = _rollback_ctx(tmp_path, dry_run=False, remove_config=True)

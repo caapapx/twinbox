@@ -382,7 +382,8 @@ root = Path("/path/to/twinbox")
 state = Path.home() / ".twinbox"
 legacy_env = load_env_file(root / ".env")
 if legacy_env:
-    write_env_file(state / ".env", legacy_env)
+    # 写入 state root 的 twinbox.json（与 write_env_file(state / ".env", …) 等价，后者会合并到 JSON）
+    write_env_file(state / "twinbox.json", legacy_env)
 PY
 mv /path/to/twinbox/runtime ~/.twinbox/runtime
 

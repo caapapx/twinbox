@@ -23,10 +23,14 @@ go build -o ../../dist/twinbox .
 ## Usage
 
 ```bash
-export TWINBOX_STATE_ROOT=/path/to/state   # or rely on ~/.config/twinbox/state-root
+export TWINBOX_STATE_ROOT=/path/to/state   # or rely on ~/.twinbox/state-root
 ./twinbox task todo --json
 ./twinbox --profile work task todo --json
 ```
+
+### Orchestration
+
+`twinbox orchestrate …` (e.g. `twinbox orchestrate run --phase 1`) runs `python3 -m twinbox_core.orchestration …` with the same `PYTHONPATH` / vendor resolution as the Python fallback. It does not go through the daemon JSON-RPC.
 
 ### Vendor install (local tarball or HTTP URL)
 
@@ -39,7 +43,7 @@ Build a tarball from the repo (`scripts/package_vendor_tarball.sh`). The archive
 ```
 
 Then run `twinbox …` directly, or `PYTHONPATH="$TWINBOX_STATE_ROOT/vendor" python3 -m twinbox_core.task_cli …` if you want to bypass Go.
-`install --archive` writes `vendor/MANIFEST.json` with `twinbox_version` and **`~/.config/twinbox/code-root`** pointing at the vendor directory so `resolve_code_root()` uses the installed bundle (OpenClaw deploy finds `vendor/integrations/openclaw/openclaw.fragment.json` without a git checkout). Override with **`TWINBOX_CODE_ROOT`** for development.
+`install --archive` writes `vendor/MANIFEST.json` with `twinbox_version` and **`~/.twinbox/code-root`** pointing at the vendor directory so `resolve_code_root()` uses the installed bundle (OpenClaw deploy finds `vendor/integrations/openclaw/openclaw.fragment.json` without a git checkout). Override with **`TWINBOX_CODE_ROOT`** for development.
 
 On success, the command prints a few lines: paths, file count / `twinbox_version`, fallback `PYTHONPATH` hint, and suggested next command (`onboard openclaw`, which runs deploy and starts the Twinbox daemon after wiring unless `--no-start-daemon`). Use `mailbox preflight` anytime to verify IMAP read-only.
 

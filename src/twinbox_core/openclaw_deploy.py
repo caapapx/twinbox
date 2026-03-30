@@ -14,6 +14,7 @@ from typing import Callable
 
 from .env_writer import load_env_file
 from .mail_env_contract import missing_required_mail_values
+from .twinbox_config import config_path_for_state_root
 from .openclaw_config_merge import (
     apply_openclaw_plugin_vendor_cwd,
     deep_merge_openclaw,
@@ -150,7 +151,7 @@ def run_openclaw_deploy(
     report.state_root = str(ctx.state_root)
     report.skill_canonical_dest = str(skill_canonical_path(ctx.state_root))
 
-    dotenv = load_env_file(ctx.state_root / ".env") if ctx.sync_env_from_dotenv else {}
+    dotenv = load_env_file(config_path_for_state_root(ctx.state_root)) if ctx.sync_env_from_dotenv else {}
     missing_required = (
         missing_required_mail_values(dotenv) if ctx.sync_env_from_dotenv else []
     )
@@ -158,7 +159,7 @@ def run_openclaw_deploy(
         fail_step(
             report,
             "merge_openclaw_json",
-            "--strict: state root .env missing required keys for OpenClaw skill: "
+            "--strict: state root twinbox.json (or legacy .env) missing required keys for OpenClaw skill: "
             + ", ".join(missing_required),
             {"missing_required_env_in_dotenv": missing_required},
         )
@@ -226,7 +227,8 @@ def run_openclaw_rollback(
     """Undo host wiring done by :func:`run_openclaw_deploy` (narrow scope).
 
     Removes ``skills.entries.twinbox``, deletes ``~/.openclaw/skills/twinbox/``,
-    optionally removes ``~/.config/twinbox/`` (code-root / state-root pointers).
+    optionally removes ``~/.twinbox`` pointer files (``code-root``, ``state-root``,
+    ``canonical-root``, bridge env) and legacy ``~/.config/twinbox/`` if present.
 
     Does **not** remove ``~/.twinbox`` (mail state), OpenClaw plugins, cron,
     systemd bridge, or ``uninstall_openclaw_twinbox.sh`` scope — use that script

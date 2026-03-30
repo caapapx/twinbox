@@ -9,12 +9,15 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
 export TWINBOX_CODE_ROOT="${TWINBOX_CODE_ROOT:-$PROJECT_ROOT}"
 
-# Resolve state root from ~/.config/twinbox/state-root (written by install_openclaw_twinbox_init.sh)
+# Resolve state root from ~/.twinbox/state-root (written by install_openclaw_twinbox_init.sh), else legacy ~/.config/twinbox/state-root
 # Default: ~/.twinbox (separate from code repo, not committed to git)
-_STATE_ROOT_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/twinbox/state-root"
+_STATE_ROOT_NEW="${HOME}/.twinbox/state-root"
+_STATE_ROOT_LEGACY="${XDG_CONFIG_HOME:-$HOME/.config}/twinbox/state-root"
 if [[ -z "${TWINBOX_STATE_ROOT:-}" ]]; then
-  if [[ -f "$_STATE_ROOT_FILE" ]]; then
-    TWINBOX_STATE_ROOT="$(tr -d '\n' < "$_STATE_ROOT_FILE")"
+  if [[ -f "$_STATE_ROOT_NEW" ]]; then
+    TWINBOX_STATE_ROOT="$(tr -d '\n' < "$_STATE_ROOT_NEW")"
+  elif [[ -f "$_STATE_ROOT_LEGACY" ]]; then
+    TWINBOX_STATE_ROOT="$(tr -d '\n' < "$_STATE_ROOT_LEGACY")"
   else
     TWINBOX_STATE_ROOT="$HOME/.twinbox"
   fi

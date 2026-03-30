@@ -217,6 +217,10 @@ def env_from_twinbox_config(config: dict[str, Any]) -> dict[str, str]:
 
 
 def load_config_or_legacy(env_path: Path) -> dict[str, Any]:
+    if env_path.name == "twinbox.json":
+        if env_path.exists():
+            return load_twinbox_config(env_path)
+        return {"version": 1}
     config_path = config_path_for_env_file(env_path)
     if config_path.exists():
         return load_twinbox_config(config_path)
@@ -227,8 +231,17 @@ def load_config_or_legacy(env_path: Path) -> dict[str, Any]:
 
 
 def write_env_as_twinbox_config(env_path: Path, env: dict[str, str]) -> Path:
-    config_path = config_path_for_env_file(env_path)
-    existing = load_config_or_legacy(env_path)
+    """Merge *env* into ``twinbox.json``.
+
+    *env_path* may be ``state_root/twinbox.json`` (preferred) or legacy
+    ``state_root/.env`` (resolved to the JSON path next to it).
+    """
+    if env_path.name == "twinbox.json":
+        config_path = env_path
+        existing: dict[str, Any] = load_twinbox_config(config_path) if config_path.exists() else {"version": 1}
+    else:
+        config_path = config_path_for_env_file(env_path)
+        existing = load_config_or_legacy(env_path)
     merged = deepcopy(existing)
     env_config = config_from_env(env)
     for key, value in env_config.items():
@@ -236,8 +249,11 @@ def write_env_as_twinbox_config(env_path: Path, env: dict[str, str]) -> Path:
             continue
         merged[key] = value
     save_twinbox_config(config_path, merged)
-    if env_path.exists():
-        env_path.unlink()
+    if env_path.name == ".env" and env_path.exists():
+        try:
+            env_path.unlink()
+        except OSError:
+            pass
     return config_path
 
 

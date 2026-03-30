@@ -622,6 +622,7 @@ def test_run_openclaw_deploy_missing_skill_md_fails(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("TWINBOX_CODE_ROOT", raising=False)
     cr = tmp_path / "empty"
     cr.mkdir()
     (cr / "scripts").mkdir()

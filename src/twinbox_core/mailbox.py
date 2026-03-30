@@ -23,6 +23,7 @@ from .mail_env_contract import (
     missing_required_mail_values,
 )
 from .paths import PathResolutionError, resolve_code_root, resolve_existing_dir, resolve_state_root
+from .twinbox_config import config_path_for_state_root
 
 OPENCLAW_REQUIRED_ENV = list(OPENCLAW_IMAP_SMTP_ENV_KEYS)
 RUNTIME_REQUIRED_ENV = list(OPENCLAW_REQUIRES_ENV_KEYS)
@@ -70,7 +71,7 @@ def resolve_mailbox_paths(
     return MailboxPaths(
         code_root=code_root,
         state_root=resolved_root,
-        env_file=resolved_root / ".env",
+        env_file=config_path_for_state_root(resolved_root),
         config_file=runtime_dir / "config.toml",
         runtime_dir=runtime_dir,
         validation_dir=validation_dir,
@@ -88,14 +89,18 @@ def build_effective_env(
 ) -> tuple[dict[str, str], dict[str, str], dict[str, str], dict[str, str]]:
     if env is None:
         env = os.environ
-    file_env = load_env_file(paths.env_file)
+    cfg_path = paths.env_file
+    legacy_dotenv = cfg_path.parent / ".env"
+    config_exists = cfg_path.is_file()
+    legacy_exists = legacy_dotenv.is_file()
+    file_env = load_env_file(cfg_path)
 
     effective = dict(file_env)
     effective.update({key: value for key, value in env.items() if value is not None})
     env_sources = {
         "mode": "process-env-first",
-        "state_root_env_file": str(paths.env_file) if paths.env_file.exists() else None,
-        "state_root_env_present": "yes" if paths.env_file.exists() else "no",
+        "state_root_env_file": str(cfg_path) if config_exists else (str(legacy_dotenv) if legacy_exists else None),
+        "state_root_env_present": "yes" if (config_exists or legacy_exists) else "no",
     }
 
     defaults_applied: dict[str, str] = {}
@@ -280,7 +285,11 @@ def _preflight_json_payload(
         "exit_code": exit_code,
         "code_root": str(paths.code_root),
         "state_root": str(paths.state_root),
-        "env_file": str(paths.env_file) if paths.env_file.exists() else None,
+        "env_file": (
+            str(paths.env_file)
+            if paths.env_file.is_file()
+            else (str(paths.env_file.parent / ".env") if (paths.env_file.parent / ".env").is_file() else None)
+        ),
         "config_file": str(paths.config_file),
         "required_env": OPENCLAW_REQUIRED_ENV,
         "runtime_required_env": RUNTIME_REQUIRED_ENV,

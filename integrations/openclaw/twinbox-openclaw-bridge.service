@@ -5,6 +5,6 @@ Wants=network-online.target openclaw-gateway.service
 
 [Service]
 Type=oneshot
-EnvironmentFile=%h/.config/twinbox/twinbox-openclaw-bridge.env
+EnvironmentFile=%h/.twinbox/twinbox-openclaw-bridge.env
 WorkingDirectory=%h
 ExecStart=/bin/bash -lc 'cd "${TWINBOX_STATE_ROOT:-${TWINBOX_CANONICAL_ROOT}}" && "${TWINBOX_CODE_ROOT}/scripts/twinbox_openclaw_bridge_poll.sh" --format json --openclaw-bin "${OPENCLAW_BIN:-openclaw}"'

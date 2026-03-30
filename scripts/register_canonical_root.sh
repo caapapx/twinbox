@@ -50,7 +50,7 @@ TARGET_ROOT="$(twinbox_resolve_existing_dir "${TARGET_ROOT}")" || {
   exit 1
 }
 
-if [[ ! -f "${TARGET_ROOT}/scripts/phase4_loading.sh" ]]; then
+if [[ ! -f "${TARGET_ROOT}/src/twinbox_core/__init__.py" ]]; then
   echo "Not a twinbox checkout: ${TARGET_ROOT}" >&2
   exit 1
 fi

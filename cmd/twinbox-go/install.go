@@ -69,7 +69,7 @@ func printInstallSummary(stateRoot, destPkg, vendorDir, archiveRef string, fileC
 			"  package     %s\n"+
 			"  archive     %s\n"+
 			"  manifest    %s (%d files, twinbox_version %s; must match this %s binary)\n"+
-			"  code_root   ~/.config/twinbox/code-root -> %s (override with TWINBOX_CODE_ROOT for dev)\n"+
+			"  code_root   ~/.twinbox/code-root -> %s (override with TWINBOX_CODE_ROOT for dev)\n"+
 			"  fallback    Python via PYTHONPATH=%s when daemon socket is unavailable\n"+
 			"  next        %s onboard openclaw (starts daemon after wiring; use --no-start-daemon to skip)\n",
 		stateRoot,
@@ -86,18 +86,18 @@ func printInstallSummary(stateRoot, destPkg, vendorDir, archiveRef string, fileC
 	)
 }
 
-// writeVendorCodeRootPointer writes ~/.config/twinbox/code-root so resolve_code_root() prefers this
+// writeVendorCodeRootPointer writes ~/.twinbox/code-root so resolve_code_root() prefers this
 // vendor bundle over cwd (TWINBOX_CODE_ROOT still wins when set — dev checkout).
 func writeVendorCodeRootPointer(vendorDir string) error {
 	abs, err := filepath.Abs(vendorDir)
 	if err != nil {
 		return err
 	}
-	cfgRoot, err := os.UserConfigDir()
+	home, err := os.UserHomeDir()
 	if err != nil {
 		return err
 	}
-	dir := filepath.Join(cfgRoot, "twinbox")
+	dir := filepath.Join(home, ".twinbox")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}

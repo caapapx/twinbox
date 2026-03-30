@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import subprocess
 import sys
 from collections import Counter
 from dataclasses import dataclass
@@ -12,6 +14,7 @@ from datetime import datetime
 from pathlib import Path
 
 from twinbox_core.llm import LLMError, call_llm, clean_json_text, resolve_backend
+from twinbox_core.twinbox_config import config_path_for_state_root
 from twinbox_core.prompt_fragments import (
     base_human_context_rules,
     calibration_rules,
@@ -1294,9 +1297,61 @@ def merge_phase4_outputs(
     return merged
 
 
+def run_parallel_phase4_thinking(state_root: Path) -> int:
+    """Fan out think-urgent / think-sla / think-brief, then merge (replaces phase4_thinking_parallel.sh)."""
+    phase4_dir = state_root / "runtime" / "validation" / "phase-4"
+    doc_dir = state_root / "docs" / "validation"
+    env_file = config_path_for_state_root(state_root)
+    context_pack = phase4_dir / "context-pack.json"
+    phase4_dir.mkdir(parents=True, exist_ok=True)
+    doc_dir.mkdir(parents=True, exist_ok=True)
+
+    if not context_pack.is_file():
+        print("Missing context-pack. Run phase4 loading first.", file=sys.stderr)
+        return 1
+
+    print("Phase 4 Thinking (parallel mode): launching 3 sub-tasks...")
+    py = sys.executable
+    base = [py, "-m", "twinbox_core.phase4_value"]
+    env = os.environ.copy()
+    ctx = str(context_pack)
+    out = str(phase4_dir)
+    ef = str(env_file)
+
+    subtasks = (
+        ["think-urgent", "--context", ctx, "--output-dir", out, "--env-file", ef],
+        ["think-sla", "--context", ctx, "--output-dir", out, "--env-file", ef],
+        ["think-brief", "--context", ctx, "--output-dir", out, "--env-file", ef],
+    )
+    procs = [subprocess.Popen(base + argv, env=env) for argv in subtasks]
+    failures = 0
+    for proc in procs:
+        rc = proc.wait()
+        if rc != 0:
+            failures += 1
+    if failures:
+        print(f"ERROR: {failures} sub-task(s) failed", file=sys.stderr)
+        return 1
+
+    print("All sub-tasks done. Merging outputs...")
+    merge_argv = base + [
+        "merge",
+        "--output-dir",
+        out,
+        "--doc-dir",
+        str(doc_dir),
+        "--env-file",
+        ef,
+    ]
+    return subprocess.run(merge_argv, env=env, check=False).returncode
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    parallel = subparsers.add_parser("parallel-run", help="Parallel think-urgent/sla/brief then merge")
+    parallel.add_argument("--state-root", default="", help="Twinbox state root (default: env)")
 
     single = subparsers.add_parser("single-run")
     single.add_argument("--context", required=True)
@@ -1340,6 +1395,21 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         env_file = Path(args.env_file).expanduser() if getattr(args, "env_file", None) else None
+
+        if args.command == "parallel-run":
+            raw = str(getattr(args, "state_root", "") or "").strip()
+            if raw:
+                sr = Path(raw).expanduser().resolve()
+            else:
+                for key in ("TWINBOX_STATE_ROOT", "TWINBOX_CANONICAL_ROOT"):
+                    v = os.environ.get(key, "").strip()
+                    if v:
+                        sr = Path(v).expanduser().resolve()
+                        break
+                else:
+                    print("parallel-run: set --state-root or TWINBOX_STATE_ROOT", file=sys.stderr)
+                    return 1
+            return run_parallel_phase4_thinking(sr)
 
         if args.command == "single-run":
             run_single(

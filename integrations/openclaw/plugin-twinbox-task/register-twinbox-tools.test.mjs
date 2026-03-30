@@ -9,6 +9,9 @@ import {
   toolOpts,
   formatResult,
   resolvePushSessionTarget,
+  latestMailNeedsDaytimeSync,
+  resolveOrchestrateInvoke,
+  orchestratePythonPath,
 } from "./register-twinbox-tools.mjs";
 
 test("toolOpts uses env TWINBOX_CODE_ROOT when cwd omitted", () => {
@@ -19,6 +22,11 @@ test("toolOpts uses env TWINBOX_CODE_ROOT when cwd omitted", () => {
       twinboxBin: "twinbox",
       cwd: "/tmp/tb-root",
       openclawBin: "openclaw",
+      orchestrateInvoke: {
+        command: "twinbox-orchestrate",
+        argsPrefix: [],
+        env: {},
+      },
     });
   } finally {
     if (prev === undefined) {
@@ -37,11 +45,55 @@ test("toolOpts prefers cwd/scripts/twinbox when twinboxBin omitted", () => {
   writeFileSync(twinboxScript, "#!/bin/sh\nexit 0\n");
   chmodSync(twinboxScript, 0o755);
 
+  const orchestrateScript = join(scriptsDir, "twinbox_orchestrate.sh");
+  writeFileSync(orchestrateScript, "#!/bin/sh\nexit 0\n");
+  chmodSync(orchestrateScript, 0o755);
+
   assert.deepEqual(toolOpts({ cwd: dir }), {
     twinboxBin: twinboxScript,
     cwd: dir,
     openclawBin: "openclaw",
+    orchestrateInvoke: {
+      command: orchestrateScript,
+      argsPrefix: [],
+      env: {},
+    },
   });
+});
+
+test("toolOpts uses python -m when code root has twinbox_core (vendor) but no orchestrate script", () => {
+  const dir = mkdtempSync(join(tmpdir(), "twinbox-vendor-"));
+  mkdirSync(join(dir, "twinbox_core"), { recursive: true });
+  writeFileSync(join(dir, "twinbox_core", "__init__.py"), "");
+  const opts = toolOpts({ cwd: dir });
+  assert.equal(opts.orchestrateInvoke.command, process.platform === "win32" ? "python" : "python3");
+  assert.deepEqual(opts.orchestrateInvoke.argsPrefix, ["-m", "twinbox_core.orchestration"]);
+  assert.equal(opts.orchestrateInvoke.env.PYTHONPATH, dir);
+});
+
+test("orchestratePythonPath detects src layout and flat vendor layout", () => {
+  const gitLike = mkdtempSync(join(tmpdir(), "twinbox-git-"));
+  mkdirSync(join(gitLike, "src", "twinbox_core"), { recursive: true });
+  assert.equal(orchestratePythonPath(gitLike), join(gitLike, "src"));
+  const flat = mkdtempSync(join(tmpdir(), "twinbox-flat-"));
+  mkdirSync(join(flat, "twinbox_core"), { recursive: true });
+  assert.equal(orchestratePythonPath(flat), flat);
+  assert.equal(orchestratePythonPath(undefined), null);
+});
+
+test("resolveOrchestrateInvoke honors TWINBOX_ORCHESTRATE_BIN", () => {
+  const prev = process.env.TWINBOX_ORCHESTRATE_BIN;
+  process.env.TWINBOX_ORCHESTRATE_BIN = "/opt/bin/my-orch";
+  try {
+    assert.deepEqual(resolveOrchestrateInvoke({}, "/any/cwd"), {
+      command: "/opt/bin/my-orch",
+      argsPrefix: [],
+      env: {},
+    });
+  } finally {
+    if (prev === undefined) delete process.env.TWINBOX_ORCHESTRATE_BIN;
+    else process.env.TWINBOX_ORCHESTRATE_BIN = prev;
+  }
 });
 
 test("resolvePushSessionTarget uses explicit, env, then default", () => {
@@ -60,6 +112,31 @@ test("resolvePushSessionTarget uses explicit, env, then default", () => {
     if (prevO === undefined) delete process.env.OPENCLAW_SESSION_ID;
     else process.env.OPENCLAW_SESSION_ID = prevO;
   }
+});
+
+test("latestMailNeedsDaytimeSync true on recovery_tool JSON", () => {
+  const body = JSON.stringify({
+    ok: false,
+    recovery_tool: "twinbox_daytime_sync",
+    task: "latest-mail",
+  });
+  assert.equal(latestMailNeedsDaytimeSync(body, "", 0), true);
+});
+
+test("latestMailNeedsDaytimeSync false on normal latest-mail JSON", () => {
+  const body = JSON.stringify({
+    task: "latest-mail",
+    summary: "ok",
+    urgent_top_k: [],
+  });
+  assert.equal(latestMailNeedsDaytimeSync(body, "", 0), false);
+});
+
+test("latestMailNeedsDaytimeSync true on legacy stderr exit 1", () => {
+  assert.equal(
+    latestMailNeedsDaytimeSync("", "错误: Missing activity-pulse.json.\nRun sync first.", 1),
+    true,
+  );
 });
 
 test("formatResult prefers stdout then stderr", () => {
@@ -92,6 +169,7 @@ test("registerTwinboxTaskTools registers expected tools and task/thread helpers 
     "twinbox_config_import_llm_from_openclaw",
     "twinbox_config_set_llm",
     "twinbox_context_import_material",
+    "twinbox_daytime_sync",
     "twinbox_latest_mail",
     "twinbox_mailbox_setup",
     "twinbox_mailbox_status",

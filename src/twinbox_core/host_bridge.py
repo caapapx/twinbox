@@ -24,6 +24,12 @@ def _xdg_config_home() -> Path:
 
 
 def bridge_env_path() -> Path:
+    """Environment file for systemd ``host bridge poll`` (under ``~/.twinbox``)."""
+    return Path.home() / ".twinbox" / BRIDGE_ENV_BASENAME
+
+
+def legacy_bridge_env_path() -> Path:
+    """Historical location (``~/.config/twinbox/``); removed alongside :func:`bridge_env_path` on uninstall."""
     return _xdg_config_home() / "twinbox" / BRIDGE_ENV_BASENAME
 
 
@@ -63,7 +69,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-EnvironmentFile=%h/.config/twinbox/{BRIDGE_ENV_BASENAME}
+EnvironmentFile=%h/.twinbox/{BRIDGE_ENV_BASENAME}
 WorkingDirectory=%h
 ExecStart={twinbox_bin} host bridge poll --format json
 """
@@ -191,6 +197,10 @@ def remove_host_bridge(
             pass
     try:
         env_path.unlink(missing_ok=True)
+    except OSError:
+        pass
+    try:
+        legacy_bridge_env_path().unlink(missing_ok=True)
     except OSError:
         pass
     if state_root is not None:

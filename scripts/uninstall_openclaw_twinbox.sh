@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Completely remove Twinbox × OpenClaw integration from this machine.
 # Removes: systemd units, OpenClaw cron jobs, sessions, skill file,
-#          openclaw.json entries, ~/.config/twinbox/, runtime state.
+#          openclaw.json entries, legacy ~/.config/twinbox/, ~/.twinbox runtime state.
 # Does NOT uninstall the twinbox Python package (pass --with-pip to do so).
 #
 # Usage:
@@ -16,10 +16,13 @@ OPENCLAW_SKILLS_DIR="${HOME}/.openclaw/skills/twinbox"
 OPENCLAW_SESSIONS_DIR="${HOME}/.openclaw/agents/twinbox/sessions"
 OPENCLAW_JSON="${HOME}/.openclaw/openclaw.json"
 
-# Read state root from config file (defaults to ~/.twinbox)
-_STATE_ROOT_FILE="${XDG_CONFIG_HOME:-${HOME}/.config}/twinbox/state-root"
-if [[ -f "${_STATE_ROOT_FILE}" ]]; then
-  STATE_ROOT="$(tr -d '\n' < "${_STATE_ROOT_FILE}")"
+# Read state root from ~/.twinbox/state-root, then legacy ~/.config/twinbox/state-root (defaults to ~/.twinbox)
+_STATE_ROOT_NEW="${HOME}/.twinbox/state-root"
+_STATE_ROOT_LEGACY="${XDG_CONFIG_HOME:-${HOME}/.config}/twinbox/state-root"
+if [[ -f "${_STATE_ROOT_NEW}" ]]; then
+  STATE_ROOT="$(tr -d '\n' < "${_STATE_ROOT_NEW}")"
+elif [[ -f "${_STATE_ROOT_LEGACY}" ]]; then
+  STATE_ROOT="$(tr -d '\n' < "${_STATE_ROOT_LEGACY}")"
 else
   STATE_ROOT="${HOME}/.twinbox"
 fi
@@ -155,9 +158,9 @@ else
   echo "openclaw.json not found."
 fi
 
-# 7. Remove ~/.config/twinbox/
+# 7. Remove legacy ~/.config/twinbox/ (pointers now live under ~/.twinbox; step 8 removes state)
 echo ""
-echo "--- [7/8] ~/.config/twinbox/ ---"
+echo "--- [7/8] legacy ~/.config/twinbox/ ---"
 if [[ -d "${CONFIG_DIR}" ]]; then
   echo "Removing ${CONFIG_DIR}"
   run rm -rf "${CONFIG_DIR}"

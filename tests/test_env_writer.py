@@ -69,6 +69,16 @@ def test_load_env_file_not_exists(tmp_path):
     assert load_env_file(p) == {}
 
 
+def test_load_env_file_twinbox_json_fallback_to_legacy_dotenv(tmp_path):
+    legacy = tmp_path / ".env"
+    legacy.write_text("MAIL_ADDRESS=u@x.com\nLLM_API_KEY=k\nLLM_MODEL=m\nLLM_API_URL=https://z\n", encoding="utf-8")
+    cfg = tmp_path / "twinbox.json"
+    assert not cfg.exists()
+    loaded = load_env_file(cfg)
+    assert loaded.get("MAIL_ADDRESS") == "u@x.com"
+    assert loaded.get("LLM_API_KEY") == "k"
+
+
 def test_load_env_file_skips_no_equals(tmp_path):
     p = tmp_path / ".env"
     p.write_text("JUSTKEY\nFOO=bar\n")

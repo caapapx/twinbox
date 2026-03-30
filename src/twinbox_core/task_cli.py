@@ -1585,7 +1585,7 @@ def cmd_config_set_llm(args: argparse.Namespace) -> int:
         return 2
 
     state_root = _state_root()
-    env_file = state_root / ".env"
+    env_file = config_path_for_state_root(state_root)
 
     if not args.model.strip():
         if args.json:
@@ -1661,14 +1661,14 @@ def cmd_config_set_llm(args: argparse.Namespace) -> int:
 
 
 def cmd_config_import_llm_from_openclaw(args: argparse.Namespace) -> int:
-    """Copy default LLM from OpenClaw openclaw.json into Twinbox (.env), same as set-llm."""
+    """Copy default LLM from OpenClaw openclaw.json into Twinbox (twinbox.json), same as set-llm."""
     from .env_writer import mask_secret, merge_env_file, write_env_file
     from .llm import LLMError, resolve_backend
     from .openclaw_llm_import import OpenClawLlmImportError, import_llm_from_openclaw_path
     from .twinbox_config import config_path_for_state_root
 
     state_root = _state_root()
-    env_file = state_root / ".env"
+    env_file = config_path_for_state_root(state_root)
     oc_path = Path(str(getattr(args, "openclaw_json", "") or "").strip()).expanduser()
     if not oc_path:
         oc_path = Path.home() / ".openclaw" / "openclaw.json"
@@ -1890,18 +1890,13 @@ def cmd_onboard_openclaw(args: argparse.Namespace) -> int:
     return _cmd_onboard_openclaw_journey(args)
 
 
-def cmd_onboard_openclaw_v2(args: argparse.Namespace) -> int:
-    """Compatibility alias for the journey-style OpenClaw host onboarding shell."""
-    return _cmd_onboard_openclaw_journey(args)
-
-
 def _cmd_onboard_openclaw_journey(args: argparse.Namespace) -> int:
-    """Journey-style OpenClaw host onboarding shell with stronger handoff."""
-    from twinbox_core.openclaw_onboard import run_openclaw_onboard_v2
+    """OpenClaw host onboarding: TTY journey, validation, deploy, handoff to conversational onboarding."""
+    from twinbox_core.openclaw_onboard import run_openclaw_onboard
 
     code_root = Path(args.repo_root).expanduser() if args.repo_root else None
     openclaw_home = Path(args.openclaw_home).expanduser() if args.openclaw_home else None
-    report = run_openclaw_onboard_v2(
+    report = run_openclaw_onboard(
         code_root=code_root,
         openclaw_home=openclaw_home,
         dry_run=args.dry_run,
@@ -2715,6 +2710,19 @@ def cmd_task_latest_mail(args: argparse.Namespace) -> int:
     try:
         payload = _build_latest_mail_task_view()
     except DaytimeSliceError as exc:
+        if getattr(args, "json", False):
+            err_payload = {
+                "task": "latest-mail",
+                "ok": False,
+                "error": str(exc),
+                "recovery_tool": "twinbox_daytime_sync",
+                "recovery_hint": (
+                    "Mail data not yet generated. Call twinbox_daytime_sync() "
+                    "to run the first sync, then re-call twinbox_latest_mail."
+                ),
+            }
+            print(json.dumps(err_payload, ensure_ascii=False, indent=2))
+            return 0
         print(f"错误: {exc}", file=sys.stderr)
         return 1
 
@@ -2849,6 +2857,19 @@ def cmd_task_weekly(args: argparse.Namespace) -> int:
     try:
         payload = _build_weekly_task_view()
     except FileNotFoundError:
+        if getattr(args, "json", False):
+            err_payload = {
+                "task": "weekly",
+                "ok": False,
+                "error": "weekly-brief-raw.json not found",
+                "recovery_tool": "twinbox_daytime_sync",
+                "recovery_hint": (
+                    "Weekly brief not yet generated. Call twinbox_daytime_sync(job='nightly-full') "
+                    "to run a full pipeline, then re-call twinbox_weekly."
+                ),
+            }
+            print(json.dumps(err_payload, ensure_ascii=False, indent=2))
+            return 0
         print("错误: 未找到 weekly-brief-raw.json", file=sys.stderr)
         return 1
 
@@ -3304,8 +3325,10 @@ def cmd_rule_test(args: argparse.Namespace) -> int:
     print(f"测试样本数: {len(threads)} 个近期线程\n")
 
     matched_threads = []
-    env_file = _state_root() / ".env"
-    
+    from twinbox_core.twinbox_config import config_path_for_state_root
+
+    env_file = config_path_for_state_root(_state_root())
+
     for thread in threads:
         if evaluate_rule(target_rule, thread, env_file=env_file if env_file.exists() else None):
             matched_threads.append(thread)
@@ -3493,12 +3516,12 @@ def _build_parser() -> argparse.ArgumentParser:
     dep_oc.add_argument(
         "--remove-config",
         action="store_true",
-        help="With --rollback: also remove ~/.config/twinbox (code-root/state-root pointers)",
+        help="With --rollback: also remove ~/.twinbox pointer files (and legacy ~/.config/twinbox if present)",
     )
     dep_oc.add_argument(
         "--repo-root",
         default="",
-        help="Twinbox git checkout (default: resolve from cwd via ~/.config/twinbox/code-root)",
+        help="Twinbox git checkout (default: resolve from cwd via ~/.twinbox/code-root)",
     )
     dep_oc.add_argument(
         "--openclaw-home",
@@ -3570,7 +3593,7 @@ def _build_parser() -> argparse.ArgumentParser:
     onboard_oc.add_argument(
         "--repo-root",
         default="",
-        help="Twinbox git checkout (default: resolve from cwd via ~/.config/twinbox/code-root)",
+        help="Twinbox git checkout (default: resolve from cwd via ~/.twinbox/code-root)",
     )
     onboard_oc.add_argument(
         "--openclaw-home",
@@ -3598,37 +3621,6 @@ def _build_parser() -> argparse.ArgumentParser:
         help="After deploy succeeds, do not start the Twinbox JSON-RPC daemon",
     )
     onboard_oc.add_argument("--json", action="store_true", help="Output as JSON")
-
-    onboard_oc_v2 = onboard_sub.add_parser(
-        "openclaw-v2",
-        help=argparse.SUPPRESS,
-    )
-    onboard_oc_v2.add_argument(
-        "--repo-root",
-        default="",
-        help="Twinbox git checkout (default: resolve from cwd via ~/.config/twinbox/code-root)",
-    )
-    onboard_oc_v2.add_argument(
-        "--openclaw-home",
-        default="",
-        help="OpenClaw config dir (default: ~/.openclaw)",
-    )
-    onboard_oc_v2.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Plan the onboarding flow without mutating files or restarting gateway",
-    )
-    onboard_oc_v2.add_argument(
-        "--openclaw-bin",
-        default="openclaw",
-        help="openclaw executable for validation and gateway restart",
-    )
-    onboard_oc_v2.add_argument(
-        "--skip-bridge",
-        action="store_true",
-        help="Skip bridge prerequisite bundle (not recommended)",
-    )
-    onboard_oc_v2.add_argument("--json", action="store_true", help="Output as JSON")
 
     openclaw_parser = subparsers.add_parser("openclaw", help="OpenClaw-native onboarding tools (JSON)")
     openclaw_sub = openclaw_parser.add_subparsers(dest="openclaw_command", required=True)
@@ -3981,8 +3973,6 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "onboard":
             if args.onboard_command == "openclaw":
                 return cmd_onboard_openclaw(args)
-            elif args.onboard_command == "openclaw-v2":
-                return cmd_onboard_openclaw_v2(args)
         elif args.command == "onboarding":
             if args.onboarding_command == "start":
                 return cmd_onboarding_start(args)

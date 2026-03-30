@@ -5,7 +5,7 @@
 #   twinbox_core/          — from src/twinbox_core
 #   integrations/openclaw/        — fragment, plugin, docs (node_modules excluded)
 #   SKILL.md               — repo-root skill manifest (deploy copies to state + OpenClaw)
-#   scripts/install_openclaw_twinbox_init.sh — bootstrap; ``install`` writes ~/.config/twinbox/code-root → vendor dir
+#   scripts/install_openclaw_twinbox_init.sh — bootstrap; Go ``install --archive`` writes ~/.twinbox/code-root → vendor dir
 #
 # Output filename stays twinbox_core-<version>.tar.gz for compatibility with existing docs/scripts.
 set -euo pipefail

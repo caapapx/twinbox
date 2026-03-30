@@ -12,10 +12,36 @@ class PathResolutionError(RuntimeError):
     """Raised when twinbox cannot resolve a stable code/state root."""
 
 
+def _home_from_env(env: dict[str, str]) -> Path:
+    """Honor ``HOME`` from *env* when callers pass an explicit env dict (tests, subprocess)."""
+    h = env.get("HOME", "").strip()
+    if h:
+        return Path(h).expanduser()
+    return Path.home()
+
+
 def config_dir(env: dict[str, str] | None = None) -> Path:
+    """Directory for ``code-root`` / ``state-root`` pointer files.
+
+    Default: ``~/.twinbox`` (single user root). Override with ``TWINBOX_POINTER_DIR``
+    (tests, nonstandard layouts). Historical pointers under ``~/.config/twinbox``
+    are still read via :func:`legacy_config_dir` when resolving roots.
+    """
     if env is None:
         env = os.environ
-    return Path(env.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))) / "twinbox"
+    override = env.get("TWINBOX_POINTER_DIR", "").strip()
+    if override:
+        return Path(override).expanduser()
+    return _home_from_env(env) / ".twinbox"
+
+
+def legacy_config_dir(env: dict[str, str] | None = None) -> Path:
+    """Historical pointer location (read fallback only): ``$XDG_CONFIG_HOME/twinbox``."""
+    if env is None:
+        env = os.environ
+    xdg = env.get("XDG_CONFIG_HOME", "").strip()
+    base = Path(xdg).expanduser() if xdg else _home_from_env(env) / ".config"
+    return base / "twinbox"
 
 
 def code_root_file(env: dict[str, str] | None = None) -> Path:
@@ -114,10 +140,11 @@ def resolve_code_root(
         env = os.environ
     resolved_default = resolve_existing_dir(default_code_root)
     resolved_default = _ascend_to_twinbox_code_root(resolved_default)
+    code_files = (code_root_file(env), legacy_config_dir(env) / "code-root")
     candidate = _configured_root_candidate(
         env=env,
         env_names=("TWINBOX_CODE_ROOT",),
-        file_candidates=(code_root_file(env),),
+        file_candidates=code_files,
     )
     if not candidate:
         return resolved_default
@@ -134,10 +161,16 @@ def resolve_state_root(
     if env is None:
         env = os.environ
     resolved_default = resolve_existing_dir(default_state_root)
+    state_files = (
+        state_root_file(env),
+        canonical_root_file(env),
+        legacy_config_dir(env) / "state-root",
+        legacy_config_dir(env) / "canonical-root",
+    )
     candidate = _configured_root_candidate(
         env=env,
         env_names=("TWINBOX_STATE_ROOT", "TWINBOX_CANONICAL_ROOT"),
-        file_candidates=(state_root_file(env), canonical_root_file(env)),
+        file_candidates=state_files,
     )
     if not candidate:
         return resolved_default

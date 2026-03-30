@@ -26,6 +26,10 @@ def _fake_repo(tmp: Path) -> Path:
 def _env(repo_root: Path, state_root: Path) -> dict[str, str]:
     env = os.environ.copy()
     env["TWINBOX_STATE_ROOT"] = str(state_root)
+    # Isolate from developer machine: otherwise resolve_code_root() follows
+    # TWINBOX_CODE_ROOT / ~/.twinbox/code-root and vendor install looks for
+    # vendor/src/twinbox_core (wrong layout).
+    env["TWINBOX_CODE_ROOT"] = str(repo_root.resolve())
     twinbox_src = Path(__file__).resolve().parents[1] / "src"
     env["PYTHONPATH"] = str(twinbox_src) + os.pathsep + env.get("PYTHONPATH", "")
     return env

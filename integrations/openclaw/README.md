@@ -106,12 +106,12 @@ bash ../../scripts/install_openclaw_twinbox_init.sh
 - `~/.config/twinbox/state-root`
 - `~/.config/twinbox/canonical-root`（legacy alias）
 
-否则 Twinbox 命令如果从 `~/.openclaw/workspace` 发起，可能会把 workspace 当成 state root，继而错误地去找 `~/.openclaw/workspace/.env`，表现成“邮箱 env 未配置”。
+否则 Twinbox 命令如果从 `~/.openclaw/workspace` 发起，可能会把 workspace 当成 state root，继而错误地去找 `~/.openclaw/workspace/.env` 或缺少 **`twinbox.json`**，表现成“邮箱 env 未配置”。
 
 推荐语义：
 
 - OpenClaw skill env / process env 是一等配置源
-- `state root/.env` 是本地开发与自托管 fallback
+- **`state root/twinbox.json`** 是 Twinbox 主配置；历史 **`state root/.env`** 仅迁移期兼容
 - 当前仓库仍默认 `code root == state root`，但这只是当前实例布局，不是通用标准
 
 但这仍不等价于：

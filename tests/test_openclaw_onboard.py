@@ -11,12 +11,10 @@ from types import SimpleNamespace
 import pytest
 
 from twinbox_core.llm import LLMError
-from twinbox_core.onboarding import OnboardingState, load_state, save_state
 from twinbox_core.openclaw_deploy_types import OpenClawDeployReport
 from twinbox_core.openclaw_onboard import (
     ConsoleJourneyPrompter,
     run_openclaw_onboard,
-    run_openclaw_onboard_v2,
 )
 
 
@@ -121,111 +119,6 @@ def _write_ready_twinbox_config(state_root: Path) -> None:
     )
 
 
-def test_run_openclaw_onboard_configures_missing_mailbox_and_llm_then_deploys(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    state_root = tmp_path / "state"
-    state_root.mkdir()
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
-    openclaw_home = tmp_path / ".openclaw"
-    openclaw_home.mkdir()
-
-    monkeypatch.setenv("TWINBOX_STATE_ROOT", str(state_root))
-    monkeypatch.setenv("TWINBOX_CODE_ROOT", str(repo))
-    monkeypatch.setattr("twinbox_core.openclaw_onboard.shutil.which", lambda _bin: "/usr/bin/openclaw")
-    monkeypatch.setattr("twinbox_core.mailbox_detect.detect_to_env", _fake_detect_to_env)
-    monkeypatch.setattr("twinbox_core.mailbox.run_preflight", _fake_run_preflight)
-
-    answers = iter(["user@example.com", "openai", "test-model", "https://example.com/v1/chat/completions"])
-    monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
-    monkeypatch.setattr("getpass.getpass", lambda _prompt="": "secret-value")
-
-    deploy_calls: list[dict[str, object]] = []
-
-    def fake_run_openclaw_deploy(**kwargs: object) -> OpenClawDeployReport:
-        deploy_calls.append(kwargs)
-        return OpenClawDeployReport(ok=True, steps=[], phase2_ready=True)
-
-    report = run_openclaw_onboard(
-        code_root=repo,
-        openclaw_home=openclaw_home,
-        deploy_runner=fake_run_openclaw_deploy,
-    )
-
-    assert report.ok is True
-    assert report.mailbox["prompted"] is True
-    assert report.mailbox["status"] == "ok"
-    assert report.llm["prompted"] is True
-    assert report.llm["backend"] == "openai"
-    assert report.llm["model"] == "test-model"
-    assert deploy_calls and deploy_calls[0]["strict"] is True
-    assert deploy_calls[0]["sync_env_from_dotenv"] is True
-
-    state = load_state(state_root)
-    assert state.current_stage == "profile_setup"
-    assert "mailbox_login" in state.completed_stages
-    assert "llm_setup" in state.completed_stages
-
-
-def test_run_openclaw_onboard_skips_prompts_when_mailbox_and_llm_already_configured(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    state_root = tmp_path / "state"
-    state_root.mkdir()
-    (state_root / ".env").write_text(
-        "\n".join(
-            [
-                "MAIL_ADDRESS=user@example.com",
-                "IMAP_HOST=imap.example.com",
-                "IMAP_PORT=993",
-                "IMAP_LOGIN=user@example.com",
-                "IMAP_PASS=secret-pass",
-                "SMTP_HOST=smtp.example.com",
-                "SMTP_PORT=465",
-                "SMTP_LOGIN=user@example.com",
-                "SMTP_PASS=secret-pass",
-                "LLM_API_KEY=sk-test",
-                "LLM_MODEL=test-model",
-                "LLM_API_URL=https://example.com/v1/chat/completions",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
-    openclaw_home = tmp_path / ".openclaw"
-    openclaw_home.mkdir()
-
-    state = OnboardingState(current_stage="material_import", completed_stages=["mailbox_login", "llm_setup", "profile_setup"])
-    save_state(state_root, state)
-
-    monkeypatch.setenv("TWINBOX_STATE_ROOT", str(state_root))
-    monkeypatch.setenv("TWINBOX_CODE_ROOT", str(repo))
-    monkeypatch.setattr("twinbox_core.openclaw_onboard.shutil.which", lambda _bin: "/usr/bin/openclaw")
-    monkeypatch.setattr("builtins.input", lambda _prompt="": (_ for _ in ()).throw(AssertionError("input should not be called")))
-    monkeypatch.setattr("getpass.getpass", lambda _prompt="": (_ for _ in ()).throw(AssertionError("getpass should not be called")))
-
-    def fake_run_openclaw_deploy(**_: object) -> OpenClawDeployReport:
-        return OpenClawDeployReport(ok=True, steps=[], phase2_ready=True)
-
-    report = run_openclaw_onboard(
-        code_root=repo,
-        openclaw_home=openclaw_home,
-        deploy_runner=fake_run_openclaw_deploy,
-    )
-
-    assert report.ok is True
-    assert report.mailbox["prompted"] is False
-    assert report.llm["prompted"] is False
-    assert report.onboarding["current_stage"] == "material_import"
-
-
 class _FakePrompter:
     def __init__(
         self,
@@ -327,7 +220,7 @@ def _strip_ansi(text: str) -> str:
     return re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text)
 
 
-def test_run_openclaw_onboard_v2_console_prompter_prints_english_shell(
+def test_run_openclaw_onboard_console_prompter_prints_english_shell(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -356,7 +249,7 @@ def test_run_openclaw_onboard_v2_console_prompter_prints_english_shell(
     answers = iter(["continue", "", "", "1", "", "", "1", ""])
     monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
 
-    _ = run_openclaw_onboard_v2(
+    _ = run_openclaw_onboard(
         code_root=repo,
         openclaw_home=openclaw_home,
     )
@@ -738,7 +631,7 @@ def test_console_journey_prompter_text_normalizes_multiline_default() -> None:
     assert kept == "astron-code-latest"
 
 
-def test_run_openclaw_onboard_v2_requires_explicit_steps_even_with_existing_values(
+def test_run_openclaw_onboard_requires_explicit_steps_even_with_existing_values(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -773,7 +666,7 @@ def test_run_openclaw_onboard_v2_requires_explicit_steps_even_with_existing_valu
             "apply",
         ],
     )
-    report = run_openclaw_onboard_v2(
+    report = run_openclaw_onboard(
         code_root=repo,
         openclaw_home=openclaw_home,
         prompter=prompter,
@@ -820,7 +713,7 @@ def test_run_openclaw_onboard_v2_requires_explicit_steps_even_with_existing_valu
     )
 
 
-def test_run_openclaw_onboard_v2_reads_existing_values_from_twinbox_json(
+def test_run_openclaw_onboard_reads_existing_values_from_twinbox_json(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -854,7 +747,7 @@ def test_run_openclaw_onboard_v2_reads_existing_values_from_twinbox_json(
             "apply",
         ],
     )
-    report = run_openclaw_onboard_v2(
+    report = run_openclaw_onboard(
         code_root=repo,
         openclaw_home=openclaw_home,
         prompter=prompter,
@@ -868,7 +761,7 @@ def test_run_openclaw_onboard_v2_reads_existing_values_from_twinbox_json(
     assert "LLM: test-model" in apply_note["body"]
 
 
-def test_run_openclaw_onboard_v2_collects_llm_inputs_before_validation_progress(
+def test_run_openclaw_onboard_collects_llm_inputs_before_validation_progress(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -907,7 +800,7 @@ def test_run_openclaw_onboard_v2_collects_llm_inputs_before_validation_progress(
         text_values=["https://example.com/v1/chat/completions", "test-model"],
     )
 
-    report = run_openclaw_onboard_v2(
+    report = run_openclaw_onboard(
         code_root=repo,
         openclaw_home=openclaw_home,
         prompter=prompter,
@@ -939,7 +832,7 @@ def test_run_openclaw_onboard_v2_collects_llm_inputs_before_validation_progress(
     assert model_index < progress_index
 
 
-def test_run_openclaw_onboard_v2_collects_mailbox_inputs_before_validation_progress(
+def test_run_openclaw_onboard_collects_mailbox_inputs_before_validation_progress(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -981,7 +874,7 @@ def test_run_openclaw_onboard_v2_collects_mailbox_inputs_before_validation_progr
         secret_values=["mail-secret", "llm-secret"],
     )
 
-    report = run_openclaw_onboard_v2(
+    report = run_openclaw_onboard(
         code_root=repo,
         openclaw_home=openclaw_home,
         prompter=prompter,
@@ -999,7 +892,7 @@ def test_run_openclaw_onboard_v2_collects_mailbox_inputs_before_validation_progr
     assert mailbox_secret_index < mailbox_progress_index
 
 
-def test_run_openclaw_onboard_v2_uses_updated_mailbox_secret_for_preflight(
+def test_run_openclaw_onboard_uses_updated_mailbox_secret_for_preflight(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -1063,7 +956,7 @@ def test_run_openclaw_onboard_v2_uses_updated_mailbox_secret_for_preflight(
         secret_values=["fresh-secret", "llm-secret"],
     )
 
-    report = run_openclaw_onboard_v2(
+    report = run_openclaw_onboard(
         code_root=repo,
         openclaw_home=openclaw_home,
         prompter=prompter,
@@ -1074,7 +967,7 @@ def test_run_openclaw_onboard_v2_uses_updated_mailbox_secret_for_preflight(
     assert seen_preflight_env["SMTP_PASS"] == "fresh-secret"
 
 
-def test_run_openclaw_onboard_v2_auto_update_resets_login_when_email_changes(
+def test_run_openclaw_onboard_auto_update_resets_login_when_email_changes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -1152,7 +1045,7 @@ def test_run_openclaw_onboard_v2_auto_update_resets_login_when_email_changes(
         secret_values=["fresh-secret", "llm-secret"],
     )
 
-    report = run_openclaw_onboard_v2(
+    report = run_openclaw_onboard(
         code_root=repo,
         openclaw_home=openclaw_home,
         prompter=prompter,
@@ -1164,7 +1057,7 @@ def test_run_openclaw_onboard_v2_auto_update_resets_login_when_email_changes(
     assert seen_preflight_env["SMTP_LOGIN"] == "user@example.com"
 
 
-def test_run_openclaw_onboard_v2_starts_detection_progress_before_mailbox_auto_detect(
+def test_run_openclaw_onboard_starts_detection_progress_before_mailbox_auto_detect(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -1205,7 +1098,7 @@ def test_run_openclaw_onboard_v2_starts_detection_progress_before_mailbox_auto_d
 
     monkeypatch.setattr("twinbox_core.mailbox_detect.detect_to_env", fake_detect_to_env)
 
-    report = run_openclaw_onboard_v2(
+    report = run_openclaw_onboard(
         code_root=repo,
         openclaw_home=openclaw_home,
         prompter=prompter,
@@ -1221,7 +1114,7 @@ def test_run_openclaw_onboard_v2_starts_detection_progress_before_mailbox_auto_d
     assert detect_progress_index < detect_call_index
 
 
-def test_run_openclaw_onboard_v2_times_out_llm_validation(
+def test_run_openclaw_onboard_times_out_llm_validation(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -1271,7 +1164,7 @@ def test_run_openclaw_onboard_v2_times_out_llm_validation(
         text_values=["https://example.com/v1/chat/completions", "test-model"],
     )
 
-    report = run_openclaw_onboard_v2(
+    report = run_openclaw_onboard(
         code_root=repo,
         openclaw_home=openclaw_home,
         prompter=prompter,
@@ -1285,7 +1178,7 @@ def test_run_openclaw_onboard_v2_times_out_llm_validation(
     assert any("timed out" in b.lower() for b in recovery_bodies)
 
 
-def test_run_openclaw_onboard_v2_llm_validation_failure_returns_to_llm_menu(
+def test_run_openclaw_onboard_llm_validation_failure_returns_to_llm_menu(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -1338,7 +1231,7 @@ def test_run_openclaw_onboard_v2_llm_validation_failure_returns_to_llm_menu(
         text_values=["https://example.com/v1/chat/completions", "test-model"],
     )
 
-    report = run_openclaw_onboard_v2(
+    report = run_openclaw_onboard(
         code_root=repo,
         openclaw_home=openclaw_home,
         prompter=prompter,
@@ -1356,7 +1249,7 @@ def test_run_openclaw_onboard_v2_llm_validation_failure_returns_to_llm_menu(
     assert any("401" in b or "Unauthorized" in b for b in recovery_bodies)
 
 
-def test_run_openclaw_onboard_v2_times_out_mailbox_validation(
+def test_run_openclaw_onboard_times_out_mailbox_validation(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -1399,7 +1292,7 @@ def test_run_openclaw_onboard_v2_times_out_mailbox_validation(
         secret_values=["mail-secret"],
     )
 
-    report = run_openclaw_onboard_v2(
+    report = run_openclaw_onboard(
         code_root=repo,
         openclaw_home=openclaw_home,
         prompter=prompter,
@@ -1412,7 +1305,7 @@ def test_run_openclaw_onboard_v2_times_out_mailbox_validation(
     assert ("progress.fail", "Mailbox validation timed out") in prompter.events
 
 
-def test_run_openclaw_onboard_v2_allows_llm_skip_and_returns_incomplete_handoff(
+def test_run_openclaw_onboard_allows_llm_skip_and_returns_incomplete_handoff(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -1462,7 +1355,7 @@ def test_run_openclaw_onboard_v2_allows_llm_skip_and_returns_incomplete_handoff(
             "apply",
         ]
     )
-    report = run_openclaw_onboard_v2(
+    report = run_openclaw_onboard(
         code_root=repo,
         openclaw_home=openclaw_home,
         prompter=prompter,
@@ -1483,7 +1376,7 @@ def test_run_openclaw_onboard_v2_allows_llm_skip_and_returns_incomplete_handoff(
     assert "next guided conversation stage is llm_setup" in report.next_action.lower()
 
 
-def test_run_openclaw_onboard_v2_hides_use_current_llm_when_only_api_key_exists(
+def test_run_openclaw_onboard_hides_use_current_llm_when_only_api_key_exists(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -1534,7 +1427,7 @@ def test_run_openclaw_onboard_v2_hides_use_current_llm_when_only_api_key_exists(
             "apply",
         ]
     )
-    report = run_openclaw_onboard_v2(
+    report = run_openclaw_onboard(
         code_root=repo,
         openclaw_home=openclaw_home,
         prompter=prompter,
@@ -1624,7 +1517,7 @@ def test_run_openclaw_onboard_journey_imports_llm_from_openclaw_json(
             "apply",
         ],
     )
-    report = run_openclaw_onboard_v2(
+    report = run_openclaw_onboard(
         code_root=repo,
         openclaw_home=openclaw_home,
         prompter=prompter,
@@ -1676,7 +1569,7 @@ def test_run_openclaw_onboard_journey_openclaw_import_error_returns_to_llm_menu(
             "apply",
         ],
     )
-    report = run_openclaw_onboard_v2(
+    report = run_openclaw_onboard(
         code_root=repo,
         openclaw_home=openclaw_home,
         prompter=prompter,
@@ -1689,7 +1582,7 @@ def test_run_openclaw_onboard_journey_openclaw_import_error_returns_to_llm_menu(
     assert recovery and "openclaw.json" in recovery[0][1]["body"].lower()
 
 
-def test_run_openclaw_onboard_v2_validates_existing_llm_before_continue(
+def test_run_openclaw_onboard_validates_existing_llm_before_continue(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -1737,20 +1630,20 @@ def test_run_openclaw_onboard_v2_validates_existing_llm_before_continue(
         ],
     )
 
-    report = run_openclaw_onboard_v2(
+    report = run_openclaw_onboard(
         code_root=repo,
         openclaw_home=openclaw_home,
         prompter=prompter,
     )
 
     assert report.ok is True
-    assert validated == [state_root / ".env", state_root / ".env"]
+    assert validated == [state_root / "twinbox.json", state_root / "twinbox.json"]
     assert ("progress", "Validating LLM configuration") in prompter.events
     assert ("progress.finish", "LLM configuration validated") in prompter.events
     assert "llm_setup" in report.onboarding["completed_stages"]
 
 
-def test_run_openclaw_onboard_v2_stops_when_existing_llm_validation_fails(
+def test_run_openclaw_onboard_stops_when_existing_llm_validation_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -1789,7 +1682,7 @@ def test_run_openclaw_onboard_v2_stops_when_existing_llm_validation_fails(
         ],
     )
 
-    report = run_openclaw_onboard_v2(
+    report = run_openclaw_onboard(
         code_root=repo,
         openclaw_home=openclaw_home,
         prompter=prompter,
@@ -1808,7 +1701,7 @@ def test_run_openclaw_onboard_v2_stops_when_existing_llm_validation_fails(
     assert any("existing llm config is invalid" in body.lower() for body in recovery_bodies)
 
 
-def test_run_openclaw_onboard_v2_ctrl_c_returns_cancelled_report(
+def test_run_openclaw_onboard_ctrl_c_returns_cancelled_report(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -1830,7 +1723,7 @@ def test_run_openclaw_onboard_v2_ctrl_c_returns_cancelled_report(
             raise KeyboardInterrupt
 
     prompter = _CtrlCPrompter()
-    report = run_openclaw_onboard_v2(
+    report = run_openclaw_onboard(
         code_root=repo,
         openclaw_home=openclaw_home,
         prompter=prompter,

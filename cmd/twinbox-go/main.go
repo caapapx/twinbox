@@ -142,10 +142,50 @@ func tryLazyDaemonStart(cfg fallbackCommandConfig) error {
 	return cmd.Run()
 }
 
+func orchestrateExec(prefix []string, rest []string) {
+	py := os.Getenv("TWINBOX_PYTHON")
+	if py == "" {
+		py = "python3"
+	}
+	synthetic := append(append([]string{}, prefix...), append([]string{"orchestrate"}, rest...)...)
+	cfg := buildFallbackCommandConfig(synthetic)
+	if err := validateFallbackVendorAttestation(cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "%s: %v\n", commandName(), err)
+		os.Exit(1)
+	}
+	exe, err := exec.LookPath(py)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s: cannot find python: %v\n", commandName(), err)
+		os.Exit(127)
+	}
+	cmdArgv := append([]string{"-m", "twinbox_core.orchestration"}, rest...)
+	cmd := exec.Command(exe, cmdArgv...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Env = envMapToList(cfg.Env)
+	cmd.Dir = cfg.Dir
+	if err := cmd.Run(); err != nil {
+		if x, ok := err.(*exec.ExitError); ok {
+			os.Exit(x.ExitCode())
+		}
+		fmt.Fprintf(os.Stderr, "%s: orchestrate: %v\n", commandName(), err)
+		os.Exit(1)
+	}
+}
+
 func main() {
 	args := os.Args[1:]
 	if len(args) > 0 && args[0] == "install" {
 		os.Exit(runInstall(args[1:]))
+	}
+
+	i := consumeProfilePrefix(args)
+	if i < len(args) && args[i] == "orchestrate" {
+		prefix := args[:i]
+		rest := args[i+1:]
+		orchestrateExec(prefix, rest)
+		return
 	}
 
 	socketFlag := ""

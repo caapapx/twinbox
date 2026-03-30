@@ -77,3 +77,45 @@ def test_resolve_backend_reads_twinbox_json_with_vendor_keys(tmp_path: Path, mon
     assert cfg.api_key == "x"
     assert cfg.model == "m"
     assert cfg.url == "https://example.com/v2"
+
+
+def test_resolve_backend_accepts_twinbox_json_path(tmp_path: Path) -> None:
+    cfg_path = tmp_path / "twinbox.json"
+    cfg_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "llm": {
+                    "provider": "openai",
+                    "api_key": "k",
+                    "model": "m1",
+                    "api_url": "https://example.com/v1",
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    cfg = resolve_backend(env_file=cfg_path, env={})
+    assert cfg.model == "m1"
+
+
+def test_reload_config_before_integration_save_preserves_llm(tmp_path: Path) -> None:
+    """Regression: onboard used a stale in-memory twinbox_config and dropped llm on save."""
+    from twinbox_core.env_writer import merge_env_file, write_env_file
+    from twinbox_core.twinbox_config import load_twinbox_config, save_twinbox_config
+
+    cfg = tmp_path / "twinbox.json"
+    cfg.write_text(
+        json.dumps({"version": 1, "mailbox": {"email": "a@b.com"}}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    write_env_file(
+        cfg,
+        merge_env_file(cfg, {"LLM_API_KEY": "k", "LLM_MODEL": "m", "LLM_API_URL": "https://x"}),
+    )
+    twinbox_config = load_twinbox_config(cfg)
+    twinbox_config["integration"] = {"use_fragment": True}
+    save_twinbox_config(cfg, twinbox_config)
+    final = load_twinbox_config(cfg)
+    assert final.get("llm", {}).get("model") == "m"
