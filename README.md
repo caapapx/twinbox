@@ -48,7 +48,7 @@ It is not:
 
 **Value before automation.** Phases 1–4 stay read-only. The project is strongest today at ranking, summarizing, and operational visibility. Drafting and sending stay behind explicit gates.
 
-**OpenClaw works with the same core, not a separate edition.** On an OpenClaw host, `twinbox onboard openclaw` is the guided path. The same Twinbox core also runs locally, from a checkout, or through vendor/no-clone delivery.
+**OpenClaw works with the same core, not a separate edition.** On an OpenClaw host, `twinbox onboard openclaw` is the guided path: it wires the skill, installs a **vendor-safe** user-level bridge timer (`twinbox host bridge …`, no dependency on repo `scripts/`), and only hands off to chat onboarding when **`phase2_ready`** is true in `--json` output (escape hatch: `--skip-bridge`). The same Twinbox core also runs locally, from a checkout, or through vendor/no-clone delivery.
 
 ---
 
@@ -132,11 +132,11 @@ If you mainly use Twinbox together with OpenClaw, start here. The full path has 
 twinbox onboard openclaw
 ```
 
-What it does: checks the OpenClaw environment; initializes or reuses `~/.twinbox`; writes integration-side config; wires the skill under `~/.openclaw/skills/twinbox/` (see [openclaw-skill/DEPLOY.md](openclaw-skill/DEPLOY.md)). **It does not complete mailbox login or LLM setup for you.**
+What it does: checks the OpenClaw environment; initializes or reuses `~/.twinbox`; merges `openclaw.json`; syncs `SKILL.md`; restarts the gateway when configured; installs the **OpenClaw cron bridge** user units that call **`twinbox host bridge poll`** (works in vendor/no-clone installs). Use `twinbox onboard openclaw --json` and confirm **`"phase2_ready": true`** before treating host wiring as done. See [openclaw-skill/DEPLOY.md](openclaw-skill/DEPLOY.md). **It does not complete mailbox login or LLM setup for you.**
 
 **Stage 2: Twinbox onboarding (continue in OpenClaw chat)**
 
-Open the **`twinbox` agent** in OpenClaw, start a **fresh session**, and paste the block below so the agent **actually runs** the CLI (not just says it will):
+Open the **`twinbox` agent** in OpenClaw, start a **fresh session**, and paste the block below so the agent **actually runs** the CLI (not just says it will). When the **`plugin-twinbox-task`** plugin is enabled, prefer the native tools `twinbox_onboarding_start`, `twinbox_onboarding_status`, `twinbox_onboarding_advance`, and for **push subscription** use **`twinbox_onboarding_confirm_push`** (they wrap `twinbox openclaw …`). After plugin changes, run **`openclaw gateway restart`** so tools reload.
 
 ```text
 Read ~/.openclaw/skills/twinbox/SKILL.md, then in this same turn run immediately:
@@ -156,7 +156,7 @@ until `current_stage` is `completed`. To inspect progress:
 twinbox onboarding status --json
 ```
 
-Stage 2 is what fills real working config: mailbox login, LLM provider/model/API URL, your role and preferences, and optional materials, routing rules, or push subscription. Longer bootstrap variants, empty-response workarounds, and the stage order are in [openclaw-skill/DEPLOY.md](openclaw-skill/DEPLOY.md) under the onboarding walkthrough.
+Stage 2 is what fills real working config: mailbox login, LLM provider/model/API URL, your role and preferences, and optional materials, routing rules, or push subscription. **Push** supports separate **daily** and **weekly** cadences (`twinbox push subscribe … --daily on|off --weekly on|off`, or `twinbox push configure …`); schedules stay in sync with active subscriptions. Longer bootstrap variants, empty-response workarounds, and the stage order are in [openclaw-skill/DEPLOY.md](openclaw-skill/DEPLOY.md) under the onboarding walkthrough.
 
 ### Without OpenClaw (Claude Code, Codex, etc.)
 
@@ -202,7 +202,7 @@ In a source checkout, config usually lands in `./twinbox.json`. On an OpenClaw h
 | --- | --- |
 | `twinbox-orchestrate schedule --job daytime-sync --format json` | run the bundled host job that feeds the daytime activity view |
 
-On a real host you may trigger the same class of work via **`bridge` / `bridge-poll`**; see [docs/ref/cli.md](docs/ref/cli.md).
+On a real host, OpenClaw `cron` completions are usually consumed by the **user systemd timer** running **`twinbox host bridge poll`** (manual: `twinbox-orchestrate bridge-poll`). See [docs/ref/cli.md](docs/ref/cli.md) and [docs/ref/orchestration.md](docs/ref/orchestration.md).
 
 #### 3. Boards and single-thread drill-down
 
@@ -330,7 +330,7 @@ A: Yes. The project is CLI-first, JSON-friendly, and file-output-oriented.
 
 **Q: How do I deploy it on an OpenClaw host?**
 
-A: The normal path is `twinbox onboard openclaw`, then continue inside the `twinbox` agent with `twinbox onboarding start` and `twinbox onboarding next`. For fuller host details, read [openclaw-skill/DEPLOY.md](openclaw-skill/DEPLOY.md).
+A: Run `twinbox onboard openclaw` (use `--json` and check `phase2_ready`), then continue in the `twinbox` agent with onboarding—prefer plugin tools `twinbox_onboarding_*` when `plugin-twinbox-task` is enabled, or `twinbox onboarding start` / `next` from a shell. Details: [openclaw-skill/DEPLOY.md](openclaw-skill/DEPLOY.md).
 
 **Q: What should I treat as the canonical backlog?**
 
