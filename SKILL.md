@@ -11,7 +11,7 @@ description: >-
   calibration_notes derived from their message, then write visible text —
   never leave the stage stuck and never end tool-only. Never say you will
   import material or advance onboarding without calling the matching tool in
-  the same turn (astron-code-latest often stops after the sentence and drops
+  the same turn (some hosted models often stop after the sentence and drop
   the chain). Use for: email preflight,
   latest-mail, queue triage, onboarding (start/status/next), weekly digest,
   thread progress, schedule management, and OpenClaw deploy diagnostics via
@@ -27,7 +27,7 @@ Use this skill for Twinbox mailbox onboarding, read-only preflight checks, lates
 
 Twinbox mail state is produced by **`twinbox` / `twinbox-orchestrate` on the OpenClaw host** and consumed inside a **`twinbox` agent session** (tool policy + session history + Gateway). Regressions such as empty assistant payloads, “read SKILL only”, or silent turns are addressed by **session design and test procedure** (fresh session when needed, bootstrap turn, split long suites, optional **`plugin-twinbox-task`** tools), documented in `integrations/openclaw/prompt-test.md` and `scripts/run_openclaw_prompt_tests.py` — not by relabeling the client app.
 
-Known OpenClaw limitation (confirmed 2026-03-27 on `xfyun-mass` / `astron-code-latest`): OpenClaw injects this skill's **`description`** into the system prompt, but the rest of `~/.openclaw/skills/twinbox/SKILL.md` is visible only if the agent explicitly reads the file. On this model, turns that call tools can stop immediately after the tool call and return `payloads=[]`, `assistant.content=[]`, or a short stub such as `让我执行命令：`. **Plugin hosts:** use native **`twinbox_onboarding_*`** tools when `plugin-twinbox-task` is loaded; otherwise `twinbox onboarding …` may go through generic `exec` and show the same empty bubble.
+Known OpenClaw limitation (confirmed 2026-03-27 on some gateway-hosted models): OpenClaw injects this skill's **`description`** into the system prompt, but the rest of `~/.openclaw/skills/twinbox/SKILL.md` is visible only if the agent explicitly reads the file. On those setups, turns that call tools can stop immediately after the tool call and return `payloads=[]`, `assistant.content=[]`, or a short stub such as `让我执行命令：`. **Plugin hosts:** use native **`twinbox_onboarding_*`** tools when `plugin-twinbox-task` is loaded; otherwise `twinbox onboarding …` may go through generic `exec` and show the same empty bubble.
 
 **If the UI shows nothing after you answered `profile_setup` in plain language:** the stage has **not** advanced until the host runs **`twinbox_onboarding_advance`** (plugin) or **`twinbox openclaw onboarding-advance --profile-notes "…" --calibration-notes "…"`** with your text. Send one follow-up message that tells the agent to run **`twinbox_onboarding_advance`** with `profile_notes` + `calibration_notes` copied from your previous reply, **then** summarize the JSON; or run the CLI yourself in a shell and paste stdout.
 
@@ -37,7 +37,7 @@ Recommended hosted workaround: start a **fresh `twinbox` session**, send one **b
 
 For **all** twinbox command executions (mail, queue, digest, onboarding, deploy, schedule, rule, etc.): run the matching `twinbox` command with `--json`, then reply with a text summary. Never end with only tool calls and no text response. A turn with `payloads=[]` or `assistant.content=[]` is always a failure.
 
-### No broken tool chains (critical on astron-code-latest / weak tool models)
+### No broken tool chains (critical on weak tool models)
 
 These models often **stop after narration** (“现在导入到 Twinbox:”“下一步执行…”) **without** invoking the next tool — treat that as a **hard failure** to prevent.
 
@@ -55,7 +55,7 @@ Stages such as `profile_setup`, `material_import`, `routing_rules`, and `push_su
 When **`current_stage` is `profile_setup`** and the user’s message contains their substantive answer (role, habits, weekly focus, what to ignore, CC handling, etc.):
 
 1. **Same assistant turn (preferred):** call **`twinbox_onboarding_advance`** with **`profile_notes`** and **`calibration_notes`** — concise summaries of what they said (not a second LLM rewrite pass; you are the summarizer). Use **`cc_downweight`** `on`/`off` only when they clearly stated CC vs primary-inbox preference.
-2. **Immediately after the tool returns, same turn:** write a **visible** reply summarizing **`completed_stage`**, **`current_stage`**, and the next **`prompt`** (quote or paraphrase). **Tool-only turns are always a failure** on `astron-code-latest`–class models (empty bubble).
+2. **Immediately after the tool returns, same turn:** write a **visible** reply summarizing **`completed_stage`**, **`current_stage`**, and the next **`prompt`** (quote or paraphrase). **Tool-only turns are always a failure** when the assistant omits visible text after tools (empty bubble).
 3. **If the platform cannot attach text after tools in one response:** in the **very next** assistant message, call **`twinbox_onboarding_advance`** if not already done, then summarize — **do not** wait for the user to ask for “advance” or “next command.”
 
 **Persistence details for profile_setup:** CLI flags **`--profile-notes`** / **`--calibration-notes`** / **`--cc-downweight`** map to `runtime/context/human-context.yaml` (`profile_notes` / `calibration`) plus `twinbox.json.preferences.cc_downweight.enabled`. Phase 2/3 **and Phase 4** **`context-pack.json`** expose these as `human_context.onboarding_profile_notes` / `human_context.calibration_notes`. Legacy `manual-facts.yaml` / `manual-habits.yaml` / `instance-calibration-notes.md` / onboarding `profile_data.*` migrate on first read; afterward the unified file is authoritative. For stages without these flags, use `twinbox context upsert-fact` / `profile-set` if you need durable prose. For **material_import**, show `config/weekly-template.md` first; if the user wants different sections, turn that into Markdown and import with **`twinbox_context_import_material`** (plugin) or `twinbox context import-material FILE --intent template_hint`, then rerun Phase 4 or wait for weekly refresh — **same turn as the file exists**, no “下一步再导入”.

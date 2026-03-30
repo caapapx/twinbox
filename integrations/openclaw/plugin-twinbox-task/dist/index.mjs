@@ -2931,7 +2931,7 @@ function registerTwinboxTaskTools(api) {
   });
   api.registerTool({
     name: "twinbox_context_import_material",
-    description: "Import a host file into Twinbox material-extracts (weekly reference or template). Call in the SAME turn you have a real path (e.g. after writing /tmp/...md). Do NOT say you will import in the next message \u2014 that pattern causes empty bubbles on astron-code-latest. reference = \u4F1A\u8BAE\u7EAA\u8981/\u53F0\u8D26/\u5468\u62A5\u7D20\u6750; template_hint = \u81EA\u5B9A\u4E49\u5468\u62A5\u7AE0\u8282. Runs: twinbox context import-material SOURCE --intent INTENT. After this tool returns, MUST output visible text (stdout summary); then twinbox_onboarding_advance if material_import is done.",
+    description: "Import a host file into Twinbox material-extracts (weekly reference or template). Call in the SAME turn you have a real path (e.g. after writing /tmp/...md). Do NOT say you will import in the next message \u2014 that pattern often yields empty assistant bubbles on weak tool hosts. reference = \u4F1A\u8BAE\u7EAA\u8981/\u53F0\u8D26/\u5468\u62A5\u7D20\u6750; template_hint = \u81EA\u5B9A\u4E49\u5468\u62A5\u7AE0\u8282. Runs: twinbox context import-material SOURCE --intent INTENT. After this tool returns, MUST output visible text (stdout summary); then twinbox_onboarding_advance if material_import is done.",
     parameters: Type.Object({
       source_path: Type.String({ description: "Absolute or ~ path to file on the Gateway host" }),
       intent: Type.Optional(
