@@ -39,6 +39,7 @@ from .openclaw_deploy_steps import (
 from .openclaw_deploy_types import DeployStepResult, OpenClawDeployReport
 from .openclaw_host_prereq import append_prereq_to_deploy_report, rollback_bridge_for_openclaw, run_openclaw_prerequisite_bundle
 from .openclaw_json_io import load_openclaw_json
+from .daemon.lifecycle import attempt_daemon_start
 from .paths import PathResolutionError, config_dir, resolve_code_root, resolve_state_root
 
 __all__ = [
@@ -67,6 +68,7 @@ def run_openclaw_deploy(
     openclaw_bin: str = "openclaw",
     skip_bridge: bool = False,
     twinbox_bin: str | None = None,
+    start_daemon: bool = True,
     run_subprocess: Callable[..., subprocess.CompletedProcess[str]] | None = None,
     runtime: OpenClawDeployRuntime | None = None,
 ) -> OpenClawDeployReport:
@@ -198,6 +200,15 @@ def run_openclaw_deploy(
         report.bridge = br if isinstance(br, dict) else {}
         report.phase2_ready = bool(prereq.get("phase2_ready"))
         append_prereq_to_deploy_report(report, prereq)
+
+    if report.ok and not dry_run and start_daemon:
+        outcome, msg = attempt_daemon_start(ctx.state_root)
+        if outcome == "started":
+            append_step(report, "daemon_start", "ok", msg)
+        elif outcome == "skipped_already_running":
+            append_step(report, "daemon_start", "skipped", msg)
+        else:
+            append_step(report, "daemon_start", "failed", msg)
     return report
 
 
