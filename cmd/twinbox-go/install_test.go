@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,6 +12,103 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestSkipDaemonForTTY(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		argv []string
+		want bool
+	}{
+		{name: "onboard", argv: []string{"onboard", "openclaw"}, want: true},
+		{name: "profile-onboard", argv: []string{"--profile", "work", "onboard", "openclaw"}, want: true},
+		{name: "profileeq", argv: []string{"--profile=work", "onboard", "openclaw"}, want: true},
+		{name: "onboarding", argv: []string{"onboarding", "start"}, want: true},
+		{name: "task", argv: []string{"task", "todo", "--json"}, want: false},
+		{name: "empty", argv: []string{}, want: false},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := skipDaemonForTTY(tc.argv); got != tc.want {
+				t.Fatalf("skipDaemonForTTY(%v) = %v, want %v", tc.argv, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSkipDaemonStartRPC(t *testing.T) {
+	t.Parallel()
+	if !skipDaemonStartRPC([]string{"daemon", "start"}) {
+		t.Fatal("want skip daemon start")
+	}
+	if !skipDaemonStartRPC([]string{"--profile", "w", "daemon", "start", "--supervise"}) {
+		t.Fatal("want skip profile daemon start")
+	}
+	if skipDaemonStartRPC([]string{"daemon", "status"}) {
+		t.Fatal("daemon status should use RPC when possible")
+	}
+}
+
+func TestDaemonStartArgv(t *testing.T) {
+	t.Parallel()
+	got := daemonStartArgv([]string{"task", "todo"})
+	want := []string{"daemon", "start"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v want %v", got, want)
+	}
+	got2 := daemonStartArgv([]string{"--profile", "x", "task", "todo"})
+	want2 := []string{"--profile", "x", "daemon", "start"}
+	if len(got2) != len(want2) {
+		t.Fatalf("got %v want %v", got2, want2)
+	}
+	for i := range want2 {
+		if got2[i] != want2[i] {
+			t.Fatalf("got %v want %v", got2, want2)
+		}
+	}
+}
+
+func TestShouldTryLazyDaemonStart(t *testing.T) {
+	t.Setenv("TWINBOX_NO_LAZY_DAEMON", "")
+	if !shouldTryLazyDaemonStart(fmt.Errorf("dial unix ... connect: no such file or directory")) {
+		t.Fatal("want true for missing socket")
+	}
+	if !shouldTryLazyDaemonStart(fmt.Errorf("connection refused")) {
+		t.Fatal("want true")
+	}
+	t.Setenv("TWINBOX_NO_LAZY_DAEMON", "1")
+	if shouldTryLazyDaemonStart(fmt.Errorf("no such file")) {
+		t.Fatal("want false when disabled")
+	}
+}
+
+func TestSkipDaemonLifecycleRPC(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		argv []string
+		want bool
+	}{
+		{name: "stop", argv: []string{"daemon", "stop"}, want: true},
+		{name: "restart", argv: []string{"daemon", "restart"}, want: true},
+		{name: "profile-stop", argv: []string{"--profile", "x", "daemon", "stop"}, want: true},
+		{name: "start", argv: []string{"daemon", "start"}, want: false},
+		{name: "status", argv: []string{"daemon", "status"}, want: false},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := skipDaemonLifecycleRPC(tc.argv); got != tc.want {
+				t.Fatalf("skipDaemonLifecycleRPC(%v) = %v, want %v", tc.argv, got, tc.want)
+			}
+		})
+	}
+}
 
 func TestCommandDisplayNameDefaultsToTwinbox(t *testing.T) {
 	t.Parallel()

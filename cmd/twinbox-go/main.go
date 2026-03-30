@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,6 +21,125 @@ func commandDisplayName(argv0 string) string {
 
 func commandName() string {
 	return commandDisplayName(os.Args[0])
+}
+
+// consumeProfilePrefix returns the index of the first argument after optional --profile / --profile=.
+func consumeProfilePrefix(argv []string) int {
+	i := 0
+	for i < len(argv) {
+		a := argv[i]
+		if a == "--profile" && i+1 < len(argv) {
+			i += 2
+			continue
+		}
+		if strings.HasPrefix(a, "--profile=") {
+			i++
+			continue
+		}
+		break
+	}
+	return i
+}
+
+// skipDaemonForTTY reports argv for commands that must read from the user's terminal.
+func skipDaemonForTTY(argv []string) bool {
+	i := consumeProfilePrefix(argv)
+	if i >= len(argv) {
+		return false
+	}
+	switch argv[i] {
+	case "onboard", "onboarding":
+		return true
+	default:
+		return false
+	}
+}
+
+// skipDaemonLifecycleRPC: never route stop/restart through the live daemon's cli_invoke — the
+// server process is torn down (or connection dies) before the JSON-RPC response, so the Go
+// client sees EOF and a confusing "falling back to python" line. Run task_cli in the foreground.
+func skipDaemonLifecycleRPC(argv []string) bool {
+	i := consumeProfilePrefix(argv)
+	if i+1 >= len(argv) || argv[i] != "daemon" {
+		return false
+	}
+	switch argv[i+1] {
+	case "stop", "restart":
+		return true
+	default:
+		return false
+	}
+}
+
+// skipDaemonStartRPC: always run `daemon start` in foreground Python. If we used RPC, a
+// post-reboot lazy-start would bring the daemon up then retry RPC with argv daemon start — and
+// the nested cli_invoke would see "already running" and exit 1.
+func skipDaemonStartRPC(argv []string) bool {
+	i := consumeProfilePrefix(argv)
+	if i+1 >= len(argv) || argv[i] != "daemon" {
+		return false
+	}
+	return argv[i+1] == "start"
+}
+
+// daemonStartArgv returns profile prefix + "daemon", "start" for lazy autostart (no --supervise).
+func daemonStartArgv(original []string) []string {
+	i := 0
+	var pref []string
+	for i < len(original) {
+		a := original[i]
+		if a == "--profile" && i+1 < len(original) {
+			pref = append(pref, "--profile", original[i+1])
+			i += 2
+			continue
+		}
+		if strings.HasPrefix(a, "--profile=") {
+			pref = append(pref, a)
+			i++
+			continue
+		}
+		break
+	}
+	out := append([]string{}, pref...)
+	return append(out, "daemon", "start")
+}
+
+func shouldTryLazyDaemonStart(err error) bool {
+	if err == nil {
+		return false
+	}
+	if strings.TrimSpace(os.Getenv("TWINBOX_NO_LAZY_DAEMON")) == "1" {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "no such file") ||
+		strings.Contains(s, "connection refused") ||
+		strings.Contains(s, "resource temporarily unavailable")
+}
+
+// tryLazyDaemonStart runs `python -m twinbox_core.task_cli daemon start` with the same env as a
+// normal fallback (vendor attestation included). Stdout/stderr discarded to avoid extra noise
+// when the next RPC attempt succeeds.
+func tryLazyDaemonStart(cfg fallbackCommandConfig) error {
+	if err := validateFallbackVendorAttestation(cfg); err != nil {
+		return err
+	}
+	py := os.Getenv("TWINBOX_PYTHON")
+	if py == "" {
+		py = "python3"
+	}
+	exe, err := exec.LookPath(py)
+	if err != nil {
+		return err
+	}
+	startArgv := daemonStartArgv(cfg.Argv)
+	cmd := exec.Command(exe, append([]string{"-m", "twinbox_core.task_cli"}, startArgv...)...)
+	cmd.Env = envMapToList(cfg.Env)
+	cmd.Dir = cfg.Dir
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
+	return cmd.Run()
 }
 
 func main() {
@@ -46,7 +166,20 @@ func main() {
 	connectTO := 3 * time.Second
 	rpcTO := 30 * time.Second
 
+	// Some commands must not use cli_invoke: no TTY stdin (wizards), lifecycle that kills the
+	// daemon (stop/restart), or explicit daemon start (avoids lazy-retry "already running").
+	if skipDaemonForTTY(args) || skipDaemonLifecycleRPC(args) || skipDaemonStartRPC(args) {
+		fallbackExec(args)
+		return
+	}
+
+	cfg := buildFallbackCommandConfig(args)
 	res, err := cliInvokeRPC(socketPath, args, connectTO, rpcTO)
+	if err != nil && shouldTryLazyDaemonStart(err) {
+		if lazyErr := tryLazyDaemonStart(cfg); lazyErr == nil {
+			res, err = cliInvokeRPC(socketPath, args, connectTO, rpcTO)
+		}
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s: daemon rpc: %v; falling back to python\n", commandName(), err)
 		fallbackExec(args)

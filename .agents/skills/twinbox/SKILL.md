@@ -53,6 +53,15 @@ On stacks where generic `exec` often drops payloads (`xfyun-mass` / `astron-code
 - Explaining urgent / pending / SLA / weekly outputs under `runtime/validation/phase-4/`
 - Diagnosing why a deployed Twinbox/OpenClaw skill is still missing, blocked, stale, or not refreshing
 - One-shot **host wiring** for OpenClaw: roots init, `openclaw.json` merge, `SKILL.md` sync, gateway restart (`twinbox deploy openclaw`); narrow undo via `twinbox deploy openclaw --rollback` (does not remove `~/.twinbox`)
+- **Full uninstall** of Twinbox on a host: stop daemon / OpenClaw bridge, remove CLI binaries, delete state + config pointers, scrub shell and OpenClaw env (see **Full uninstall (CLI, state, env)** below)
+
+## Full uninstall (CLI, state, env)
+
+**Not** the same as `deploy openclaw --rollback` (that keeps `~/.twinbox` and any `twinbox` on `PATH`). Do this **while `twinbox` still runs**: `daemon stop` (if supervised, follow `daemon status --json`) → `deploy openclaw --rollback [--remove-config]` → `host bridge remove` / `schedule disable JOB` if still needed.
+
+**Binaries:** `pip uninstall -y twinbox-core` (removes `twinbox`, `twinbox-orchestrate`, `twinbox-eval-phase4`); delete any other `twinbox` on `PATH` (e.g. `~/.local/bin`, `/usr/local/bin`); optional repo junk: `dist/twinbox*`, `cmd/twinbox-go/twinbox`.
+
+**Data, OpenClaw, env:** `rm -rf ~/.twinbox` (destructive—backup first); remove stale `~/.config/twinbox/*` if present; delete `~/.openclaw/skills/twinbox`, drop `plugin-twinbox-task` per `openclaw-skill/DEPLOY.md`, then `openclaw gateway restart`. Strip **`TWINBOX_*`**, **`TWINBOX_SETUP_*`**, and mailbox vars from this skill’s `metadata.openclaw.requires.env` wherever set (shell, systemd, OpenClaw skill env, CI). New shell: `command -v twinbox` empty.
 
 ## Task Entrypoints
 
@@ -87,8 +96,8 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 | 自定义周报模板（标题/章节顺序/措辞） | 先展示 `config/weekly-template.md`，再把用户确认的新模板用 `twinbox context import-material FILE --intent template_hint` 导入 |
 | 配置 Twinbox integration 默认值 | `twinbox config integration-set --use-fragment yes|no [--fragment-path PATH] --json` |
 | 配置 OpenClaw 默认值 | `twinbox config openclaw-set [--home PATH] [--bin NAME] [--strict|--no-strict] [--sync-env|--no-sync-env] [--restart-gateway|--no-restart-gateway] --json` |
-| OpenClaw 安装总向导（唯一公开向导入口；**Apply setup 后默认完成**：OpenClaw 合并 + plugin/tools 可观测性 + **vendor-safe bridge user timer 安装 + health dry-run**；`phase2_ready=true` 才 handoff Phase 2；逃生口 `--skip-bridge`） | `twinbox onboard openclaw [--skip-bridge] --json` |
-| OpenClaw 宿主接线高级入口（与 onboard 共享同一套 prerequisite bundle；默认安装 bridge）| `twinbox deploy openclaw --json`（`--dry-run`；`--no-restart`；`--no-env-sync`；`--strict`；`--skip-bridge`；`--twinbox-bin`；可选 `--fragment` / `--no-fragment`） |
+| OpenClaw 安装总向导（唯一公开向导入口；**Apply setup 后默认完成**：OpenClaw 合并 + plugin/tools 可观测性 + **vendor-safe bridge user timer 安装 + health dry-run**；`phase2_ready=true` 才 handoff Phase 2；逃生口 `--skip-bridge`；部署成功后默认尝试 **daemon start**，`--no-start-daemon` 跳过） | `twinbox onboard openclaw [--skip-bridge] [--no-start-daemon] --json` |
+| OpenClaw 宿主接线高级入口（与 onboard 共享同一套 prerequisite bundle；默认安装 bridge；成功后默认 **daemon start**，`--no-start-daemon` 跳过）| `twinbox deploy openclaw --json`（`--dry-run`；`--no-restart`；`--no-env-sync`；`--strict`；`--skip-bridge`；`--twinbox-bin`；`--no-start-daemon`；可选 `--fragment` / `--no-fragment`） |
 | 撤销上述宿主接线（不删 `~/.twinbox`；**同时移除 bridge user units**）| `twinbox deploy openclaw --rollback --json`（可选 `--remove-config`） |
 | Vendor-safe OpenClaw bridge（systemd user 单元只调用已安装 `twinbox`，不依赖 repo `scripts/`） | `twinbox host bridge install|remove|status|poll [--dry-run] [--openclaw-bin …]` |
 | OpenClaw 内 Phase 2 onboarding 原生工具（对应 CLI：`twinbox openclaw …`） | 插件：`twinbox_onboarding_start` / `twinbox_onboarding_status` / `twinbox_onboarding_advance` / `twinbox_onboarding_confirm_push` |
@@ -99,7 +108,7 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 | Check onboarding progress | `twinbox onboarding status --json`（人类可读输出会以 “Phase 2 of 2” 继续旅程） |
 | Advance onboarding to next stage | `twinbox onboarding next --json`（人类可读输出会以 “Phase 2 of 2” 继续旅程） |
 | User已用自然语言答完当前阶段（画像 / 材料 / 规则 / 推送等） | 先简短确认，再 **`twinbox onboarding next --json`**（若是画像阶段，可加 `--profile-notes "用户画像摘要"`、`--calibration-notes "本周关注/忽略/重点摘要"`，以及在用户明确“CC 也是主要工作”时加 `--cc-downweight off`），然后根据 stdout 总结 `completed_stage`、`current_stage`、下一段 `prompt`（不可只调工具无正文） |
-| 后台 JSON-RPC daemon（省 Python 冷启动；可选） | `twinbox daemon start` / `stop` / `restart`；如需异常退出后自动拉起，可用 `twinbox daemon start --supervise` 或 `restart --supervise`；`twinbox daemon status --json`（含 `cache_stats`，supervised 时还会有 `supervised` / `supervisor_pid`）。Socket：`$TWINBOX_STATE_ROOT/run/daemon.sock`。Go：源码目录 `cmd/twinbox-go`，但用户交付时默认构建为 `twinbox`（RPC 失败则 `exec` Python，并自动补 `PYTHONPATH` / state env；`--profile` 也会在 import 前生效；vendor 模式会校验 `MANIFEST.json.twinbox_version`）；`twinbox install --archive …` 可从本地路径或 HTTP URL 解压 vendor tarball 并写入 `MANIFEST.json` |
+| 后台 JSON-RPC daemon（省 Python 冷启动；可选） | `twinbox daemon start` / `stop` / `restart`；如需异常退出后自动拉起，可用 `twinbox daemon start --supervise` 或 `restart --supervise`；`twinbox daemon status --json`（含 `cache_stats`，supervised 时还会有 `supervised` / `supervisor_pid`）。Socket：`$TWINBOX_STATE_ROOT/run/daemon.sock`。Go：源码目录 `cmd/twinbox-go`，但用户交付时默认构建为 `twinbox`（**dial 失败**时先静默跑一次 Python `daemon start` 再 **重试 RPC 一次**；`TWINBOX_NO_LAZY_DAEMON=1` 关闭；`daemon start` 本身始终直连 Python）；仍失败则 `exec` Python，并自动补 `PYTHONPATH` / state env；`--profile` 也会在 import 前生效；vendor 模式会校验 `MANIFEST.json.twinbox_version`）；`twinbox install --archive …` 可从本地路径或 HTTP URL 解压 vendor tarball 并写入 `MANIFEST.json`（成功后会打印简短路径摘要与建议命令） |
 | 多邮箱 profile（共享 vendor、独立 state） | `twinbox --profile NAME …`（`TWINBOX_STATE_ROOT=~/.twinbox/profiles/NAME/state`，`TWINBOX_HOME=~/.twinbox`） |
 | Phase loading（Python 入口） | `twinbox loading phase1` … `phase4`（全部走 Python；`scripts/phase1_loading.sh` / `phase4_loading.sh` 仅保留兼容 shim，phase1/4 仍使用 himalaya CLI 传输） |
 | 把 `twinbox_core` 同步到 vendor（宿主 PYTHONPATH） | `twinbox vendor install`；`twinbox vendor status --json`（`integrity_ok` / `file_count`）。装好后：`PYTHONPATH="$TWINBOX_HOME/vendor"` 或 `…/state/vendor`（无 profile 时二者常相同）+ `python3 -m twinbox_core.task_cli …` |
@@ -115,6 +124,7 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 | Review items | `twinbox review list --json` / `twinbox review show REVIEW_ID --json` |
 | Refresh hourly/daytime projection | `twinbox-orchestrate schedule --job daytime-sync --format json` |
 | Refresh full nightly/weekly pipeline | `twinbox-orchestrate schedule --job nightly-full --format json` |
+| **完全卸载** | 见上节 **Full uninstall**（rollback → 删 pip/二进制 → 删 `~/.twinbox` → skill/plugin → 清 env） |
 
 ## Task Routing Rules
 
