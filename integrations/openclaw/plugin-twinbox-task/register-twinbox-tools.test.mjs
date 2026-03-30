@@ -74,6 +74,7 @@ test("registerTwinboxTaskTools registers expected tools and task/thread helpers 
     "twinbox_mailbox_status",
     "twinbox_onboarding_advance",
     "twinbox_onboarding_confirm_push",
+    "twinbox_onboarding_finish_routing_rules",
     "twinbox_onboarding_start",
     "twinbox_onboarding_status",
     "twinbox_queue_complete",

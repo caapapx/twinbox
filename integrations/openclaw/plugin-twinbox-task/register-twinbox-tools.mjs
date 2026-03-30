@@ -443,6 +443,40 @@ export function registerTwinboxTaskTools(api) {
   });
 
   api.registerTool({
+    name: "twinbox_onboarding_finish_routing_rules",
+    description:
+      "PREFERRED when current_stage is routing_rules: ONE tool call runs `twinbox rule add` (unless skip_rules) then `twinbox openclaw onboarding-advance` inside the plugin — more stable than chaining twinbox_rule_add + twinbox_onboarding_advance (weak hosts often drop the second call). Pass rule_json (full rule object JSON string). If user says skip/跳过 with no rule, pass skip_rules=true. After return, MUST output visible text summarizing the advance JSON.",
+    parameters: Type.Object({
+      rule_json: Type.Optional(Type.String({ description: "Full rule JSON; required unless skip_rules=true" })),
+      skip_rules: Type.Optional(Type.Boolean({ description: "If true, only advance onboarding without adding a rule" })),
+    }),
+    async execute(...args) {
+      const params = args.length >= 2 ? args[1] : args[0];
+      const skip = params?.skip_rules === true;
+      let r1 = null;
+      if (!skip) {
+        const rj = params?.rule_json;
+        if (!rj || !String(rj).trim()) {
+          return {
+            content: [{ type: "text", text: "Error: provide rule_json or set skip_rules=true" }],
+          };
+        }
+        r1 = await runTwinbox(["rule", "add", "--rule-json", rj, "--json"], opts);
+        if (r1.code !== 0) {
+          return formatResult(r1);
+        }
+      }
+      const r2 = await runTwinbox(["openclaw", "onboarding-advance"], opts);
+      const parts = [];
+      if (!skip && r1) {
+        parts.push(`=== rule add ===\n${formatResult(r1).content[0].text}`);
+      }
+      parts.push(`=== onboarding advance ===\n${formatResult(r2).content[0].text}`);
+      return { content: [{ type: "text", text: parts.join("\n\n") }] };
+    },
+  });
+
+  api.registerTool({
     name: "twinbox_onboarding_confirm_push",
     description:
       "Complete push_subscription: subscribe session, sync schedules, advance onboarding. Runs: twinbox openclaw onboarding-confirm-push SESSION. After this tool returns, you MUST reply with a visible text summary.",
