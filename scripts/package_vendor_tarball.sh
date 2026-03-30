@@ -10,7 +10,12 @@
 # Output filename stays twinbox_core-<version>.tar.gz for compatibility with existing docs/scripts.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-VERSION="$(python3 -c "import tomllib, pathlib; p=pathlib.Path('$ROOT/pyproject.toml'); d=tomllib.loads(p.read_text()); print(d['project']['version'])")"
+# Read version without tomllib (Python <3.11); keep in sync with [project].version in pyproject.toml.
+VERSION="$(grep -E '^version[[:space:]]*=' "$ROOT/pyproject.toml" | head -1 | sed -E 's/^version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/')"
+if [[ -z "${VERSION}" ]]; then
+	echo "error: could not parse version from $ROOT/pyproject.toml" >&2
+	exit 1
+fi
 OUT="${1:-$ROOT/dist/twinbox_core-${VERSION}.tar.gz}"
 mkdir -p "$(dirname "$OUT")"
 TMP="$(mktemp -d)"
