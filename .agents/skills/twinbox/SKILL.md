@@ -5,7 +5,11 @@ description: >-
   command, always produce a text summary for the user — never stop with tool
   calls alone; a turn with no text reply is a failure. If a command fails
   (e.g. missing activity-pulse.json), explain why and suggest the fix (run
-  twinbox-orchestrate schedule --job daytime-sync). Use for: email preflight,
+  twinbox-orchestrate schedule --job daytime-sync). OpenClaw Phase 2: when
+  the user finishes answering profile_setup in chat, you MUST call
+  twinbox_onboarding_advance in the same turn with profile_notes and
+  calibration_notes derived from their message, then write visible text —
+  never leave the stage stuck and never end tool-only. Use for: email preflight,
   latest-mail, queue triage, onboarding (start/status/next), weekly digest,
   thread progress, schedule management, and OpenClaw deploy diagnostics via
   `twinbox` / `twinbox-orchestrate`.
@@ -32,11 +36,19 @@ For **all** twinbox command executions (mail, queue, digest, onboarding, deploy,
 
 ### Onboarding: advancing after the user replies (critical)
 
-Stages such as `profile_setup`, `material_import`, `routing_rules`, and `push_subscription` are **dialogue-first**: collect the user's answer in chat, but **the persisted stage only advances when** you run `twinbox onboarding next --json` on the Twinbox host. For **profile_setup**, add **`--profile-notes "…"`** for role/habits/preferences, **`--calibration-notes "…"`** for “this week’s focus / what to ignore / top priorities”, and when relevant **`--cc-downweight on|off`** to persist whether CC/group threads should be structurally downweighted. These are stored in `runtime/context/human-context.yaml` (`profile_notes` / `calibration`) plus `twinbox.json.preferences.cc_downweight.enabled`. Phase 2/3 **and Phase 4** **`context-pack.json`** pick up the human-context fields as `human_context.onboarding_profile_notes` / `human_context.calibration_notes`; Phase 4 score post-processing reads the CC downweight preference from `twinbox.json`. Legacy `manual-facts.yaml` / `manual-habits.yaml` / `instance-calibration-notes.md` / onboarding `profile_data.*` inputs are auto-migrated on first read; afterward the unified file is authoritative. For other stages there is not yet an equivalent flag—use `twinbox context upsert-fact` / `profile-set` if you need durable prose. For **material_import**, first show the default weekly template at `config/weekly-template.md`; if the user wants different section titles/order/wording, turn that natural-language request into a Markdown template and import it with `twinbox context import-material FILE --intent template_hint`, then rerun Phase 4 or wait for the next weekly refresh.
+Stages such as `profile_setup`, `material_import`, `routing_rules`, and `push_subscription` are **dialogue-first**: you collect answers in chat, but **nothing persists and the stage does not advance** until the Twinbox host runs an **advance** command. **OpenClaw with `plugin-twinbox-task`:** prefer **`twinbox_onboarding_advance`** (wraps `twinbox openclaw onboarding-advance`). **Shell / no plugin:** **`twinbox onboarding next --json`** with the same optional flags is equivalent for advancing state. Do not tell the user they must type a command name — **you** must invoke the tool or CLI once their answer is ready.
 
-On stacks where generic `exec` often drops payloads (`xfyun-mass` / `astron-code-latest`, etc.), use this pattern: **in the same assistant turn** as (or immediately after) acknowledging the user's reply, run `twinbox onboarding next --json`, then print a **visible** summary of `completed_stage`, `current_stage`, and the next `prompt`. Do not end the turn with only a tool call.
+#### Near-automatic profile_setup (agent rules — prioritize this)
 
-**Recovery if the UI went idle** after the user sent their profile (no assistant text, empty bubble): (1) **`twinbox_onboarding_advance`** with `profile_notes` / `calibration_notes` from the user's last message, or (2) `twinbox onboarding status --json` then `twinbox onboarding next --json` with the same flags. If the Gateway still shows empty content, run those commands in a **host shell** and paste JSON into chat.
+When **`current_stage` is `profile_setup`** and the user’s message contains their substantive answer (role, habits, weekly focus, what to ignore, CC handling, etc.):
+
+1. **Same assistant turn (preferred):** call **`twinbox_onboarding_advance`** with **`profile_notes`** and **`calibration_notes`** — concise summaries of what they said (not a second LLM rewrite pass; you are the summarizer). Use **`cc_downweight`** `on`/`off` only when they clearly stated CC vs primary-inbox preference.
+2. **Immediately after the tool returns, same turn:** write a **visible** reply summarizing **`completed_stage`**, **`current_stage`**, and the next **`prompt`** (quote or paraphrase). **Tool-only turns are always a failure** on `astron-code-latest`–class models (empty bubble).
+3. **If the platform cannot attach text after tools in one response:** in the **very next** assistant message, call **`twinbox_onboarding_advance`** if not already done, then summarize — **do not** wait for the user to ask for “advance” or “next command.”
+
+**Persistence details for profile_setup:** CLI flags **`--profile-notes`** / **`--calibration-notes`** / **`--cc-downweight`** map to `runtime/context/human-context.yaml` (`profile_notes` / `calibration`) plus `twinbox.json.preferences.cc_downweight.enabled`. Phase 2/3 **and Phase 4** **`context-pack.json`** expose these as `human_context.onboarding_profile_notes` / `human_context.calibration_notes`. Legacy `manual-facts.yaml` / `manual-habits.yaml` / `instance-calibration-notes.md` / onboarding `profile_data.*` migrate on first read; afterward the unified file is authoritative. For stages without these flags, use `twinbox context upsert-fact` / `profile-set` if you need durable prose. For **material_import**, show `config/weekly-template.md` first; if the user wants different sections, turn that into Markdown and `twinbox context import-material FILE --intent template_hint`, then rerun Phase 4 or wait for weekly refresh.
+
+**Recovery if the UI went idle** after the user sent their profile (no assistant text, empty bubble): (1) **`twinbox_onboarding_advance`** with `profile_notes` / `calibration_notes` from the user’s **last** message; (2) **`twinbox_onboarding_status`** then **`twinbox_onboarding_advance`** (or `twinbox onboarding status --json` then `twinbox onboarding next --json` with the same profile flags). If the Gateway still drops payloads, run **`twinbox openclaw onboarding-advance --profile-notes '…' --calibration-notes '…' --json`** on the **host shell** and paste stdout into chat.
 
 **Session:** prefer a **dedicated `twinbox` agent** for onboarding handoff — not `main` — so skill injection, tools, and `integrations/openclaw/DEPLOY.md` match.
 
@@ -109,7 +121,7 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 | Start onboarding flow | `twinbox onboarding start --json`（人类可读输出会以 “Phase 2 of 2” 继续旅程） |
 | Check onboarding progress | `twinbox onboarding status --json`（人类可读输出会以 “Phase 2 of 2” 继续旅程） |
 | Advance onboarding to next stage | `twinbox onboarding next --json`（人类可读输出会以 “Phase 2 of 2” 继续旅程） |
-| User已用自然语言答完当前阶段（画像 / 材料 / 规则 / 推送等） | 先简短确认，再 **`twinbox onboarding next --json`**（若是画像阶段，可加 `--profile-notes "用户画像摘要"`、`--calibration-notes "本周关注/忽略/重点摘要"`，以及在用户明确“CC 也是主要工作”时加 `--cc-downweight off`），然后根据 stdout 总结 `completed_stage`、`current_stage`、下一段 `prompt`（不可只调工具无正文） |
+| User已用自然语言答完当前阶段（画像 / 材料 / 规则 / 推送等） | OpenClaw 有插件时：**同轮**先 **`twinbox_onboarding_advance`**（画像阶段必带 `profile_notes` / `calibration_notes` 要点）；否则 **`twinbox onboarding next --json`**（画像同上，可加 `--cc-downweight off` 若用户明确 CC 为主要工作）。然后**必须**根据返回 JSON 总结 `completed_stage`、`current_stage`、下一段 `prompt`（不可只调工具无正文） |
 | 后台 JSON-RPC daemon（省 Python 冷启动；可选） | `daemon start` / `onboard`·`deploy` 触发的拉起。`twinbox daemon status --json`（含 `cache_stats` 等）。Socket：`$TWINBOX_STATE_ROOT/run/daemon.sock`。Go：交付默认可为 `twinbox`（**dial 失败**时静默跑一次 `daemon start` 再重试 RPC；`TWINBOX_NO_LAZY_DAEMON=1` 关闭）；仍失败则 `exec` Python；vendor 会校验 `MANIFEST.json`）；`twinbox install --archive …` 解压到 `vendor/` 并写 `code-root`（开发可用 `TWINBOX_CODE_ROOT` 覆盖） |
 | 多邮箱 profile（共享 vendor、独立 state） | `twinbox --profile NAME …`（`TWINBOX_STATE_ROOT=~/.twinbox/profiles/NAME/state`，`TWINBOX_HOME=~/.twinbox`） |
 | Phase loading（Python 入口） | `twinbox loading phase1` … `phase4`（全部走 Python；`scripts/phase1_loading.sh` / `phase4_loading.sh` 仅保留兼容 shim，phase1/4 仍使用 himalaya CLI 传输） |
@@ -145,6 +157,7 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 - For onboarding mailbox setup, prefer native OpenClaw tool `twinbox_mailbox_setup` (passes password via env, never CLI args)
 - For onboarding LLM API config, prefer native OpenClaw tool `twinbox_config_set_llm` (passes api_key via env)
 - For onboarding after mailbox/LLM, prefer `twinbox_onboarding_start` / `twinbox_onboarding_status` / `twinbox_onboarding_advance`; **push_subscription** 用 `twinbox_onboarding_confirm_push`（事务性写订阅 + schedule ownership），避免仅依赖 `onboarding next` 的占位文案
+- After the user answers **profile_setup** in natural language, **do not** end the turn without **`twinbox_onboarding_advance`** (or equivalent `onboarding next` / `openclaw onboarding-advance`) **and** a visible summary — the user should not need to name the CLI
 - Stay read-only unless the user explicitly asks for draft/action generation
 - **Never end a task turn with only file reads and no text answer.** A turn with `assistant.content=[]` or no text is a failure — always produce real command output followed by a summary
 
