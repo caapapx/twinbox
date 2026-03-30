@@ -60,3 +60,14 @@
 7. **Skill 与 OpenClaw 同步约束**：当新增或修改 CLI 命令、核心功能（如新增参数、修改规则逻辑）或 OpenClaw Tool (`register-twinbox-tools.mjs`) 时，**必须**执行以下同步操作：
    - 更新 `SKILL.md`（以及 `.agents/skills/twinbox/SKILL.md` 等相关副本）中对应的说明、参数和示例。
    - 重新加载 OpenClaw 网关以使 Tool 变更生效：`openclaw gateway restart`
+8. **Go 交付与运行时打包约束**（发布形态）：
+   - 用户侧命令名固定为 **`twinbox`**。Go 源码目录可保留 `cmd/twinbox-go/`，但交付产物必须构建为 `dist/twinbox`（而非 `twinbox-go`）。
+   - `twinbox` 二进制默认按用户级安装到 `PATH`（推荐 `~/.local/bin`），**不要**放在 `~/.twinbox` 这类 state root 下，也不要在日常流程里用 `sudo twinbox ...`。
+   - 用户级安装后，需把 `~/.local/bin` 持久化到 shell 启动文件（当前约定：`~/.bashrc`，例如 `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc`），避免重开终端后命令丢失。
+   - Python 运行时与 OpenClaw 宿主资源通过归档交付：执行 `scripts/package_vendor_tarball.sh` 产出 `dist/twinbox_core-<version>.tar.gz`（内含 `twinbox_core/`、`openclaw-skill/`、根 `SKILL.md`、`scripts/install_openclaw_twinbox_init.sh`；排除 `__pycache__` 与插件 `node_modules`），供 `twinbox install --archive ...` 解压到 `vendor/` 并写入 `~/.config/twinbox/code-root` 指向该目录；开发时仍可用 `TWINBOX_CODE_ROOT` 指向 git 仓库。
+9. **Go CLI 变更后的默认构建与安装**（自动化助手与本地开发者）：凡修改 **`cmd/twinbox-go/`** 下代码，或修复 **仅能通过 Go 薄壳复现/验证** 的 CLI 行为（含 `main.go` 的 RPC 绕行、`install` 子命令等），在提交前**默认**应完成：
+   - **构建并覆盖仓库内交付路径**：在仓库根执行 **`bash scripts/build_go_twinbox.sh`**（或等价：`cd cmd/twinbox-go && go build -o ../../dist/twinbox .`），产物为 **`dist/twinbox`**。
+   - **同步用户可执行文件**（开发机常用）：同一脚本加 **`--install`**（或环境变量 **`TWINBOX_GO_INSTALL=1`**），将二进制复制到 **`TWINBOX_GO_BIN_DEST`**（默认 **`$HOME/.local/bin/twinbox`**），避免 PATH 上仍是旧构建。
+   - **PATH 持久化**（按需一次）：加 **`--ensure-path`**（或 **`TWINBOX_GO_ENSURE_PATH=1`**），在 **`~/.bashrc`** 中按标记行幂等追加 `export PATH="$HOME/.local/bin:$PATH"`（与第 8 条约定一致；非 bash 用户请自行配置）。
+   - 一键组合示例：`bash scripts/build_go_twinbox.sh --install --ensure-path`
+   - **验证**：`go test ./cmd/twinbox-go/...` 通过后再提交；若沙箱无法写 `~/.local/bin`，至少完成 **`dist/`** 构建并在说明中注明。

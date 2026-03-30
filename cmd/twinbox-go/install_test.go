@@ -135,8 +135,10 @@ func TestCommandDisplayNameDefaultsToTwinbox(t *testing.T) {
 }
 
 func TestRunInstallAcceptsHTTPArchiveSource(t *testing.T) {
-	stateRoot := t.TempDir()
-	archiveBytes := buildTwinboxCoreTarball(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	stateRoot := filepath.Join(home, "state")
+	archiveBytes := buildVendorBundleTarball(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/twinbox_core.tar.gz" {
 			http.NotFound(w, r)
@@ -158,8 +160,24 @@ func TestRunInstallAcceptsHTTPArchiveSource(t *testing.T) {
 	pkgRoot := filepath.Join(stateRoot, "vendor", "twinbox_core")
 	assertFileContains(t, filepath.Join(pkgRoot, "__init__.py"), "# pkg")
 	assertFileContains(t, filepath.Join(pkgRoot, "task_cli.py"), "VALUE = 42")
+	assertFileContains(t, filepath.Join(stateRoot, "vendor", "openclaw-skill", "openclaw.fragment.json"), "{}")
+	assertFileContains(t, filepath.Join(stateRoot, "vendor", "SKILL.md"), "name: twinbox")
 	manifestPath := filepath.Join(stateRoot, "vendor", "MANIFEST.json")
 	assertFileContains(t, manifestPath, "\"twinbox_version\": \""+twinboxProtocolVersion+"\"")
+	vendorDir := filepath.Join(stateRoot, "vendor")
+	absVendor, err := filepath.Abs(vendorDir)
+	if err != nil {
+		t.Fatalf("Abs: %v", err)
+	}
+	codeRootFile := filepath.Join(home, ".config", "twinbox", "code-root")
+	got, err := os.ReadFile(codeRootFile)
+	if err != nil {
+		t.Fatalf("read code-root: %v", err)
+	}
+	want := strings.TrimSpace(string(got))
+	if want != absVendor {
+		t.Fatalf("code-root = %q, want %q", want, absVendor)
+	}
 }
 
 func TestBuildFallbackCommandConfigPrefersCodeRootSrcAndStateVendor(t *testing.T) {
@@ -262,7 +280,7 @@ func TestValidateFallbackVendorAttestationRejectsVersionMismatch(t *testing.T) {
 	}
 }
 
-func buildTwinboxCoreTarball(t *testing.T) []byte {
+func buildVendorBundleTarball(t *testing.T) []byte {
 	t.Helper()
 
 	var buf bytes.Buffer
@@ -270,6 +288,9 @@ func buildTwinboxCoreTarball(t *testing.T) []byte {
 	tw := tar.NewWriter(gz)
 	writeTarFile(t, tw, "twinbox_core/__init__.py", []byte("# pkg\n"))
 	writeTarFile(t, tw, "twinbox_core/task_cli.py", []byte("VALUE = 42\n"))
+	writeTarFile(t, tw, "openclaw-skill/openclaw.fragment.json", []byte("{}\n"))
+	writeTarFile(t, tw, "SKILL.md", []byte("---\nname: twinbox\n---\n"))
+	writeTarFile(t, tw, "scripts/install_openclaw_twinbox_init.sh", []byte("#!/usr/bin/env bash\necho ok\n"))
 	if err := tw.Close(); err != nil {
 		t.Fatalf("close tar writer: %v", err)
 	}

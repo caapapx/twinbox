@@ -41,19 +41,91 @@ func runInstall(args []string) int {
 		fmt.Fprintf(os.Stderr, "%s install: clear dest: %v\n", commandName(), err)
 		return 1
 	}
-	if err := extractTwinboxCoreTarball(*archivePath, vendorDir); err != nil {
+	if err := extractVendorBundleTarball(*archivePath, vendorDir); err != nil {
 		fmt.Fprintf(os.Stderr, "%s install: %v\n", commandName(), err)
 		return 1
 	}
-	if err := writeVendorManifest(vendorDir); err != nil {
+	if err := writeVendorCodeRootPointer(vendorDir); err != nil {
+		fmt.Fprintf(os.Stderr, "%s install: write code-root pointer: %v\n", commandName(), err)
+		return 1
+	}
+	fileCount, err := writeVendorManifest(vendorDir)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s install: write manifest: %v\n", commandName(), err)
 		return 1
 	}
-	fmt.Printf("extracted twinbox_core -> %s\n", destPkg)
+	printInstallSummary(root, destPkg, vendorDir, *archivePath, fileCount)
 	return 0
 }
 
-func extractTwinboxCoreTarball(path string, vendorDir string) error {
+// printInstallSummary explains what install --archive did (paths, manifest, how twinbox uses vendor).
+func printInstallSummary(stateRoot, destPkg, vendorDir, archiveRef string, fileCount int) {
+	manifestPath := filepath.Join(vendorDir, "MANIFEST.json")
+	name := commandName()
+	fmt.Printf(
+		"Installed vendor bundle (twinbox_core + openclaw-skill assets when present in archive).\n"+
+			"  state_root  %s\n"+
+			"  vendor      %s\n"+
+			"  package     %s\n"+
+			"  archive     %s\n"+
+			"  manifest    %s (%d files, twinbox_version %s; must match this %s binary)\n"+
+			"  code_root   ~/.config/twinbox/code-root -> %s (override with TWINBOX_CODE_ROOT for dev)\n"+
+			"  fallback    Python via PYTHONPATH=%s when daemon socket is unavailable\n"+
+			"  next        %s onboard openclaw (starts daemon after wiring; use --no-start-daemon to skip)\n",
+		stateRoot,
+		vendorDir,
+		destPkg,
+		archiveRef,
+		manifestPath,
+		fileCount,
+		twinboxProtocolVersion,
+		name,
+		vendorDir,
+		vendorDir,
+		name,
+	)
+}
+
+// writeVendorCodeRootPointer writes ~/.config/twinbox/code-root so resolve_code_root() prefers this
+// vendor bundle over cwd (TWINBOX_CODE_ROOT still wins when set — dev checkout).
+func writeVendorCodeRootPointer(vendorDir string) error {
+	abs, err := filepath.Abs(vendorDir)
+	if err != nil {
+		return err
+	}
+	cfgRoot, err := os.UserConfigDir()
+	if err != nil {
+		return err
+	}
+	dir := filepath.Join(cfgRoot, "twinbox")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	path := filepath.Join(dir, "code-root")
+	return os.WriteFile(path, []byte(abs+"\n"), 0o644)
+}
+
+func isVendorBundleTarEntry(name string) bool {
+	name = filepath.ToSlash(filepath.Clean(name))
+	if name == "." || name == ".." || strings.HasPrefix(name, "..") {
+		return false
+	}
+	if strings.HasPrefix(name, "twinbox_core") {
+		return true
+	}
+	if strings.HasPrefix(name, "openclaw-skill") {
+		return true
+	}
+	if name == "SKILL.md" {
+		return true
+	}
+	if name == "scripts" || strings.HasPrefix(name, "scripts/") {
+		return true
+	}
+	return false
+}
+
+func extractVendorBundleTarball(path string, vendorDir string) error {
 	src, err := openArchiveSource(path)
 	if err != nil {
 		return err
@@ -65,7 +137,7 @@ func extractTwinboxCoreTarball(path string, vendorDir string) error {
 	}
 	defer gz.Close()
 	tr := tar.NewReader(gz)
-	found := false
+	foundCore := false
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
@@ -78,10 +150,12 @@ func extractTwinboxCoreTarball(path string, vendorDir string) error {
 		if name == "." || name == ".." || strings.HasPrefix(name, ".."+string(os.PathSeparator)) {
 			continue
 		}
-		if !strings.HasPrefix(name, "twinbox_core") {
+		if !isVendorBundleTarEntry(name) {
 			continue
 		}
-		found = true
+		if strings.HasPrefix(filepath.ToSlash(name), "twinbox_core") {
+			foundCore = true
+		}
 		target := filepath.Join(vendorDir, name)
 		switch hdr.Typeflag {
 		case tar.TypeDir:
@@ -92,7 +166,11 @@ func extractTwinboxCoreTarball(path string, vendorDir string) error {
 			if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 				return err
 			}
-			out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(hdr.Mode&0o777))
+			mode := os.FileMode(hdr.Mode) & 0o777
+			if mode == 0 {
+				mode = 0o644
+			}
+			out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 			if err != nil {
 				return err
 			}
@@ -103,7 +181,7 @@ func extractTwinboxCoreTarball(path string, vendorDir string) error {
 			out.Close()
 		}
 	}
-	if !found {
+	if !foundCore {
 		return fmt.Errorf("archive has no twinbox_core/ entries")
 	}
 	return nil
@@ -125,10 +203,10 @@ func openArchiveSource(path string) (io.ReadCloser, error) {
 	return os.Open(path)
 }
 
-func writeVendorManifest(vendorDir string) error {
-	fileCount, err := countVendorFiles(filepath.Join(vendorDir, "twinbox_core"))
+func writeVendorManifest(vendorDir string) (fileCount int, err error) {
+	fileCount, err = countVendorFiles(vendorDir)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	manifest := map[string]any{
 		"installed_at":    time.Now().UTC().Format(time.RFC3339),
@@ -137,16 +215,23 @@ func writeVendorManifest(vendorDir string) error {
 	}
 	body, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
-		return err
+		return 0, err
 	}
-	return os.WriteFile(filepath.Join(vendorDir, "MANIFEST.json"), append(body, '\n'), 0o644)
+	path := filepath.Join(vendorDir, "MANIFEST.json")
+	if err = os.WriteFile(path, append(body, '\n'), 0o644); err != nil {
+		return 0, err
+	}
+	return fileCount, nil
 }
 
-func countVendorFiles(root string) (int, error) {
+func countVendorFiles(vendorDir string) (int, error) {
 	total := 0
-	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk(vendorDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
+		}
+		if path == filepath.Join(vendorDir, "MANIFEST.json") {
+			return nil
 		}
 		if info.Mode().IsRegular() {
 			total++
