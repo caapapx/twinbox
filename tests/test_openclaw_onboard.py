@@ -338,8 +338,8 @@ def test_run_openclaw_onboard_v2_console_prompter_prints_english_shell(
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
-    (repo / "openclaw-skill").mkdir()
-    (repo / "openclaw-skill" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    (repo / "integrations" / "openclaw").mkdir(parents=True)
+    (repo / "integrations" / "openclaw" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
     openclaw_home = tmp_path / ".openclaw"
     openclaw_home.mkdir()
 
@@ -747,8 +747,8 @@ def test_run_openclaw_onboard_v2_requires_explicit_steps_even_with_existing_valu
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
-    (repo / "openclaw-skill").mkdir()
-    (repo / "openclaw-skill" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    (repo / "integrations" / "openclaw").mkdir(parents=True)
+    (repo / "integrations" / "openclaw" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
     openclaw_home = tmp_path / ".openclaw"
     openclaw_home.mkdir()
 
@@ -829,8 +829,8 @@ def test_run_openclaw_onboard_v2_reads_existing_values_from_twinbox_json(
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
-    (repo / "openclaw-skill").mkdir()
-    (repo / "openclaw-skill" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    (repo / "integrations" / "openclaw").mkdir(parents=True)
+    (repo / "integrations" / "openclaw" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
     openclaw_home = tmp_path / ".openclaw"
     openclaw_home.mkdir()
 
@@ -877,8 +877,8 @@ def test_run_openclaw_onboard_v2_collects_llm_inputs_before_validation_progress(
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
-    (repo / "openclaw-skill").mkdir()
-    (repo / "openclaw-skill" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    (repo / "integrations" / "openclaw").mkdir(parents=True)
+    (repo / "integrations" / "openclaw" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
     openclaw_home = tmp_path / ".openclaw"
     openclaw_home.mkdir()
 
@@ -947,8 +947,8 @@ def test_run_openclaw_onboard_v2_collects_mailbox_inputs_before_validation_progr
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
-    (repo / "openclaw-skill").mkdir()
-    (repo / "openclaw-skill" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    (repo / "integrations" / "openclaw").mkdir(parents=True)
+    (repo / "integrations" / "openclaw" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
     openclaw_home = tmp_path / ".openclaw"
     openclaw_home.mkdir()
 
@@ -1008,8 +1008,8 @@ def test_run_openclaw_onboard_v2_uses_updated_mailbox_secret_for_preflight(
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
-    (repo / "openclaw-skill").mkdir()
-    (repo / "openclaw-skill" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    (repo / "integrations" / "openclaw").mkdir(parents=True)
+    (repo / "integrations" / "openclaw" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
     openclaw_home = tmp_path / ".openclaw"
     openclaw_home.mkdir()
 
@@ -1099,8 +1099,8 @@ def test_run_openclaw_onboard_v2_auto_update_resets_login_when_email_changes(
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
-    (repo / "openclaw-skill").mkdir()
-    (repo / "openclaw-skill" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    (repo / "integrations" / "openclaw").mkdir(parents=True)
+    (repo / "integrations" / "openclaw" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
     openclaw_home = tmp_path / ".openclaw"
     openclaw_home.mkdir()
 
@@ -1172,8 +1172,8 @@ def test_run_openclaw_onboard_v2_starts_detection_progress_before_mailbox_auto_d
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
-    (repo / "openclaw-skill").mkdir()
-    (repo / "openclaw-skill" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    (repo / "integrations" / "openclaw").mkdir(parents=True)
+    (repo / "integrations" / "openclaw" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
     openclaw_home = tmp_path / ".openclaw"
     openclaw_home.mkdir()
 
@@ -1230,8 +1230,8 @@ def test_run_openclaw_onboard_v2_times_out_llm_validation(
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
-    (repo / "openclaw-skill").mkdir()
-    (repo / "openclaw-skill" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    (repo / "integrations" / "openclaw").mkdir(parents=True)
+    (repo / "integrations" / "openclaw" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
     openclaw_home = tmp_path / ".openclaw"
     openclaw_home.mkdir()
 
@@ -1295,8 +1295,8 @@ def test_run_openclaw_onboard_v2_llm_validation_failure_returns_to_llm_menu(
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
-    (repo / "openclaw-skill").mkdir()
-    (repo / "openclaw-skill" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    (repo / "integrations" / "openclaw").mkdir(parents=True)
+    (repo / "integrations" / "openclaw" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
     openclaw_home = tmp_path / ".openclaw"
     openclaw_home.mkdir()
 
@@ -1364,8 +1364,8 @@ def test_run_openclaw_onboard_v2_times_out_mailbox_validation(
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
-    (repo / "openclaw-skill").mkdir()
-    (repo / "openclaw-skill" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    (repo / "integrations" / "openclaw").mkdir(parents=True)
+    (repo / "integrations" / "openclaw" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
     openclaw_home = tmp_path / ".openclaw"
     openclaw_home.mkdir()
 
@@ -1437,8 +1437,8 @@ def test_run_openclaw_onboard_v2_allows_llm_skip_and_returns_incomplete_handoff(
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
-    (repo / "openclaw-skill").mkdir()
-    (repo / "openclaw-skill" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    (repo / "integrations" / "openclaw").mkdir(parents=True)
+    (repo / "integrations" / "openclaw" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
     openclaw_home = tmp_path / ".openclaw"
     openclaw_home.mkdir()
 
@@ -1509,8 +1509,8 @@ def test_run_openclaw_onboard_v2_hides_use_current_llm_when_only_api_key_exists(
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
-    (repo / "openclaw-skill").mkdir()
-    (repo / "openclaw-skill" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    (repo / "integrations" / "openclaw").mkdir(parents=True)
+    (repo / "integrations" / "openclaw" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
     openclaw_home = tmp_path / ".openclaw"
     openclaw_home.mkdir()
 
@@ -1561,8 +1561,8 @@ def test_run_openclaw_onboard_journey_imports_llm_from_openclaw_json(
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
-    (repo / "openclaw-skill").mkdir()
-    (repo / "openclaw-skill" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    (repo / "integrations" / "openclaw").mkdir(parents=True)
+    (repo / "integrations" / "openclaw" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
     openclaw_home = tmp_path / ".openclaw"
     openclaw_home.mkdir()
     (openclaw_home / "openclaw.json").write_text(
@@ -1650,8 +1650,8 @@ def test_run_openclaw_onboard_journey_openclaw_import_error_returns_to_llm_menu(
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
-    (repo / "openclaw-skill").mkdir()
-    (repo / "openclaw-skill" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    (repo / "integrations" / "openclaw").mkdir(parents=True)
+    (repo / "integrations" / "openclaw" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
     openclaw_home = tmp_path / ".openclaw"
     openclaw_home.mkdir()
 
@@ -1698,8 +1698,8 @@ def test_run_openclaw_onboard_v2_validates_existing_llm_before_continue(
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
-    (repo / "openclaw-skill").mkdir()
-    (repo / "openclaw-skill" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    (repo / "integrations" / "openclaw").mkdir(parents=True)
+    (repo / "integrations" / "openclaw" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
     openclaw_home = tmp_path / ".openclaw"
     openclaw_home.mkdir()
 
@@ -1759,8 +1759,8 @@ def test_run_openclaw_onboard_v2_stops_when_existing_llm_validation_fails(
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
-    (repo / "openclaw-skill").mkdir()
-    (repo / "openclaw-skill" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    (repo / "integrations" / "openclaw").mkdir(parents=True)
+    (repo / "integrations" / "openclaw" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
     openclaw_home = tmp_path / ".openclaw"
     openclaw_home.mkdir()
 

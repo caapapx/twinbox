@@ -10,7 +10,17 @@ from .openclaw_deploy_runtime import LocalFileOps
 
 
 def default_openclaw_fragment_path(code_root: Path) -> Path:
-    return code_root / "openclaw-skill" / "openclaw.fragment.json"
+    """Return the path to the OpenClaw JSON fragment for deep-merge into ``openclaw.json``.
+
+    Canonical layout: ``<code_root>/integrations/openclaw/openclaw.fragment.json`` (alongside
+    ``src/``, ``cmd/``). Legacy vendor trees may still use ``openclaw-skill/``; if only that path
+    exists, it is returned so older installs keep working until repacked.
+    """
+    preferred = code_root / "integrations" / "openclaw" / "openclaw.fragment.json"
+    legacy = code_root / "openclaw-skill" / "openclaw.fragment.json"
+    if legacy.is_file() and not preferred.is_file():
+        return legacy
+    return preferred
 
 
 def parse_openclaw_json_text(path: Path, text: str) -> dict[str, Any]:

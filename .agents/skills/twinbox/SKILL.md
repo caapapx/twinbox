@@ -18,7 +18,7 @@ Use this skill for Twinbox mailbox onboarding, read-only preflight checks, lates
 
 ## Session and verification (mechanism, not IDE-specific)
 
-Twinbox mail state is produced by **`twinbox` / `twinbox-orchestrate` on the OpenClaw host** and consumed inside a **`twinbox` agent session** (tool policy + session history + Gateway). Regressions such as empty assistant payloads, “read SKILL only”, or silent turns are addressed by **session design and test procedure** (fresh session when needed, bootstrap turn, split long suites, optional **`plugin-twinbox-task`** tools), documented in `openclaw-skill/prompt-test.md` and `scripts/run_openclaw_prompt_tests.py` — not by relabeling the client app.
+Twinbox mail state is produced by **`twinbox` / `twinbox-orchestrate` on the OpenClaw host** and consumed inside a **`twinbox` agent session** (tool policy + session history + Gateway). Regressions such as empty assistant payloads, “read SKILL only”, or silent turns are addressed by **session design and test procedure** (fresh session when needed, bootstrap turn, split long suites, optional **`plugin-twinbox-task`** tools), documented in `integrations/openclaw/prompt-test.md` and `scripts/run_openclaw_prompt_tests.py` — not by relabeling the client app.
 
 Known OpenClaw limitation (confirmed 2026-03-27 on `xfyun-mass` / `astron-code-latest`): OpenClaw injects this skill's **`description`** into the system prompt, but the rest of `~/.openclaw/skills/twinbox/SKILL.md` is visible only if the agent explicitly reads the file. On this model, turns that call generic `exec` can stop immediately after the tool call and return `payloads=[]`, `assistant.content=[]`, or a short stub such as `让我执行命令：`. This is most visible in onboarding because there is currently no native `twinbox_onboarding_*` tool; `twinbox onboarding start|status|next --json` goes through generic `exec`.
 
@@ -36,7 +36,7 @@ On stacks where generic `exec` often drops payloads (`xfyun-mass` / `astron-code
 
 **Recovery if the UI went idle** after the user sent their profile (TUI shows `connected | idle`, no assistant text): send a short follow-up that forces CLI + prose, e.g. run `twinbox onboarding status --json` and `twinbox onboarding next --json`, then summarize both. If payloads stay empty, run the same commands in a **host shell** and continue from printed JSON.
 
-**Session:** prefer a **dedicated `twinbox` agent** for onboarding handoff — not `main` — so skill injection, tools, and `openclaw-skill/DEPLOY.md` match.
+**Session:** prefer a **dedicated `twinbox` agent** for onboarding handoff — not `main` — so skill injection, tools, and `integrations/openclaw/DEPLOY.md` match.
 
 ## Use For
 
@@ -61,7 +61,7 @@ On stacks where generic `exec` often drops payloads (`xfyun-mass` / `astron-code
 
 **Binaries:** `pip uninstall -y twinbox-core` (removes `twinbox`, `twinbox-orchestrate`, `twinbox-eval-phase4`); delete any other `twinbox` on `PATH` (e.g. `~/.local/bin`, `/usr/local/bin`); optional repo junk: `dist/twinbox*`, `cmd/twinbox-go/twinbox`.
 
-**Data, OpenClaw, env:** `rm -rf ~/.twinbox` (destructive—backup first); remove stale `~/.config/twinbox/*` if present; delete `~/.openclaw/skills/twinbox`, drop `plugin-twinbox-task` per `openclaw-skill/DEPLOY.md`, then `openclaw gateway restart`. Strip **`TWINBOX_*`**, **`TWINBOX_SETUP_*`**, and mailbox vars from this skill’s `metadata.openclaw.requires.env` wherever set (shell, systemd, OpenClaw skill env, CI). New shell: `command -v twinbox` empty.
+**Data, OpenClaw, env:** `rm -rf ~/.twinbox` (destructive—backup first); remove stale `~/.config/twinbox/*` if present; delete `~/.openclaw/skills/twinbox`, drop `plugin-twinbox-task` per `integrations/openclaw/DEPLOY.md`, then `openclaw gateway restart`. Strip **`TWINBOX_*`**, **`TWINBOX_SETUP_*`**, and mailbox vars from this skill’s `metadata.openclaw.requires.env` wherever set (shell, systemd, OpenClaw skill env, CI). New shell: `command -v twinbox` empty.
 
 ## Task Entrypoints
 
@@ -108,7 +108,7 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 | Check onboarding progress | `twinbox onboarding status --json`（人类可读输出会以 “Phase 2 of 2” 继续旅程） |
 | Advance onboarding to next stage | `twinbox onboarding next --json`（人类可读输出会以 “Phase 2 of 2” 继续旅程） |
 | User已用自然语言答完当前阶段（画像 / 材料 / 规则 / 推送等） | 先简短确认，再 **`twinbox onboarding next --json`**（若是画像阶段，可加 `--profile-notes "用户画像摘要"`、`--calibration-notes "本周关注/忽略/重点摘要"`，以及在用户明确“CC 也是主要工作”时加 `--cc-downweight off`），然后根据 stdout 总结 `completed_stage`、`current_stage`、下一段 `prompt`（不可只调工具无正文） |
-| 后台 JSON-RPC daemon（省 Python 冷启动；可选） | `twinbox daemon start` / `stop` / `restart`；如需异常退出后自动拉起，可用 `twinbox daemon start --supervise` 或 `restart --supervise`；`twinbox daemon status --json`（含 `cache_stats`，supervised 时还会有 `supervised` / `supervisor_pid`）。Socket：`$TWINBOX_STATE_ROOT/run/daemon.sock`。Go：源码目录 `cmd/twinbox-go`，但用户交付时默认构建为 `twinbox`（**dial 失败**时先静默跑一次 Python `daemon start` 再 **重试 RPC 一次**；`TWINBOX_NO_LAZY_DAEMON=1` 关闭；`daemon start` 本身始终直连 Python）；仍失败则 `exec` Python，并自动补 `PYTHONPATH` / state env；`--profile` 也会在 import 前生效；vendor 模式会校验 `MANIFEST.json.twinbox_version`）；`twinbox install --archive …` 解压归档（`twinbox_core`、`openclaw-skill`、根 `SKILL.md`、bootstrap 脚本）到 `vendor/`，写 `MANIFEST.json` 与 `~/.config/twinbox/code-root`（开发可用 `TWINBOX_CODE_ROOT` 覆盖） |
+| 后台 JSON-RPC daemon（省 Python 冷启动；可选） | `twinbox daemon start` / `stop` / `restart`；如需异常退出后自动拉起，可用 `twinbox daemon start --supervise` 或 `restart --supervise`；`twinbox daemon status --json`（含 `cache_stats`，supervised 时还会有 `supervised` / `supervisor_pid`）。Socket：`$TWINBOX_STATE_ROOT/run/daemon.sock`。Go：源码目录 `cmd/twinbox-go`，但用户交付时默认构建为 `twinbox`（**dial 失败**时先静默跑一次 Python `daemon start` 再 **重试 RPC 一次**；`TWINBOX_NO_LAZY_DAEMON=1` 关闭；`daemon start` 本身始终直连 Python）；仍失败则 `exec` Python，并自动补 `PYTHONPATH` / state env；`--profile` 也会在 import 前生效；vendor 模式会校验 `MANIFEST.json.twinbox_version`）；`twinbox install --archive …` 解压归档（`twinbox_core`、`integrations/openclaw`、根 `SKILL.md`、bootstrap 脚本）到 `vendor/`，写 `MANIFEST.json` 与 `~/.config/twinbox/code-root`（开发可用 `TWINBOX_CODE_ROOT` 覆盖） |
 | 多邮箱 profile（共享 vendor、独立 state） | `twinbox --profile NAME …`（`TWINBOX_STATE_ROOT=~/.twinbox/profiles/NAME/state`，`TWINBOX_HOME=~/.twinbox`） |
 | Phase loading（Python 入口） | `twinbox loading phase1` … `phase4`（全部走 Python；`scripts/phase1_loading.sh` / `phase4_loading.sh` 仅保留兼容 shim，phase1/4 仍使用 himalaya CLI 传输） |
 | 把 `twinbox_core` 同步到 vendor（宿主 PYTHONPATH） | `twinbox vendor install`；`twinbox vendor status --json`（`integrity_ok` / `file_count`）。装好后：`PYTHONPATH="$TWINBOX_HOME/vendor"` 或 `…/state/vendor`（无 profile 时二者常相同）+ `python3 -m twinbox_core.task_cli …` |

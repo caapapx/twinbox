@@ -6,7 +6,7 @@
 
 - `SKILL.md`：仓库根上的 OpenClaw manifest / shared metadata root
 - `.claude/`：Claude Code / Opencode 本地代理 skill 与命令层
-- `openclaw-skill/`：OpenClaw 托管 skill 的开发、部署、验证入口
+- `integrations/openclaw/`：OpenClaw 托管 skill 的开发、部署、验证入口
 - **大重构期间**：宿主行为与 Twinbox 侧新模块（daemon、Go 薄壳、模拟邮箱种子）以 **[docs/ref/daemon-and-runtime-slice.md](../docs/ref/daemon-and-runtime-slice.md)** 与代码为准；本 README 历史段落若未提及，视为尚未同步。
 
 ## 当前判断
@@ -92,12 +92,12 @@
 
 ## 初始化重点
 
-**从零安装与 cwd 约定以 [DEPLOY.md](./DEPLOY.md) §3 为准**（本文下方命令假设当前在 `openclaw-skill/`）。
+**从零安装与 cwd 约定以 [DEPLOY.md](./DEPLOY.md) §3 为准**（本文下方命令假设当前在 `integrations/openclaw/`）。
 
 native OpenClaw 部署不要只迁 `~/.openclaw`，还要初始化 Twinbox roots：
 
 ```bash
-bash ../scripts/install_openclaw_twinbox_init.sh
+bash ../../scripts/install_openclaw_twinbox_init.sh
 ```
 
 它会默认写入：

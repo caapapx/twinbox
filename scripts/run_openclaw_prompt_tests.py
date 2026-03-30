@@ -30,7 +30,7 @@ import uuid
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-PROMPT_MD = REPO_ROOT / "openclaw-skill" / "prompt-test.md"
+PROMPT_MD = REPO_ROOT / "integrations" / "openclaw" / "prompt-test.md"
 
 # Matches doc §「推荐顺序」；拆成两段会话，避免单会话过长导致后半段空包（长会话 + Gateway 常见）。
 ORDER_NATURAL = ["P1", "P2", "P3", "P4", "P6"]

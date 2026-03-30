@@ -4,7 +4,7 @@
 
 本文档**取代**仓库内已删除的分散计划稿：`skill-creator-plan.md`、`.cursor/plans/prompt_and_code_optimization_*.plan.md`、`docs/superpowers/plans/*`、`docs/superpowers/specs/*`（增量邮件设计）、`docs/core-refactor-v1.md`，以及空的 `docs/core-refactor-v2-latest.md` 占位。  
 
-**当前实现事实**（daemon、Go 薄壳、vendor、模组化模拟邮箱、**phase1/4 取信仍经 himalaya CLI**）：[`docs/ref/daemon-and-runtime-slice.md`](docs/ref/daemon-and-runtime-slice.md)。**架构：** [`docs/ref/architecture.md`](docs/ref/architecture.md)。**CLI：** [`docs/ref/cli.md`](docs/ref/cli.md)。**OpenClaw 宿主：** [`openclaw-skill/DEPLOY.md`](openclaw-skill/DEPLOY.md)。**简版已交付清单：** 根目录 [README.md](README.md) / [README.zh.md](README.zh.md)「当前聚焦」— 与本文冲突时**以本文为准**。
+**当前实现事实**（daemon、Go 薄壳、vendor、模组化模拟邮箱、**phase1/4 取信仍经 himalaya CLI**）：[`docs/ref/daemon-and-runtime-slice.md`](docs/ref/daemon-and-runtime-slice.md)。**架构：** [`docs/ref/architecture.md`](docs/ref/architecture.md)。**CLI：** [`docs/ref/cli.md`](docs/ref/cli.md)。**OpenClaw 宿主：** [`integrations/openclaw/DEPLOY.md`](integrations/openclaw/DEPLOY.md)。**简版已交付清单：** 根目录 [README.md](README.md) / [README.zh.md](README.zh.md)「当前聚焦」— 与本文冲突时**以本文为准**。
 
 **当前状态**：runtime / deploy / onboard 这一轮实现已基本收口；当前重点从“继续堆功能”切到“完整手动验收 + 准备发布”。
 

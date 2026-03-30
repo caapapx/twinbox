@@ -1872,6 +1872,7 @@ def cmd_deploy_openclaw(args: argparse.Namespace) -> int:
             openclaw_bin=openclaw_bin,
             skip_bridge=getattr(args, "skip_bridge", False),
             twinbox_bin=tb or None,
+            start_daemon=not getattr(args, "no_start_daemon", False),
         )
         label = "Deploy"
     if args.json:
@@ -1906,6 +1907,7 @@ def _cmd_onboard_openclaw_journey(args: argparse.Namespace) -> int:
         dry_run=args.dry_run,
         openclaw_bin=args.openclaw_bin,
         skip_bridge=getattr(args, "skip_bridge", False),
+        start_daemon=not getattr(args, "no_start_daemon", False),
     )
     if args.json:
         print(json.dumps(report.to_json_dict(), ensure_ascii=False, indent=2))
@@ -3529,12 +3531,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default="",
         metavar="PATH",
         help="JSON file to deep-merge into openclaw.json before skills.entries.twinbox "
-        "(default: use openclaw-skill/openclaw.fragment.json if that file exists)",
+        "(default: use integrations/openclaw/openclaw.fragment.json if that file exists)",
     )
     dep_oc.add_argument(
         "--no-fragment",
         action="store_true",
-        help="Do not load openclaw-skill/openclaw.fragment.json",
+        help="Do not load integrations/openclaw/openclaw.fragment.json",
     )
     dep_oc.add_argument(
         "--openclaw-bin",
@@ -3550,6 +3552,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--twinbox-bin",
         default="",
         help="Absolute path to twinbox executable for bridge units (default: auto-detect)",
+    )
+    dep_oc.add_argument(
+        "--no-start-daemon",
+        action="store_true",
+        help="After a successful deploy, do not start the Twinbox JSON-RPC daemon",
     )
     dep_oc.add_argument("--json", action="store_true", help="Output as JSON")
 
@@ -3584,6 +3591,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--skip-bridge",
         action="store_true",
         help="Skip bridge prerequisite bundle (not recommended)",
+    )
+    onboard_oc.add_argument(
+        "--no-start-daemon",
+        action="store_true",
+        help="After deploy succeeds, do not start the Twinbox JSON-RPC daemon",
     )
     onboard_oc.add_argument("--json", action="store_true", help="Output as JSON")
 

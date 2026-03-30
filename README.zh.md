@@ -109,22 +109,22 @@ Phase 1 -> Phase 2 -> Phase 3 -> Phase 4
 面向最终用户时，日常只接触命令 **`twinbox`**。先把 `twinbox` 二进制放进 `PATH`：
 
 ```bash
-# 系统级安装
-sudo cp dist/twinbox /usr/local/bin/twinbox
-sudo chmod 0755 /usr/local/bin/twinbox
-
-# 或当前用户安装
+# 当前用户安装（推荐）
 mkdir -p ~/.local/bin
-cp dist/twinbox ~/.local/bin/twinbox
+cp twinbox ~/.local/bin/twinbox
 chmod 0755 ~/.local/bin/twinbox
 export PATH="$HOME/.local/bin:$PATH"
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
 ```
 
 已拿到 `twinbox_core.tar.gz`（或等价运行时归档）时，安装 CLI 并导入 Email agent runtime（vendor）：
 
 ```bash
-twinbox install --archive /path/to/twinbox_core.tar.gz
+twinbox install --archive twinbox_core.tar.gz
 ```
+
+日常使用不要用 `sudo` 执行 `twinbox`，否则状态目录可能会写到 `/root/.twinbox`。
 
 ### 接入 OpenClaw 宿主
 
@@ -136,7 +136,7 @@ twinbox install --archive /path/to/twinbox_core.tar.gz
 twinbox onboard openclaw
 ```
 
-作用概览：检查 OpenClaw 环境；初始化或复用 `~/.twinbox`；合并 `openclaw.json`；同步 `SKILL.md`；按配置重启 Gateway；安装调用 **`twinbox host bridge poll`** 的 **systemd user** 单元（vendor/no-clone 也可用）。请用 `twinbox onboard openclaw --json` 核对 **`phase2_ready` 为 true** 后再认为宿主接线完成。细节见 [openclaw-skill/DEPLOY.md](openclaw-skill/DEPLOY.md)。**这一阶段不会替你完成邮箱登录或 LLM 配置。**
+作用概览：检查 OpenClaw 环境；初始化或复用 `~/.twinbox`；合并 `openclaw.json`；同步 `SKILL.md`；按配置重启 Gateway；安装调用 **`twinbox host bridge poll`** 的 **systemd user** 单元（vendor/no-clone 也可用）。请用 `twinbox onboard openclaw --json` 核对 **`phase2_ready` 为 true** 后再认为宿主接线完成。细节见 [integrations/openclaw/DEPLOY.md](integrations/openclaw/DEPLOY.md)。**这一阶段不会替你完成邮箱登录或 LLM 配置。**
 
 **阶段二：Twinbox 引导（在 OpenClaw 对话里继续）**
 
@@ -160,7 +160,7 @@ twinbox onboarding next --json
 twinbox onboarding status --json
 ```
 
-阶段二才会真正补齐：邮箱登录、LLM provider / model / API URL、角色与偏好，以及可选的材料导入、路由规则和推送订阅。**推送**支持 **daily / weekly** 分别开关（`twinbox push subscribe … --daily on|off --weekly on|off` 或 `twinbox push configure …`），并与 `daily-refresh` / `weekly-refresh` 调度联动。更长的 bootstrap 变体、空响应排障与阶段顺序说明见 [openclaw-skill/DEPLOY.md](openclaw-skill/DEPLOY.md) 中的「引导流程」。
+阶段二才会真正补齐：邮箱登录、LLM provider / model / API URL、角色与偏好，以及可选的材料导入、路由规则和推送订阅。**推送**支持 **daily / weekly** 分别开关（`twinbox push subscribe … --daily on|off --weekly on|off` 或 `twinbox push configure …`），并与 `daily-refresh` / `weekly-refresh` 调度联动。更长的 bootstrap 变体、空响应排障与阶段顺序说明见 [integrations/openclaw/DEPLOY.md](integrations/openclaw/DEPLOY.md) 中的「引导流程」。
 
 ### 不接入 OpenClaw 时（使用Claude Code、Codex等平台）
 

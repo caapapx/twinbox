@@ -105,22 +105,22 @@ The project treats disk artifacts as the stable contract between the pipeline, o
 End users normally only run **`twinbox`**. First, put the `twinbox` binary on your `PATH`:
 
 ```bash
-# system-wide
-sudo cp dist/twinbox /usr/local/bin/twinbox
-sudo chmod 0755 /usr/local/bin/twinbox
-
-# or user-local
+# user-local (recommended)
 mkdir -p ~/.local/bin
-cp dist/twinbox ~/.local/bin/twinbox
+cp twinbox ~/.local/bin/twinbox
 chmod 0755 ~/.local/bin/twinbox
 export PATH="$HOME/.local/bin:$PATH"
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
 ```
 
 When you already have `twinbox_core.tar.gz` (or an equivalent runtime archive), install the CLI and import the Email agent runtime (vendor):
 
 ```bash
-twinbox install --archive /path/to/twinbox_core.tar.gz
+twinbox install --archive twinbox_core.tar.gz
 ```
+
+Do not run `twinbox` with `sudo` in normal use; otherwise state may be written to `/root/.twinbox`.
 
 ### Connect to an OpenClaw host
 
@@ -132,7 +132,7 @@ If you mainly use Twinbox together with OpenClaw, start here. The full path has 
 twinbox onboard openclaw
 ```
 
-What it does: checks the OpenClaw environment; initializes or reuses `~/.twinbox`; merges `openclaw.json`; syncs `SKILL.md`; restarts the gateway when configured; installs the **OpenClaw cron bridge** user units that call **`twinbox host bridge poll`** (works in vendor/no-clone installs). Use `twinbox onboard openclaw --json` and confirm **`"phase2_ready": true`** before treating host wiring as done. See [openclaw-skill/DEPLOY.md](openclaw-skill/DEPLOY.md). **It does not complete mailbox login or LLM setup for you.**
+What it does: checks the OpenClaw environment; initializes or reuses `~/.twinbox`; merges `openclaw.json`; syncs `SKILL.md`; restarts the gateway when configured; installs the **OpenClaw cron bridge** user units that call **`twinbox host bridge poll`** (works in vendor/no-clone installs). Use `twinbox onboard openclaw --json` and confirm **`"phase2_ready": true`** before treating host wiring as done. See [integrations/openclaw/DEPLOY.md](integrations/openclaw/DEPLOY.md). **It does not complete mailbox login or LLM setup for you.**
 
 **Stage 2: Twinbox onboarding (continue in OpenClaw chat)**
 
@@ -156,7 +156,7 @@ until `current_stage` is `completed`. To inspect progress:
 twinbox onboarding status --json
 ```
 
-Stage 2 is what fills real working config: mailbox login, LLM provider/model/API URL, your role and preferences, and optional materials, routing rules, or push subscription. **Push** supports separate **daily** and **weekly** cadences (`twinbox push subscribe … --daily on|off --weekly on|off`, or `twinbox push configure …`); schedules stay in sync with active subscriptions. Longer bootstrap variants, empty-response workarounds, and the stage order are in [openclaw-skill/DEPLOY.md](openclaw-skill/DEPLOY.md) under the onboarding walkthrough.
+Stage 2 is what fills real working config: mailbox login, LLM provider/model/API URL, your role and preferences, and optional materials, routing rules, or push subscription. **Push** supports separate **daily** and **weekly** cadences (`twinbox push subscribe … --daily on|off --weekly on|off`, or `twinbox push configure …`); schedules stay in sync with active subscriptions. Longer bootstrap variants, empty-response workarounds, and the stage order are in [integrations/openclaw/DEPLOY.md](integrations/openclaw/DEPLOY.md) under the onboarding walkthrough.
 
 ### Without OpenClaw (Claude Code, Codex, etc.)
 
@@ -330,7 +330,7 @@ A: Yes. The project is CLI-first, JSON-friendly, and file-output-oriented.
 
 **Q: How do I deploy it on an OpenClaw host?**
 
-A: Run `twinbox onboard openclaw` (use `--json` and check `phase2_ready`), then continue in the `twinbox` agent with onboarding—prefer plugin tools `twinbox_onboarding_*` when `plugin-twinbox-task` is enabled, or `twinbox onboarding start` / `next` from a shell. Details: [openclaw-skill/DEPLOY.md](openclaw-skill/DEPLOY.md).
+A: Run `twinbox onboard openclaw` (use `--json` and check `phase2_ready`), then continue in the `twinbox` agent with onboarding—prefer plugin tools `twinbox_onboarding_*` when `plugin-twinbox-task` is enabled, or `twinbox onboarding start` / `next` from a shell. Details: [integrations/openclaw/DEPLOY.md](integrations/openclaw/DEPLOY.md).
 
 **Q: What should I treat as the canonical backlog?**
 

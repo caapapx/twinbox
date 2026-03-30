@@ -100,7 +100,7 @@
   - 不再依赖：
       - TWINBOX_CODE_ROOT/scripts/twinbox_openclaw_bridge_poll.sh
       - repo checkout
-      - openclaw-skill/*.service 软链回仓库
+      - integrations/openclaw/*.service 软链回仓库
   - twinbox-orchestrate 可以继续存在，但不能是 vendor/no-clone 宿主的可靠性前提。
 
   新增稳定入口，收敛到 twinbox：

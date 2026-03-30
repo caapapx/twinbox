@@ -14,9 +14,28 @@ from twinbox_core.openclaw_json_io import (
 )
 
 
-def test_default_openclaw_fragment_path() -> None:
-    root = Path("/repo")
-    assert default_openclaw_fragment_path(root) == root / "openclaw-skill" / "openclaw.fragment.json"
+def test_default_openclaw_fragment_path_prefers_integrations(tmp_path: Path) -> None:
+    preferred = tmp_path / "integrations" / "openclaw" / "openclaw.fragment.json"
+    preferred.parent.mkdir(parents=True)
+    preferred.write_text("{}", encoding="utf-8")
+    assert default_openclaw_fragment_path(tmp_path) == preferred
+
+
+def test_default_openclaw_fragment_path_legacy_openclaw_skill(tmp_path: Path) -> None:
+    legacy = tmp_path / "openclaw-skill" / "openclaw.fragment.json"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("{}", encoding="utf-8")
+    assert default_openclaw_fragment_path(tmp_path) == legacy
+
+
+def test_default_openclaw_fragment_path_prefers_new_when_both_exist(tmp_path: Path) -> None:
+    legacy = tmp_path / "openclaw-skill" / "openclaw.fragment.json"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("{}", encoding="utf-8")
+    preferred = tmp_path / "integrations" / "openclaw" / "openclaw.fragment.json"
+    preferred.parent.mkdir(parents=True)
+    preferred.write_text("{}", encoding="utf-8")
+    assert default_openclaw_fragment_path(tmp_path) == preferred
 
 
 def test_load_openclaw_json_missing_returns_empty(tmp_path: Path) -> None:

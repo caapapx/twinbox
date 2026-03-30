@@ -3,7 +3,7 @@
 #
 # Layout inside the tarball (all extracted under ``$TWINBOX_STATE_ROOT/vendor/``):
 #   twinbox_core/          — from src/twinbox_core
-#   openclaw-skill/        — fragment, plugin, docs (node_modules excluded)
+#   integrations/openclaw/        — fragment, plugin, docs (node_modules excluded)
 #   SKILL.md               — repo-root skill manifest (deploy copies to state + OpenClaw)
 #   scripts/install_openclaw_twinbox_init.sh — bootstrap; ``install`` writes ~/.config/twinbox/code-root → vendor dir
 #
@@ -20,8 +20,8 @@ cp "$ROOT/scripts/install_openclaw_twinbox_init.sh" "$TMP/scripts/"
 tar -czf "$OUT" \
   --exclude='__pycache__' \
   --exclude='*.pyc' \
-  --exclude='openclaw-skill/plugin-twinbox-task/node_modules' \
+  --exclude='integrations/openclaw/plugin-twinbox-task/node_modules' \
   -C "$ROOT/src" twinbox_core \
-  -C "$ROOT" openclaw-skill SKILL.md \
+  -C "$ROOT" integrations/openclaw SKILL.md \
   -C "$TMP" scripts
 echo "$OUT"

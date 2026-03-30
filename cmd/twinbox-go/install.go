@@ -63,7 +63,7 @@ func printInstallSummary(stateRoot, destPkg, vendorDir, archiveRef string, fileC
 	manifestPath := filepath.Join(vendorDir, "MANIFEST.json")
 	name := commandName()
 	fmt.Printf(
-		"Installed vendor bundle (twinbox_core + openclaw-skill assets when present in archive).\n"+
+		"Installed vendor bundle (twinbox_core + integrations/openclaw assets when present in archive).\n"+
 			"  state_root  %s\n"+
 			"  vendor      %s\n"+
 			"  package     %s\n"+
@@ -111,6 +111,9 @@ func isVendorBundleTarEntry(name string) bool {
 		return false
 	}
 	if strings.HasPrefix(name, "twinbox_core") {
+		return true
+	}
+	if strings.HasPrefix(name, "integrations/openclaw") {
 		return true
 	}
 	if strings.HasPrefix(name, "openclaw-skill") {

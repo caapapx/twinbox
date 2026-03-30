@@ -21,10 +21,10 @@
 
 - 文档入口：`docs/README.md`
 - 架构：`docs/ref/architecture.md`
-- OpenClaw 部署操作主路径：`openclaw-skill/DEPLOY.md`
+- OpenClaw 部署操作主路径：`integrations/openclaw/DEPLOY.md`
 - OpenClaw 部署设计模型：`docs/ref/openclaw-deploy-model.md`
-- OpenClaw 排障与回滚：`openclaw-skill/TROUBLESHOOT.md`
-- OpenClaw 部署附录：`openclaw-skill/DEPLOY-APPENDIX.md`
+- OpenClaw 排障与回滚：`integrations/openclaw/TROUBLESHOOT.md`
+- OpenClaw 部署附录：`integrations/openclaw/DEPLOY-APPENDIX.md`
 - 路线与待办索引：`ROADMAP.md`
 - Daemon / Go 薄壳 / 模组化测试（**当前事实，优先于旧「暂缓 Go」表述**）：`docs/ref/daemon-and-runtime-slice.md`
 - Daemon JSON-RPC：`docs/ref/rpc-protocol.md`；Phase 产物路径约定：`docs/ref/artifact-contract.md`
@@ -48,7 +48,7 @@
 4. 文档内交叉引用使用相对路径
 5. **新增或移动**文档路径时，同步更新**可发现性**（至少一处，避免零索引）：
    - 常用契约/指南：在 `docs/README.md` 的 **Read first** 或 **Layout** 增删一条链接，和/或在本文 **核心文档入口** 增删一条；或
-   - 落在已有子包/子目录时：更新该目录的 **README.md**（例如 `openclaw-skill/README.md`、`docs/guide/` 下说明）
+   - 落在已有子包/子目录时：更新该目录的 **README.md**（例如 `integrations/openclaw/README.md`、`docs/guide/` 下说明）
    - **可不上抬到 Read first 的情况**：纯 `docs/archive/` 深埋归档、`docs/validation/` 实例报告，只需在主题文档或子索引中链入即可
 6. **验证通过后的 Git 落地**（与「只描述已完成」区分）：在完成本次任务约定校验且**明确成功**时，代理**应当**提交；在环境允许且用户未禁止时**应当**推送。
    - **高置信度门槛**：已对变更范围跑过约定检查（例如相关 `pytest`、或任务指定的 smoke/脚本），失败已处理或已说明为何不跑
@@ -64,7 +64,7 @@
    - 用户侧命令名固定为 **`twinbox`**。Go 源码目录可保留 `cmd/twinbox-go/`，但交付产物必须构建为 `dist/twinbox`（而非 `twinbox-go`）。
    - `twinbox` 二进制默认按用户级安装到 `PATH`（推荐 `~/.local/bin`），**不要**放在 `~/.twinbox` 这类 state root 下，也不要在日常流程里用 `sudo twinbox ...`。
    - 用户级安装后，需把 `~/.local/bin` 持久化到 shell 启动文件（当前约定：`~/.bashrc`，例如 `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc`），避免重开终端后命令丢失。
-   - Python 运行时与 OpenClaw 宿主资源通过归档交付：执行 `scripts/package_vendor_tarball.sh` 产出 `dist/twinbox_core-<version>.tar.gz`（内含 `twinbox_core/`、`openclaw-skill/`、根 `SKILL.md`、`scripts/install_openclaw_twinbox_init.sh`；排除 `__pycache__` 与插件 `node_modules`），供 `twinbox install --archive ...` 解压到 `vendor/` 并写入 `~/.config/twinbox/code-root` 指向该目录；开发时仍可用 `TWINBOX_CODE_ROOT` 指向 git 仓库。
+   - Python 运行时与 OpenClaw 宿主资源通过归档交付：执行 `scripts/package_vendor_tarball.sh` 产出 `dist/twinbox_core-<version>.tar.gz`（内含 `twinbox_core/`、`integrations/openclaw/`、根 `SKILL.md`、`scripts/install_openclaw_twinbox_init.sh`；排除 `__pycache__` 与插件 `node_modules`），供 `twinbox install --archive ...` 解压到 `vendor/` 并写入 `~/.config/twinbox/code-root` 指向该目录；开发时仍可用 `TWINBOX_CODE_ROOT` 指向 git 仓库。
 9. **Go CLI 变更后的默认构建与安装**（自动化助手与本地开发者）：凡修改 **`cmd/twinbox-go/`** 下代码，或修复 **仅能通过 Go 薄壳复现/验证** 的 CLI 行为（含 `main.go` 的 RPC 绕行、`install` 子命令等），在提交前**默认**应完成：
    - **构建并覆盖仓库内交付路径**：在仓库根执行 **`bash scripts/build_go_twinbox.sh`**（或等价：`cd cmd/twinbox-go && go build -o ../../dist/twinbox .`），产物为 **`dist/twinbox`**。
    - **同步用户可执行文件**（开发机常用）：同一脚本加 **`--install`**（或环境变量 **`TWINBOX_GO_INSTALL=1`**），将二进制复制到 **`TWINBOX_GO_BIN_DEST`**（默认 **`$HOME/.local/bin/twinbox`**），避免 PATH 上仍是旧构建。

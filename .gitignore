@@ -46,7 +46,7 @@ openclaw-docker-compose
 state.json
 
 # OpenClaw plugin (install deps locally; lockfile is committed slim)
-openclaw-skill/plugin-twinbox-task/node_modules/
+integrations/openclaw/plugin-twinbox-task/node_modules/
 
 # Host-specific OpenClaw JSON fragment (copy from openclaw.fragment.example.json)
-openclaw-skill/openclaw.fragment.json
+integrations/openclaw/openclaw.fragment.json

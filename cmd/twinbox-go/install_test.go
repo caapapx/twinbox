@@ -160,7 +160,7 @@ func TestRunInstallAcceptsHTTPArchiveSource(t *testing.T) {
 	pkgRoot := filepath.Join(stateRoot, "vendor", "twinbox_core")
 	assertFileContains(t, filepath.Join(pkgRoot, "__init__.py"), "# pkg")
 	assertFileContains(t, filepath.Join(pkgRoot, "task_cli.py"), "VALUE = 42")
-	assertFileContains(t, filepath.Join(stateRoot, "vendor", "openclaw-skill", "openclaw.fragment.json"), "{}")
+	assertFileContains(t, filepath.Join(stateRoot, "vendor", "integrations", "openclaw", "openclaw.fragment.json"), "{}")
 	assertFileContains(t, filepath.Join(stateRoot, "vendor", "SKILL.md"), "name: twinbox")
 	manifestPath := filepath.Join(stateRoot, "vendor", "MANIFEST.json")
 	assertFileContains(t, manifestPath, "\"twinbox_version\": \""+twinboxProtocolVersion+"\"")
@@ -288,7 +288,7 @@ func buildVendorBundleTarball(t *testing.T) []byte {
 	tw := tar.NewWriter(gz)
 	writeTarFile(t, tw, "twinbox_core/__init__.py", []byte("# pkg\n"))
 	writeTarFile(t, tw, "twinbox_core/task_cli.py", []byte("VALUE = 42\n"))
-	writeTarFile(t, tw, "openclaw-skill/openclaw.fragment.json", []byte("{}\n"))
+	writeTarFile(t, tw, "integrations/openclaw/openclaw.fragment.json", []byte("{}\n"))
 	writeTarFile(t, tw, "SKILL.md", []byte("---\nname: twinbox\n---\n"))
 	writeTarFile(t, tw, "scripts/install_openclaw_twinbox_init.sh", []byte("#!/usr/bin/env bash\necho ok\n"))
 	if err := tw.Close(); err != nil {

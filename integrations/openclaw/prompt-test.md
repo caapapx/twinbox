@@ -68,7 +68,7 @@ twinbox task weekly --json
 然后基于 stdout 的 JSON 区分：有真实线程依据 / synthetic / 纯推断，每类 2–5 条并引用字段名。若命令失败，贴 stderr。
 ```
 
-长期缓解：安装仓库内 `openclaw-skill/plugin-twinbox-task` 插件（`openclaw plugins install --link <path>`），让 `twinbox_latest_mail` / `twinbox_weekly` 等成为原生工具，减少对 `exec` 链的依赖。
+长期缓解：安装仓库内 `integrations/openclaw/plugin-twinbox-task` 插件（`openclaw plugins install --link <path>`），让 `twinbox_latest_mail` / `twinbox_weekly` 等成为原生工具，减少对 `exec` 链的依赖。
 
 ## Onboarding bootstrap（已知限制绕过）
 
