@@ -1073,6 +1073,96 @@ def test_run_openclaw_onboard_v2_uses_updated_mailbox_secret_for_preflight(
     assert seen_preflight_env["SMTP_PASS"] == "fresh-secret"
 
 
+def test_run_openclaw_onboard_v2_auto_update_resets_login_when_email_changes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    (state_root / ".env").write_text(
+        "\n".join(
+            [
+                "MAIL_ADDRESS=wrong@example.com",
+                "IMAP_HOST=imap.example.com",
+                "IMAP_PORT=993",
+                "IMAP_LOGIN=wrong@example.com",
+                "IMAP_PASS=old-secret",
+                "SMTP_HOST=smtp.example.com",
+                "SMTP_PORT=465",
+                "SMTP_LOGIN=wrong@example.com",
+                "SMTP_PASS=old-secret",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
+    (repo / "openclaw-skill").mkdir()
+    (repo / "openclaw-skill" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    openclaw_home = tmp_path / ".openclaw"
+    openclaw_home.mkdir()
+
+    seen_preflight_env: dict[str, str] = {}
+
+    monkeypatch.setenv("TWINBOX_STATE_ROOT", str(state_root))
+    monkeypatch.setenv("TWINBOX_CODE_ROOT", str(repo))
+    monkeypatch.setattr("twinbox_core.openclaw_onboard.shutil.which", lambda _bin: "/usr/bin/openclaw")
+    monkeypatch.setattr("twinbox_core.mailbox_detect.detect_to_env", _fake_detect_to_env)
+
+    def fake_run_preflight(*, state_root: Path, env=None, **_: object) -> tuple[int, dict[str, object]]:
+        del state_root
+        seen_preflight_env.update(env or {})
+        if (env or {}).get("IMAP_LOGIN") != "user@example.com":
+            return 4, {
+                "status": "fail",
+                "login_stage": "validated",
+                "missing_env": [],
+            }
+        return 0, {
+            "status": "ok",
+            "login_stage": "mailbox-connected",
+            "missing_env": [],
+        }
+
+    monkeypatch.setattr("twinbox_core.mailbox.run_preflight", fake_run_preflight)
+    monkeypatch.setattr("twinbox_core.llm.validate_backend", lambda _backend: (True, ""))
+    monkeypatch.setattr(
+        "twinbox_core.openclaw_onboard.run_openclaw_deploy",
+        lambda **_: OpenClawDeployReport(ok=True, steps=[], phase2_ready=True),
+    )
+
+    prompter = _FakePrompter(
+        select_values=[
+            "continue",
+            "quickstart",
+            "update",
+            "auto",
+            "openai",
+            "yes",
+            "apply",
+        ],
+        text_values=[
+            "user@example.com",
+            "test-model",
+            "https://example.com/v1/chat/completions",
+        ],
+        secret_values=["fresh-secret", "llm-secret"],
+    )
+
+    report = run_openclaw_onboard_v2(
+        code_root=repo,
+        openclaw_home=openclaw_home,
+        prompter=prompter,
+    )
+
+    assert report.ok is True
+    assert seen_preflight_env["MAIL_ADDRESS"] == "user@example.com"
+    assert seen_preflight_env["IMAP_LOGIN"] == "user@example.com"
+    assert seen_preflight_env["SMTP_LOGIN"] == "user@example.com"
+
+
 def test_run_openclaw_onboard_v2_starts_detection_progress_before_mailbox_auto_detect(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
