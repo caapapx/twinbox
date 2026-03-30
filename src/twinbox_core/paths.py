@@ -84,6 +84,28 @@ def _configured_root_candidate(
     return ""
 
 
+def _is_twinbox_code_root(p: Path) -> bool:
+    """True if *p* looks like a Twinbox git checkout or a vendor bundle root."""
+    io = p / "integrations" / "openclaw"
+    if not io.is_dir():
+        return False
+    return (p / "src" / "twinbox_core").is_dir() or (p / "twinbox_core").is_dir()
+
+
+def _ascend_to_twinbox_code_root(start: Path) -> Path:
+    """If *start* is inside a Twinbox repo (e.g. ``cmd/twinbox-go``), return the repo root."""
+    resolved = start.resolve()
+    cur = resolved
+    for _ in range(32):
+        if _is_twinbox_code_root(cur):
+            return cur
+        parent = cur.parent
+        if parent == cur:
+            break
+        cur = parent
+    return resolved
+
+
 def resolve_code_root(
     default_code_root: str | os.PathLike[str],
     env: dict[str, str] | None = None,
@@ -91,6 +113,7 @@ def resolve_code_root(
     if env is None:
         env = os.environ
     resolved_default = resolve_existing_dir(default_code_root)
+    resolved_default = _ascend_to_twinbox_code_root(resolved_default)
     candidate = _configured_root_candidate(
         env=env,
         env_names=("TWINBOX_CODE_ROOT",),

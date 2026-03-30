@@ -76,6 +76,22 @@ class PathsTest(unittest.TestCase):
 
             self.assertEqual(resolved, configured.resolve())
 
+    def test_resolve_code_root_ascends_from_nested_repo_dir(self) -> None:
+        """CWD under cmd/twinbox-go must not become the code root (fragment path)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "twinbox"
+            (repo / "integrations" / "openclaw").mkdir(parents=True)
+            (repo / "src" / "twinbox_core").mkdir(parents=True)
+            go_dir = repo / "cmd" / "twinbox-go"
+            go_dir.mkdir(parents=True)
+
+            resolved = resolve_code_root(
+                go_dir,
+                env={},
+            )
+
+            self.assertEqual(resolved, repo.resolve())
+
     def test_resolve_state_root_prefers_new_env_override(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
