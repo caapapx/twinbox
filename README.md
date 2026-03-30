@@ -232,12 +232,10 @@ See the CLI doc for more (`task progress`, `task mailbox-status`, ...).
 
 | Command | Purpose |
 | --- | --- |
-| `twinbox daemon start` | start daemon (default: **no** supervisor) |
-| `twinbox daemon start --supervise` | optional: lightweight supervisor restarts daemon after unexpected exit |
+| `twinbox daemon start` | start daemon |
 | `twinbox daemon stop` | stop |
-| `twinbox daemon restart` | restart (default: no supervisor unless you pass `--supervise`) |
-| `twinbox daemon restart --supervise` | restart under supervision |
-| `twinbox daemon status --json` | state (includes supervised mode if you used `--supervise`) |
+| `twinbox daemon restart` | restart |
+| `twinbox daemon status --json` | machine-readable status (includes `cache_stats` when running) |
 
 #### 6. Delivery and vendor sync
 
@@ -302,7 +300,7 @@ On a typical OpenClaw host, the state root looks roughly like this (`#` comments
 ├── run/
 │   ├── daemon.sock                 # local JSON-RPC daemon
 │   ├── daemon.pid
-│   └── daemon-supervisor.pid       # supervisor when using --supervise
+│   └── daemon-supervisor.pid       # legacy; removed after `daemon stop` if left from older installs
 ├── logs/
 │   └── daemon.log
 └── vendor/                         # runtime from install --archive / vendor install
@@ -345,7 +343,7 @@ A: Use [ROADMAP.md](ROADMAP.md). The short summary below is only for quick scann
 - [ ] clean-host OpenClaw run through `twinbox onboard openclaw`
 - [ ] scripted host path: `twinbox deploy openclaw` + rollback + upgrade refresh
 - [ ] vendor / no-clone host path: `twinbox install --archive ...` or `twinbox vendor install`
-- [ ] real-host daemon smoke: `twinbox daemon start --supervise` + status/stop + `twinbox task ...`
+- [ ] real-host daemon smoke: `twinbox daemon start` + status/stop + `twinbox task ...`
 
 **Next backlog themes**
 

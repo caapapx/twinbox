@@ -82,7 +82,7 @@ func skipDaemonStartRPC(argv []string) bool {
 	return argv[i+1] == "start"
 }
 
-// daemonStartArgv returns profile prefix + "daemon", "start" for lazy autostart (no --supervise).
+// daemonStartArgv returns profile prefix + "daemon", "start" for lazy autostart.
 func daemonStartArgv(original []string) []string {
 	i := 0
 	var pref []string

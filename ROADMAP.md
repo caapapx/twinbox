@@ -30,7 +30,7 @@
 - **Phase 4 / prompts：** loading 修复、`recipient_role` 打分与展示分离、真实的 `--dry-run`、calibration 与 onboarding notes 进 context（`024ea99` 及相关）。
 - **Onboarding / config：** OpenClaw journey shell、从 OpenClaw 导入 LLM、单一配置源、TTY/journey 与 secret 遮罩。
 - **OpenClaw deploy：** 分步模块、JSON merge 辅助、deploy 测试、捆绑 Himalaya、state root 下 canonical `SKILL.md`、链到 OpenClaw skills 目录的 symlink。
-- **Runtime：** JSON-RPC daemon + 协议测试、`--supervise` 自动拉起、可注入的 `cli_invoke` CLI runner、`twinbox vendor install|status|integrity`、`twinbox install --archive`（本地/HTTP）、用户交付命令默认名为 `twinbox`、`--profile` + `TWINBOX_HOME` 共享 vendor。
+- **Runtime：** JSON-RPC daemon + 协议测试、可注入的 `cli_invoke` CLI runner、`twinbox vendor install|status|integrity`、`twinbox install --archive`（本地/HTTP）、用户交付命令默认名为 `twinbox`、`--profile` + `TWINBOX_HOME` 共享 vendor。
 - **Orchestration：** Phase 1/4 loading 编排进 Python；`task_cli` lazy import 以加快 daemon 子进程。
 - **增量邮件（计划结案）：** `imap_incremental`、`merge_context`、`user_queue_state`、`daytime-sync` 路径、queue dismiss/complete/restore + tests — 按 2026-03-26 实施计划状态。
 - **运行时验证入口：** `scripts/verify_runtime_slice.sh` 已覆盖 daemon / vendor / loading / OpenClaw deploy / Go entrypoint 的仓库内回归检查。
@@ -60,7 +60,7 @@
 | **OpenClaw 宿主全流程手测** | 从干净宿主按 `twinbox onboard openclaw --json` 走完：门槛检查、roots、SKILL 同步、Gateway 重启、交接到 `twinbox onboarding …`。 |
 | **宿主脚本化替代路径** | `twinbox deploy openclaw --json`、`--rollback --json`、升级后再次 deploy 的手测闭环。 |
 | **vendor / no-clone 交付路径** | 用 `twinbox install --archive …` 或 `twinbox vendor install` 验证无完整仓库 checkout 时仍可运行。 |
-| **daemon / CLI 真实宿主烟测** | `twinbox daemon start --supervise`、`status --json`、`stop`，以及 `twinbox task todo --json` / `weekly --json` 的宿主实测。 |
+| **daemon / CLI 真实宿主烟测** | `twinbox daemon start`、`status --json`、`stop`，以及 `twinbox task todo --json` / `weekly --json` 的宿主实测。 |
 | **平台真实行为核实** | 若本轮要对外承诺 OpenClaw 自动能力，需在真实版本核实 `preflightCommand` 与 `metadata.openclaw.schedules` 的实际消费方式。 |
 
 ### 发布后 backlog（非本轮上线阻塞）

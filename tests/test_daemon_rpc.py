@@ -14,8 +14,8 @@ from pathlib import Path
 import pytest
 
 from twinbox_core.daemon import TWINBOX_PROTOCOL_VERSION
-from twinbox_core.daemon.layout import pid_path, socket_path, supervisor_pid_path
-from twinbox_core.daemon.lifecycle import cmd_stop, daemon_reachable, main_daemon_subcommand, rpc_call
+from twinbox_core.daemon.layout import pid_path, socket_path
+from twinbox_core.daemon.lifecycle import cmd_stop, main_daemon_subcommand, rpc_call
 
 
 def _env_with_state_root(tmp: Path) -> dict[str, str]:
@@ -130,42 +130,6 @@ def test_daemon_restart(state_root: Path) -> None:
     try:
         pid2 = int(pid_path(state_root).read_text().strip())
         assert pid1 != pid2
-    finally:
-        _run_cli(["daemon", "stop"], state_root, check=False)
-
-
-def test_supervised_daemon_restarts_child(state_root: Path) -> None:
-    r = _run_cli(["daemon", "start", "--supervise"], state_root, check=False)
-    assert r.returncode == 0, r.stderr
-    sup_raw = supervisor_pid_path(state_root).read_text().strip()
-    assert sup_raw.isdigit()
-    pid1 = int(pid_path(state_root).read_text().strip())
-    os.kill(pid1, signal.SIGKILL)
-    deadline = time.monotonic() + 10.0
-    pid2 = pid1
-    while time.monotonic() < deadline:
-        raw = pid_path(state_root).read_text().strip() if pid_path(state_root).exists() else ""
-        if raw.isdigit() and int(raw) != pid1 and daemon_reachable(state_root):
-            pid2 = int(raw)
-            break
-        time.sleep(0.1)
-    try:
-        assert pid2 != pid1
-    finally:
-        _run_cli(["daemon", "stop"], state_root, check=False)
-    assert not supervisor_pid_path(state_root).exists()
-
-
-def test_supervised_status_json_includes_supervisor_metadata(state_root: Path) -> None:
-    r = _run_cli(["daemon", "start", "--supervise"], state_root, check=False)
-    assert r.returncode == 0, r.stderr
-    try:
-        status = _run_cli(["daemon", "status", "--json"], state_root, check=False)
-        assert status.returncode == 0, status.stderr
-        payload = json.loads(status.stdout)
-        assert payload["status"] == "running"
-        assert payload["supervised"] is True
-        assert isinstance(payload["supervisor_pid"], int)
     finally:
         _run_cli(["daemon", "stop"], state_root, check=False)
 

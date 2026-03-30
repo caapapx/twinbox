@@ -44,7 +44,7 @@ func TestSkipDaemonStartRPC(t *testing.T) {
 	if !skipDaemonStartRPC([]string{"daemon", "start"}) {
 		t.Fatal("want skip daemon start")
 	}
-	if !skipDaemonStartRPC([]string{"--profile", "w", "daemon", "start", "--supervise"}) {
+	if !skipDaemonStartRPC([]string{"--profile", "w", "daemon", "start"}) {
 		t.Fatal("want skip profile daemon start")
 	}
 	if skipDaemonStartRPC([]string{"daemon", "status"}) {

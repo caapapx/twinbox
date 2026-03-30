@@ -57,7 +57,7 @@ On stacks where generic `exec` often drops payloads (`xfyun-mass` / `astron-code
 
 ## Full uninstall (CLI, state, env)
 
-**Not** the same as `deploy openclaw --rollback` (that keeps `~/.twinbox` and any `twinbox` on `PATH`). Do this **while `twinbox` still runs**: `daemon stop` (if supervised, follow `daemon status --json`) → `deploy openclaw --rollback [--remove-config]` → `host bridge remove` / `schedule disable JOB` if still needed.
+**Not** the same as `deploy openclaw --rollback` (that keeps `~/.twinbox` and any `twinbox` on `PATH`). Do this **while `twinbox` still runs**: `daemon stop` → `deploy openclaw --rollback [--remove-config]` → `host bridge remove` / `schedule disable JOB` if still needed.
 
 **Binaries:** `pip uninstall -y twinbox-core` (removes `twinbox`, `twinbox-orchestrate`, `twinbox-eval-phase4`); delete any other `twinbox` on `PATH` (e.g. `~/.local/bin`, `/usr/local/bin`); optional repo junk: `dist/twinbox*`, `cmd/twinbox-go/twinbox`.
 
@@ -108,7 +108,7 @@ Reading this file is step 0 only. The turn is **not complete** until you have ex
 | Check onboarding progress | `twinbox onboarding status --json`（人类可读输出会以 “Phase 2 of 2” 继续旅程） |
 | Advance onboarding to next stage | `twinbox onboarding next --json`（人类可读输出会以 “Phase 2 of 2” 继续旅程） |
 | User已用自然语言答完当前阶段（画像 / 材料 / 规则 / 推送等） | 先简短确认，再 **`twinbox onboarding next --json`**（若是画像阶段，可加 `--profile-notes "用户画像摘要"`、`--calibration-notes "本周关注/忽略/重点摘要"`，以及在用户明确“CC 也是主要工作”时加 `--cc-downweight off`），然后根据 stdout 总结 `completed_stage`、`current_stage`、下一段 `prompt`（不可只调工具无正文） |
-| 后台 JSON-RPC daemon（省 Python 冷启动；可选） | **默认** `daemon start` / `onboard`·`deploy` 触发的拉起 **均不带** `--supervise`；只有需要「进程异常退出后由监督进程自动再起」时才显式加 `daemon start --supervise` 或 `restart --supervise`。`twinbox daemon status --json`（含 `cache_stats`；若曾用 supervise 则有 `supervised` / `supervisor_pid`）。Socket：`$TWINBOX_STATE_ROOT/run/daemon.sock`。Go：交付默认可为 `twinbox`（**dial 失败**时静默跑一次 **无 supervise 的** `daemon start` 再重试 RPC；`TWINBOX_NO_LAZY_DAEMON=1` 关闭）；仍失败则 `exec` Python；vendor 会校验 `MANIFEST.json`）；`twinbox install --archive …` 解压到 `vendor/` 并写 `code-root`（开发可用 `TWINBOX_CODE_ROOT` 覆盖） |
+| 后台 JSON-RPC daemon（省 Python 冷启动；可选） | `daemon start` / `onboard`·`deploy` 触发的拉起。`twinbox daemon status --json`（含 `cache_stats` 等）。Socket：`$TWINBOX_STATE_ROOT/run/daemon.sock`。Go：交付默认可为 `twinbox`（**dial 失败**时静默跑一次 `daemon start` 再重试 RPC；`TWINBOX_NO_LAZY_DAEMON=1` 关闭）；仍失败则 `exec` Python；vendor 会校验 `MANIFEST.json`）；`twinbox install --archive …` 解压到 `vendor/` 并写 `code-root`（开发可用 `TWINBOX_CODE_ROOT` 覆盖） |
 | 多邮箱 profile（共享 vendor、独立 state） | `twinbox --profile NAME …`（`TWINBOX_STATE_ROOT=~/.twinbox/profiles/NAME/state`，`TWINBOX_HOME=~/.twinbox`） |
 | Phase loading（Python 入口） | `twinbox loading phase1` … `phase4`（全部走 Python；`scripts/phase1_loading.sh` / `phase4_loading.sh` 仅保留兼容 shim，phase1/4 仍使用 himalaya CLI 传输） |
 | 把 `twinbox_core` 同步到 vendor（宿主 PYTHONPATH） | `twinbox vendor install`；`twinbox vendor status --json`（`integrity_ok` / `file_count`）。装好后：`PYTHONPATH="$TWINBOX_HOME/vendor"` 或 `…/state/vendor`（无 profile 时二者常相同）+ `python3 -m twinbox_core.task_cli …` |
