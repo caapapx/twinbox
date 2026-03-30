@@ -352,7 +352,8 @@ def test_run_openclaw_onboard_v2_console_prompter_prints_english_shell(
         lambda **_: OpenClawDeployReport(ok=True, steps=[], phase2_ready=True),
     )
     # Security defaults to No; must explicitly choose Yes (1 / continue) to proceed.
-    answers = iter(["continue", "", "", "1", "", ""])
+    # Twinbox tools integration also requires an explicit choice (no empty default).
+    answers = iter(["continue", "", "", "1", "", "", "1", ""])
     monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
 
     _ = run_openclaw_onboard_v2(

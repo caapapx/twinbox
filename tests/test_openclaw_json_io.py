@@ -11,6 +11,7 @@ from twinbox_core.openclaw_json_io import (
     load_openclaw_json,
     load_openclaw_json_with_file_ops,
     parse_openclaw_json_text,
+    resolve_integration_fragment_path,
 )
 
 
@@ -26,6 +27,24 @@ def test_default_openclaw_fragment_path_legacy_openclaw_skill(tmp_path: Path) ->
     legacy.parent.mkdir(parents=True)
     legacy.write_text("{}", encoding="utf-8")
     assert default_openclaw_fragment_path(tmp_path) == legacy
+
+
+def test_resolve_integration_fragment_path_ignores_stale_saved_path(tmp_path: Path) -> None:
+    preferred = tmp_path / "integrations" / "openclaw" / "openclaw.fragment.json"
+    preferred.parent.mkdir(parents=True)
+    preferred.write_text("{}", encoding="utf-8")
+    stale = tmp_path / "cmd" / "twinbox-go" / "openclaw-skill" / "openclaw.fragment.json"
+    integration = {"fragment_path": str(stale)}
+    assert resolve_integration_fragment_path(tmp_path, integration) == preferred
+
+
+def test_resolve_integration_fragment_path_keeps_existing_saved_file(tmp_path: Path) -> None:
+    custom = tmp_path / "my" / "fragment.json"
+    custom.parent.mkdir(parents=True)
+    custom.write_text("{}", encoding="utf-8")
+    (tmp_path / "integrations" / "openclaw").mkdir(parents=True)
+    integration = {"fragment_path": str(custom)}
+    assert resolve_integration_fragment_path(tmp_path, integration) == custom
 
 
 def test_default_openclaw_fragment_path_prefers_new_when_both_exist(tmp_path: Path) -> None:

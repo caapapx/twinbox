@@ -23,6 +23,26 @@ def default_openclaw_fragment_path(code_root: Path) -> Path:
     return preferred
 
 
+def resolve_integration_fragment_path(
+    resolved_code_root: Path,
+    integration_defaults: dict[str, Any],
+) -> Path:
+    """Fragment path for onboarding / deploy: saved config only if that file exists.
+
+    ``twinbox.json`` may still list a stale ``fragment_path`` (e.g. old ``openclaw-skill/`` or
+    a wrong directory after moving the repo). If the saved path is not a regular file, use
+    :func:`default_openclaw_fragment_path` so the wizard shows the real expected location.
+    """
+    canonical = default_openclaw_fragment_path(resolved_code_root)
+    raw = integration_defaults.get("fragment_path", "")
+    if not raw:
+        return canonical
+    saved = Path(str(raw)).expanduser()
+    if saved.is_file():
+        return saved
+    return canonical
+
+
 def parse_openclaw_json_text(path: Path, text: str) -> dict[str, Any]:
     try:
         data = json.loads(text)
