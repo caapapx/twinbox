@@ -285,7 +285,8 @@ export function registerTwinboxTaskTools(api) {
 
   api.registerTool({
     name: "twinbox_rule_add",
-    description: "Add or update a semantic routing rule. The rule_json should be a valid JSON string matching the RoutingRule schema.",
+    description:
+      "Add or update a semantic routing rule (rule_json = full rule object JSON). During onboarding current_stage=routing_rules: when the user states a filter in natural language, call this in the SAME turn you parse it, then twinbox_onboarding_advance — do not stop with empty text. If they say skip/跳过 with no rule, call onboarding_advance only. See repo config/routing-rules.yaml for shape. After tool returns, MUST output visible summary.",
     parameters: Type.Object({
       rule_json: Type.String({ description: "Rule definition in JSON format" }),
     }),
@@ -424,7 +425,7 @@ export function registerTwinboxTaskTools(api) {
   api.registerTool({
     name: "twinbox_onboarding_advance",
     description:
-      "REQUIRED when profile_setup is answered in chat: call in the SAME turn as you parse their reply (do not wait for the user to name this tool). Pass profile_notes and calibration_notes as concise summaries of what they said; optional cc_downweight on|off if they stated CC preference. Runs: twinbox openclaw onboarding-advance. After this tool returns you MUST output visible text: completed_stage, current_stage, next prompt — tool-only turns fail on weak models (empty bubble).",
+      "Advance onboarding after the user finished the current stage in chat. profile_setup: SAME turn as their answer — pass profile_notes, calibration_notes; optional cc_downweight. routing_rules: SAME turn after twinbox_rule_add (or alone if user skipped rules). Other stages: call when stage work is done. Runs: twinbox openclaw onboarding-advance. After this tool returns you MUST output visible text: completed_stage, current_stage, next prompt — never tool-only (empty bubble).",
     parameters: Type.Object({
       profile_notes: Type.Optional(Type.String({ description: "Notes for profile_setup stage" })),
       calibration_notes: Type.Optional(Type.String({ description: "Weekly focus / ignore guidance" })),
