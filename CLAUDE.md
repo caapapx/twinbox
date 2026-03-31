@@ -15,7 +15,7 @@ twinbox 是以线程为中心的邮件 Copilot 基础设施。核心路径：rea
 | 当前实现切片（daemon / Go / 模拟邮箱） | `docs/ref/daemon-and-runtime-slice.md` |
 | CLI | `docs/ref/cli.md` |
 | 路线与待办 | `ROADMAP.md` |
-| 参考 / 指南 / 脚本 | `docs/ref/`、`docs/guide/`、`scripts/*.sh` |
+| 参考 / 脚本 | `docs/ref/`、`scripts/*.sh` |
 
 ## 开发约束（摘要）
 
