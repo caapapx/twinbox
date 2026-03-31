@@ -48,5 +48,13 @@ state.json
 # OpenClaw plugin (install deps locally; lockfile is committed slim)
 integrations/openclaw/plugin-twinbox-task/node_modules/
 
+# Local Twinbox state root, vendored unpack, and Go build output (see AGENTS.md)
+.twinbox
+vendor/
+dist/
+
+# Local scratch notes at repo root (may contain links or secrets)
+/issue.md
+
 # Host-specific OpenClaw JSON fragment (copy from openclaw.fragment.example.json)
 integrations/openclaw/openclaw.fragment.json
