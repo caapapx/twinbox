@@ -19,7 +19,7 @@
 - [`../integrations/openclaw/`](../integrations/openclaw/README.md): OpenClaw 托管 skill、部署与宿主桥接（仓库根目录）；正式部署步骤见 [`../integrations/openclaw/DEPLOY.md`](../integrations/openclaw/DEPLOY.md)；排障见 [`../integrations/openclaw/TROUBLESHOOT.md`](../integrations/openclaw/TROUBLESHOOT.md)；附录见 [`../integrations/openclaw/DEPLOY-APPENDIX.md`](../integrations/openclaw/DEPLOY-APPENDIX.md)
 - [`ref/openclaw-deploy-model.md`](./ref/openclaw-deploy-model.md): OpenClaw 三层分工设计模型与数据流（配合 DEPLOY.md 操作路径阅读）
 - [`validation/`](./validation/README.md): 本地验证工件，路径保持不变
-- [`assets/`](./assets/README.md): 文档配图
+- [`assets/`](./assets/README.md): 文档配图；Beta 案例稿见 [`how-to-make-twinbox/twinbox-beta-case-study.zh.md`](./how-to-make-twinbox/twinbox-beta-case-study.zh.md)
 - [`troubleshooting/session-pollution.md`](./troubleshooting/session-pollution.md): 会话污染说明入口（正文在仓库根 [`BUGFIX.md`](../BUGFIX.md)）
 
 ## Rules
