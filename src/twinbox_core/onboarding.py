@@ -136,10 +136,11 @@ STAGE_PROMPTS = {
     ),
     "material_import": (
         "Phase 2 of 2 · 上下文材料导入\n"
-        "继续完成 Twinbox onboarding。您可以上传项目文档、团队信息等材料，帮助我理解业务背景。\n"
-        "如果您希望周报按特定格式输出，请先展示默认周报模板 `config/weekly-template.md`，再询问用户是否要调整标题、章节顺序或措辞。\n"
-        "用户只需用自然语言描述想改什么；agent 应协助生成新的 Markdown 模板，并通过 "
-        "`twinbox context import-material FILE --intent template_hint` 导入，使后续 weekly digest 自动跟随。"
+        "继续完成 Twinbox onboarding。推荐在 `twinbox onboard openclaw`（Phase 1）里用 TTY 粘贴大块参考文本（不回显全文），"
+        "或执行 `twinbox context import-material --stdin --label STEM --intent reference` 从管道/粘贴写入材料。\n"
+        "若仍在对话中补充：用户可粘贴 Markdown / 纯文本（含从 Excel 复制的表格文本）；无需在本机解析二进制表格。\n"
+        "周报模板：先展示 `config/weekly-template.md`，再按需生成 Markdown 并用 "
+        "`twinbox context import-material FILE --intent template_hint`（或 `--stdin`）导入。"
     ),
     "routing_rules": (
         "Phase 2 of 2 · 邮件过滤规则\n"

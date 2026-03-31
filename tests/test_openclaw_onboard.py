@@ -128,12 +128,14 @@ class _FakePrompter:
         confirm_values: list[bool] | None = None,
         text_values: list[str] | None = None,
         secret_values: list[str] | None = None,
+        paste_values: list[str] | None = None,
     ) -> None:
         self.flow = flow
         self.select_values = list(select_values or [])
         self.confirm_values = list(confirm_values or [])
         self.text_values = list(text_values or [])
         self.secret_values = list(secret_values or [])
+        self.paste_values = list(paste_values) if paste_values is not None else ["", "", ""]
         self.events: list[tuple[str, object]] = []
 
     def intro(self, text: str) -> None:
@@ -187,6 +189,18 @@ class _FakePrompter:
         if self.text_values:
             return self.text_values.pop(0)
         return default or ""
+
+    def paste_block(
+        self,
+        title: str,
+        *,
+        end_marker: str = ".",
+        hint: str | None = None,
+    ) -> str:
+        self.events.append(("paste_block", {"title": title, "end_marker": end_marker, "hint": hint}))
+        if self.paste_values:
+            return self.paste_values.pop(0)
+        return ""
 
     def secret(self, prompt: str, *, allow_empty: bool = False) -> str:
         self.events.append(("secret", {"prompt": prompt, "allow_empty": allow_empty}))
@@ -252,6 +266,7 @@ def test_run_openclaw_onboard_console_prompter_prints_english_shell(
     _ = run_openclaw_onboard(
         code_root=repo,
         openclaw_home=openclaw_home,
+        skip_tty_context_bundle=True,
     )
     out = capsys.readouterr().out
 
@@ -670,6 +685,7 @@ def test_run_openclaw_onboard_requires_explicit_steps_even_with_existing_values(
         code_root=repo,
         openclaw_home=openclaw_home,
         prompter=prompter,
+        skip_tty_context_bundle=True,
     )
 
     assert report.ok is True
@@ -751,6 +767,7 @@ def test_run_openclaw_onboard_reads_existing_values_from_twinbox_json(
         code_root=repo,
         openclaw_home=openclaw_home,
         prompter=prompter,
+        skip_tty_context_bundle=True,
     )
 
     assert report.ok is True
@@ -804,6 +821,7 @@ def test_run_openclaw_onboard_collects_llm_inputs_before_validation_progress(
         code_root=repo,
         openclaw_home=openclaw_home,
         prompter=prompter,
+        skip_tty_context_bundle=True,
     )
 
     assert report.ok is True
@@ -878,6 +896,7 @@ def test_run_openclaw_onboard_collects_mailbox_inputs_before_validation_progress
         code_root=repo,
         openclaw_home=openclaw_home,
         prompter=prompter,
+        skip_tty_context_bundle=True,
     )
 
     assert report.ok is True
@@ -960,6 +979,7 @@ def test_run_openclaw_onboard_uses_updated_mailbox_secret_for_preflight(
         code_root=repo,
         openclaw_home=openclaw_home,
         prompter=prompter,
+        skip_tty_context_bundle=True,
     )
 
     assert report.ok is True
@@ -1049,6 +1069,7 @@ def test_run_openclaw_onboard_auto_update_resets_login_when_email_changes(
         code_root=repo,
         openclaw_home=openclaw_home,
         prompter=prompter,
+        skip_tty_context_bundle=True,
     )
 
     assert report.ok is True
@@ -1102,6 +1123,7 @@ def test_run_openclaw_onboard_starts_detection_progress_before_mailbox_auto_dete
         code_root=repo,
         openclaw_home=openclaw_home,
         prompter=prompter,
+        skip_tty_context_bundle=True,
     )
 
     assert report.ok is True
@@ -1170,6 +1192,7 @@ def test_run_openclaw_onboard_times_out_llm_validation(
         prompter=prompter,
         llm_update_runner=slow_llm_update_runner,
         llm_validation_timeout_seconds=0.01,
+        skip_tty_context_bundle=True,
     )
 
     assert report.ok is False
@@ -1236,6 +1259,7 @@ def test_run_openclaw_onboard_llm_validation_failure_returns_to_llm_menu(
         openclaw_home=openclaw_home,
         prompter=prompter,
         llm_update_runner=failing_llm_update_runner,
+        skip_tty_context_bundle=True,
     )
 
     assert report.ok is False
@@ -1298,6 +1322,7 @@ def test_run_openclaw_onboard_times_out_mailbox_validation(
         prompter=prompter,
         mailbox_apply_runner=slow_mailbox_apply_runner,
         mailbox_validation_timeout_seconds=0.01,
+        skip_tty_context_bundle=True,
     )
 
     assert report.ok is False
@@ -1359,6 +1384,7 @@ def test_run_openclaw_onboard_allows_llm_skip_and_returns_incomplete_handoff(
         code_root=repo,
         openclaw_home=openclaw_home,
         prompter=prompter,
+        skip_tty_context_bundle=True,
     )
 
     assert report.ok is False
@@ -1431,6 +1457,7 @@ def test_run_openclaw_onboard_hides_use_current_llm_when_only_api_key_exists(
         code_root=repo,
         openclaw_home=openclaw_home,
         prompter=prompter,
+        skip_tty_context_bundle=True,
     )
 
     llm_select = next(
@@ -1522,6 +1549,7 @@ def test_run_openclaw_onboard_journey_imports_llm_from_openclaw_json(
         openclaw_home=openclaw_home,
         prompter=prompter,
         llm_update_runner=capture_llm_runner,
+        skip_tty_context_bundle=True,
     )
 
     assert report.ok is True
@@ -1573,6 +1601,7 @@ def test_run_openclaw_onboard_journey_openclaw_import_error_returns_to_llm_menu(
         code_root=repo,
         openclaw_home=openclaw_home,
         prompter=prompter,
+        skip_tty_context_bundle=True,
     )
 
     assert report.ok is False
@@ -1634,6 +1663,7 @@ def test_run_openclaw_onboard_validates_existing_llm_before_continue(
         code_root=repo,
         openclaw_home=openclaw_home,
         prompter=prompter,
+        skip_tty_context_bundle=True,
     )
 
     assert report.ok is True
@@ -1686,6 +1716,7 @@ def test_run_openclaw_onboard_stops_when_existing_llm_validation_fails(
         code_root=repo,
         openclaw_home=openclaw_home,
         prompter=prompter,
+        skip_tty_context_bundle=True,
     )
 
     assert report.ok is False
@@ -1699,6 +1730,66 @@ def test_run_openclaw_onboard_stops_when_existing_llm_validation_fails(
     )
     recovery_bodies = [e[1]["body"] for e in prompter.events if e[0] == "note" and e[1]["title"] == "Recovery"]
     assert any("existing llm config is invalid" in body.lower() for body in recovery_bodies)
+
+
+def test_run_openclaw_onboard_tty_context_bundle_saves_profile_and_material(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    _write_ready_env(state_root)
+    _write_ready_twinbox_config(state_root)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
+    (repo / "integrations" / "openclaw").mkdir(parents=True)
+    (repo / "integrations" / "openclaw" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    openclaw_home = tmp_path / ".openclaw"
+    openclaw_home.mkdir()
+
+    monkeypatch.setenv("TWINBOX_STATE_ROOT", str(state_root))
+    monkeypatch.setenv("TWINBOX_CODE_ROOT", str(repo))
+    monkeypatch.setattr("twinbox_core.openclaw_onboard.shutil.which", lambda _bin: "/usr/bin/openclaw")
+    monkeypatch.setattr("twinbox_core.mailbox.run_preflight", _fake_run_preflight)
+    monkeypatch.setattr("twinbox_core.llm.validate_backend", lambda _backend: (True, ""))
+    monkeypatch.setattr(
+        "twinbox_core.openclaw_onboard.run_openclaw_deploy",
+        lambda **_: OpenClawDeployReport(ok=True, steps=[], phase2_ready=True),
+    )
+
+    prompter = _FakePrompter(
+        select_values=[
+            "continue",
+            "quickstart",
+            "use_existing",
+            "use_existing",
+            "no",
+            "reference",
+            "yes",
+            "apply",
+        ],
+        paste_values=["PM role", "prioritize invoices", "ref line one"],
+        text_values=["myref"],
+    )
+
+    report = run_openclaw_onboard(
+        code_root=repo,
+        openclaw_home=openclaw_home,
+        prompter=prompter,
+        skip_tty_context_bundle=False,
+    )
+    assert report.ok is True
+    hc = (state_root / "runtime" / "context" / "human-context.yaml").read_text(encoding="utf-8")
+    assert "PM role" in hc
+    assert "prioritize invoices" in hc
+    mat_dir = state_root / "runtime" / "context" / "material-extracts"
+    assert any(p.suffix == ".md" for p in mat_dir.iterdir())
+    from twinbox_core.onboarding import load_state
+
+    st = load_state(state_root)
+    assert "profile_setup" in st.completed_stages
+    assert "material_import" in st.completed_stages
 
 
 def test_run_openclaw_onboard_ctrl_c_returns_cancelled_report(
@@ -1727,6 +1818,7 @@ def test_run_openclaw_onboard_ctrl_c_returns_cancelled_report(
         code_root=repo,
         openclaw_home=openclaw_home,
         prompter=prompter,
+        skip_tty_context_bundle=True,
     )
 
     assert report.ok is False

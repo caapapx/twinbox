@@ -1177,15 +1177,34 @@ def cmd_context_import_material(args: argparse.Namespace) -> int:
     materials_dir = canonical_root / "runtime" / "context" / "material-extracts"
     materials_dir.mkdir(parents=True, exist_ok=True)
 
-    source_path = Path(args.source).expanduser()
-    if not source_path.exists():
-        print(f"错误: 源文件不存在: {args.source}", file=sys.stderr)
+    import shutil
+    from datetime import datetime
+
+    if not getattr(args, "stdin", False) and not (args.source or "").strip():
+        print("错误: 请提供 SOURCE 路径，或使用 --stdin", file=sys.stderr)
         return 1
 
-    # Copy material to materials directory
-    import shutil
-    dest_path = materials_dir / source_path.name
-    shutil.copy2(source_path, dest_path)
+    if getattr(args, "stdin", False):
+        body = sys.stdin.read()
+        if not body.strip():
+            print("错误: stdin 为空", file=sys.stderr)
+            return 1
+        stem = (getattr(args, "label", None) or "stdin-paste").strip() or "stdin-paste"
+        safe = "".join(c if c.isalnum() or c in "._-" else "-" for c in stem).strip("-") or "stdin-paste"
+        filename = f"{safe}.md"
+        dest_path = materials_dir / filename
+        if dest_path.exists():
+            filename = f"{safe}-{datetime.now().strftime('%H%M%S')}.md"
+            dest_path = materials_dir / filename
+        dest_path.write_text(body, encoding="utf-8")
+        source_path = dest_path
+    else:
+        source_path = Path(args.source).expanduser()
+        if not source_path.exists():
+            print(f"错误: 源文件不存在: {args.source}", file=sys.stderr)
+            return 1
+        dest_path = materials_dir / source_path.name
+        shutil.copy2(source_path, dest_path)
 
     # Update material-manifest.json
     manifest_path = canonical_root / "runtime" / "context" / "material-manifest.json"
@@ -1193,33 +1212,34 @@ def cmd_context_import_material(args: argparse.Namespace) -> int:
     if manifest_path.exists():
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
-    from datetime import datetime
     manifest["generated_at"] = datetime.now().isoformat()
 
     # Update or append material entry
     materials = manifest.setdefault("materials", [])
-    existing = next((m for m in materials if m.get("filename") == source_path.name), None)
+    src_label = str(source_path.name)
+    existing = next((m for m in materials if m.get("filename") == src_label), None)
+    source_ref = "stdin" if getattr(args, "stdin", False) else str(source_path)
     if existing:
         existing["imported_at"] = datetime.now().isoformat()
-        existing["source"] = str(source_path)
+        existing["source"] = source_ref
         existing["intent"] = args.intent
     else:
         materials.append({
-            "filename": source_path.name,
+            "filename": src_label,
             "imported_at": datetime.now().isoformat(),
-            "source": str(source_path),
+            "source": source_ref,
             "intent": args.intent,
         })
 
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-    print(f"已导入材料: {source_path.name} -> {dest_path}")
+    print(f"已导入材料: {src_label} -> {dest_path}")
     print(f"更新清单: {manifest_path}")
 
     try:
         from .material_extract import MaterialExtractError, write_extract_for_import
 
-        extract_path = write_extract_for_import(source_path, materials_dir)
+        extract_path = write_extract_for_import(dest_path, materials_dir)
     except MaterialExtractError as exc:
         print(f"错误: {exc}", file=sys.stderr)
         return 1
@@ -1949,6 +1969,7 @@ def _cmd_onboard_openclaw_journey(args: argparse.Namespace) -> int:
         openclaw_bin=args.openclaw_bin,
         skip_bridge=getattr(args, "skip_bridge", False),
         start_daemon=not getattr(args, "no_start_daemon", False),
+        skip_tty_context_bundle=getattr(args, "skip_tty_context_bundle", False),
     )
     if args.json:
         print(json.dumps(report.to_json_dict(), ensure_ascii=False, indent=2))
@@ -3514,7 +3535,17 @@ def _build_parser() -> argparse.ArgumentParser:
     context_sub = context_parser.add_subparsers(dest="context_command", required=True)
 
     import_mat = context_sub.add_parser("import-material", help="Import user material")
-    import_mat.add_argument("source", help="Source file path")
+    import_mat.add_argument("source", nargs="?", default="", help="Source file path (omit with --stdin)")
+    import_mat.add_argument(
+        "--stdin",
+        action="store_true",
+        help="Read material body from stdin (paste / pipe); writes .md under material-extracts",
+    )
+    import_mat.add_argument(
+        "--label",
+        default="",
+        help="With --stdin: filename stem (default stdin-paste)",
+    )
     import_mat.add_argument("--intent", default="reference", choices=["reference", "template_hint"], help="Material intent")
 
     material_parser = context_sub.add_parser("material", help="Material management")
@@ -3732,6 +3763,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--dry-run",
         action="store_true",
         help="Plan the onboarding flow without mutating files or restarting gateway",
+    )
+    onboard_oc.add_argument(
+        "--skip-tty-context-bundle",
+        action="store_true",
+        help="Skip optional TTY paste steps (profile/calibration/material) after LLM validate",
     )
     onboard_oc.add_argument(
         "--openclaw-bin",
