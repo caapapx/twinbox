@@ -192,7 +192,7 @@
 ## 实施优先级
 
 ### 立即执行（本周）
-1. ✅ 创建 `docs/troubleshooting/session-pollution.md`
+1. ✅ 会话污染与工具断链长文归档至仓库根 `BUGFIX.md`（`docs/troubleshooting/session-pollution.md` 为入口跳转）
 2. 重写 README.md Quick Start 部分
 3. 实现 `twinbox doctor` 基础版本
 

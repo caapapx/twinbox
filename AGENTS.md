@@ -14,6 +14,7 @@
 | docs/ref/ | 架构、契约、CLI、运行时参考 | 短名优先，如 `cli.md` |
 | docs/validation/ | 实例级验证报告（本地数据，不入公开发布） | `phase-N-report.md` |
 | docs/assets/ | 图片、静态资源 | 按需 |
+| （根目录） | **`BUGFIX.md`**：缺陷根因、修复记录与 fix 类提交时间线 | 个案长文与归档 |
 
 ## 核心文档入口
 
@@ -31,13 +32,14 @@
 - 编排契约：`docs/ref/orchestration.md`
 - 运行时规范：`docs/ref/runtime.md`
 - 语义规则引擎：`docs/ref/routing-rules.md`
+- 缺陷与问题解决记录（根因、缓解、相关提交、**fix 时间线附录**）：`BUGFIX.md`（仓库根）。**后续凡属「修 bug / 排错个案 / 回归分析」的长文，优先写入 `BUGFIX.md`**；OpenClaw 宿主**操作步骤**仍以 `integrations/openclaw/TROUBLESHOOT.md` 为主，本文档侧重「为何坏了、怎么修的、链到哪些 commit」。
 
 （原 `docs/archive/`、`docs/guide/` 目录已移除；旧版 Phase 报告与归档文如需可查 git 历史。）
 
 ## 协作约束
 
 1. 所有文档先看 `docs/README.md`，优先并入现有文件，不轻易新增目录或文件
-2. 新增文档前先检查是否有可合并的已有文档
+2. 新增文档前先检查是否有可合并的已有文档；**修 bug 类记录**默认写入根目录 `BUGFIX.md`（见上文「核心文档入口」），避免再增分散的 `issue*.md` / 重复 troubleshooting 长文
 3. validation/ 下的内容是实例数据，不应被方案文档引用为"事实"
 4. 文档内交叉引用使用相对路径
 5. **新增或移动**文档路径时，同步更新**可发现性**（至少一处，避免零索引）：

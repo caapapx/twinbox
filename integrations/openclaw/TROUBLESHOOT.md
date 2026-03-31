@@ -35,6 +35,8 @@
 
 Gateway 若提示 `plugins.allow is empty`，应在 OpenClaw 配置里 **显式 allow** `twinbox-task-tools`（或你的插件 id），避免非确定性加载。
 
+多轮会话后工具断链、空回复等**根因与归档**见仓库根 [BUGFIX.md](../../BUGFIX.md)。
+
 ### 1.6 探针：与 `twinbox_latest_mail` / 插件一致的真实命令（优先跑）
 
 以下顺序与插件行为一致，用于区分「模型复读」与「邮件链路真失败」。

@@ -20,6 +20,7 @@
 - [`ref/openclaw-deploy-model.md`](./ref/openclaw-deploy-model.md): OpenClaw 三层分工设计模型与数据流（配合 DEPLOY.md 操作路径阅读）
 - [`validation/`](./validation/README.md): 本地验证工件，路径保持不变
 - [`assets/`](./assets/README.md): 文档配图
+- [`troubleshooting/session-pollution.md`](./troubleshooting/session-pollution.md): 会话污染说明入口（正文在仓库根 [`BUGFIX.md`](../BUGFIX.md)）
 
 ## Rules
 
