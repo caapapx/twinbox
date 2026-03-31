@@ -1928,6 +1928,22 @@ class TestTaskRoutes:
         assert seen_kwargs["account_override"] == ""
 
 
+def test_onboard_without_subcommand_prints_usage(capsys):
+    assert main(["onboard"]) == 2
+    err = capsys.readouterr().err
+    assert "twinbox onboard openclaw" in err
+    assert "DEPLOY.md" in err
+
+
+def test_onboard_openclaw_missing_openclaw_cli_errors(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("TWINBOX_STATE_ROOT", str(tmp_path))
+    monkeypatch.setattr("twinbox_core.openclaw_onboard.shutil.which", lambda _bin: None)
+    assert main(["onboard", "openclaw"]) == 1
+    err = capsys.readouterr().err
+    assert "openclaw" in err.lower()
+    assert "DEPLOY.md" in err
+
+
 def test_task_cli_fresh_import_avoids_heavy_submodules() -> None:
     """Fresh interpreter: loading task_cli must not import mailbox / deploy / daytime_slice."""
     import os

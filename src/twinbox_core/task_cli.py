@@ -40,6 +40,16 @@ _BUILTIN_WEEKLY_TEMPLATE = """# 周报 · {{period}}
 _WEEKLY_TEMPLATE_PLACEHOLDER = re.compile(r"{{\s*([^}]+?)\s*}}")
 
 
+def _emit_cli_error(message: str) -> None:
+    """Write to stderr; mirror to stdout when stderr is not a TTY (some hosts only surface stdout)."""
+    text = message if message.endswith("\n") else message + "\n"
+    sys.stderr.write(text)
+    sys.stderr.flush()
+    if hasattr(sys.stderr, "isatty") and not sys.stderr.isatty():
+        sys.stdout.write(text)
+        sys.stdout.flush()
+
+
 @dataclass(frozen=True)
 class ThreadCard:
     """Thread card for queue display."""
@@ -1942,6 +1952,13 @@ def _cmd_onboard_openclaw_journey(args: argparse.Namespace) -> int:
     )
     if args.json:
         print(json.dumps(report.to_json_dict(), ensure_ascii=False, indent=2))
+    elif not report.ok:
+        from twinbox_core.openclaw_onboard import format_openclaw_onboard_report
+
+        if report.error:
+            _emit_cli_error(f"twinbox onboard openclaw: {report.error}")
+        else:
+            _emit_cli_error(format_openclaw_onboard_report(report).rstrip())
     return 0 if report.ok else 1
 
 
@@ -3695,7 +3712,7 @@ def _build_parser() -> argparse.ArgumentParser:
     dep_oc.add_argument("--json", action="store_true", help="Output as JSON")
 
     onboard_parser = subparsers.add_parser("onboard", help="Guided onboarding helpers")
-    onboard_sub = onboard_parser.add_subparsers(dest="onboard_command", required=True)
+    onboard_sub = onboard_parser.add_subparsers(dest="onboard_command", required=False)
 
     onboard_oc = onboard_sub.add_parser(
         "openclaw",
@@ -4082,6 +4099,14 @@ def main(argv: list[str] | None = None) -> int:
             if args.openclaw_command == "onboarding-confirm-push":
                 return cmd_openclaw_onboarding_confirm_push(args)
         elif args.command == "onboard":
+            if getattr(args, "onboard_command", None) is None:
+                _emit_cli_error(
+                    "twinbox onboard: missing subcommand.\n"
+                    "  Run: twinbox onboard openclaw\n\n"
+                    "That flow requires the OpenClaw CLI on your PATH (typically `openclaw`).\n"
+                    "See integrations/openclaw/DEPLOY.md for installation and gateway wiring."
+                )
+                return 2
             if args.onboard_command == "openclaw":
                 return cmd_onboard_openclaw(args)
         elif args.command == "onboarding":
