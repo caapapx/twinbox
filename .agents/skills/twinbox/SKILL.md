@@ -12,6 +12,7 @@ description: >-
   profile_setup：同回合 twinbox_onboarding_advance 并传 profile_notes 与 calibration_notes。
   其余场景（preflight、queue、todo、weekly、onboarding 等）同理：先工具后摘要。
   若 daytime-sync / latest-mail 工具返回 JSON 中已有失败步骤的 stderr：直接据此向用户说明，不要用 workspace 的 read 去读 ~/.twinbox 下路径；禁止以冒号结尾且不接执行（半轮停）。
+  新会话 bootstrap：优先 twinbox_onboarding_status（轻量）；未完成再 onboarding_start；可选 twinbox_latest_mail 做邮件全链路自检（更重）。
 metadata: {"openclaw":{"requires":{"env":["IMAP_HOST","IMAP_PORT","IMAP_LOGIN","IMAP_PASS","SMTP_HOST","SMTP_PORT","SMTP_LOGIN","SMTP_PASS","MAIL_ADDRESS"]},"primaryEnv":"IMAP_LOGIN","login":{"mode":"password-env","runtimeRequiredEnv":["IMAP_HOST","IMAP_PORT","IMAP_LOGIN","IMAP_PASS","SMTP_HOST","SMTP_PORT","SMTP_LOGIN","SMTP_PASS","MAIL_ADDRESS"],"optionalDefaults":{"MAIL_ACCOUNT_NAME":"myTwinbox","MAIL_DISPLAY_NAME":"{MAIL_ACCOUNT_NAME}","IMAP_ENCRYPTION":"tls","SMTP_ENCRYPTION":"tls"},"stages":["unconfigured","validated","mailbox-connected"],"preflightCommand":"twinbox mailbox preflight --json"}}}
 ---
 
@@ -27,7 +28,9 @@ Twinbox 邮件状态由 **OpenClaw 宿主上的 `twinbox` / `twinbox-orchestrate
 
 **如果 UI 在您回答 `profile_setup` 后无内容显示：** 阶段尚未推进——需要宿主运行 **`twinbox_onboarding_advance`**（插件）或 **`twinbox openclaw onboarding-advance --profile-notes "…" --calibration-notes "…"`**。发一条后续消息要求 agent 用您上一条回复的内容调用 **`twinbox_onboarding_advance`**，然后总结 JSON；或自行在 shell 中运行 CLI 并将 stdout 粘贴到聊天中。
 
-推荐宿主端变通方案：新建一个 **`twinbox` 会话**，先发一条 **bootstrap** 消息让 agent 读取 `~/.openclaw/skills/twinbox/SKILL.md` 并在同一回合运行对应的 `twinbox ... --json` 命令；若会话仍返回空内容，以宿主 shell `twinbox ... --json` 的输出作为机器可读验证的事实来源。优先使用原生插件工具；工具不可用时使用 bootstrap 路径。
+推荐宿主端变通方案：新建一个 **`twinbox` 会话**，先发一条 **bootstrap** 消息让 agent 读取 `~/.openclaw/skills/twinbox/SKILL.md` 并在**同一回合**调用工具或运行 CLI。**默认：** `twinbox_onboarding_status` / `twinbox onboarding status --json`（轻量）；未完成时再 `onboarding start`。**可选自检：** `twinbox_latest_mail`（重，会 daytime-sync）。若会话仍返回空内容，以宿主 shell `twinbox ... --json` 的输出为准。优先原生插件工具。
+
+**飞书 / Telegram 等收 digest：** 在该渠道会话让 agent 用 **`twinbox_onboarding_confirm_push(session_target=…)`** 或 **`twinbox push subscribe`** 绑到当前会话；TTY 成功 outro 第二段引文可复制。
 
 ## 回合契约
 

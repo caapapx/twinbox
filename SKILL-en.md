@@ -35,7 +35,9 @@ Known OpenClaw limitation (confirmed 2026-03-27 on some gateway-hosted models): 
 
 **If the UI shows nothing after you answered `profile_setup` in plain language:** the stage has **not** advanced until the host runs **`twinbox_onboarding_advance`** (plugin) or **`twinbox openclaw onboarding-advance --profile-notes "…" --calibration-notes "…"`** with your text. Send one follow-up message that tells the agent to run **`twinbox_onboarding_advance`** with `profile_notes` + `calibration_notes` copied from your previous reply, **then** summarize the JSON; or run the CLI yourself in a shell and paste stdout.
 
-Recommended hosted workaround: start a **fresh `twinbox` session**, send one **bootstrap** turn that tells the agent to read `~/.openclaw/skills/twinbox/SKILL.md` first and then run the exact `twinbox ... --json` command in the same turn, and treat host-shell `twinbox ... --json` output as the source of truth for machine-readable verification if the session still returns empty payloads. Prefer native plugin tools where they exist; use the bootstrap path when tools are unavailable.
+Recommended hosted workaround: start a **fresh `twinbox` session**, send one **bootstrap** turn: read `~/.openclaw/skills/twinbox/SKILL.md`, then in the **same** turn call **`twinbox_onboarding_status`** or run **`twinbox onboarding status --json`** (lightweight; after TTY onboard often `completed`). If not completed, call **`twinbox_onboarding_start`** / **`twinbox onboarding start --json`**. Optionally use **`twinbox_latest_mail`** first for a heavier mail-pipeline smoke test (daytime-sync). Treat host-shell `twinbox ... --json` as source of truth if payloads stay empty. Prefer native plugin tools.
+
+**Feishu / Telegram / other channels for digests:** in **that** session, ask the agent to bind push here using **`twinbox_onboarding_confirm_push`** with **`session_target`**, or **`twinbox push subscribe <session> --daily on --weekly on`**. The TTY wizard outro includes a second copy-paste line for this.
 
 ## Turn contract
 

@@ -290,16 +290,17 @@ twinbox onboarding status --json
 
 **引导流程**：
 
-1. 先开**新 session**，优先发一条 **bootstrap**：
+1. 先开**新 session**，优先发一条 **bootstrap**（`twinbox onboard openclaw` 成功后在 TTY outro 会给出可复制引文，含两段：会话引导 + 可选推送绑定）：
 
    ```text
-   请先读取 ~/.openclaw/skills/twinbox/SKILL.md，然后在本轮内立即直接运行：
-   twinbox onboarding start --json
-   不要只说“让我执行命令：”。
-   执行后只基于真实 stdout 返回 current_stage、prompt、next_action；若命令失败，贴 stderr。
+   请先读取 ~/.openclaw/skills/twinbox/SKILL.md，然后在本轮内立即调用 twinbox_onboarding_status
+   （或运行 twinbox onboarding status --json）。不要只说“让我执行命令：”。
+   若 current_stage 不是 completed，再调用 twinbox_onboarding_start / twinbox onboarding start --json。
+   可选：用 twinbox_latest_mail 做邮件链路自检（较重，会触发 daytime-sync）。
+   执行后只基于真实工具输出返回 current_stage、prompt；若失败，贴 stderr。
    ```
 
-2. 让 agent 执行 `twinbox onboarding start --json`，按返回 `prompt` 多轮对话收集信息；
+2. 若 `current_stage` 仍需对话阶段，按返回 `prompt` 多轮收集信息；若 TTY 已完成 onboarding，可转入日常 `latest-mail` / queue 等。
    需探测服务器时配合 `twinbox mailbox detect EMAIL --json`。
 3. 阶段推进：在 OpenClaw 内优先使用原生插件工具 `twinbox_onboarding_start` / `twinbox_onboarding_status` / `twinbox_onboarding_advance`；**push_subscription** 使用 `twinbox_onboarding_confirm_push`（事务性写订阅 + schedule ownership）。Shell 验收仍可用 `twinbox onboarding next --json` 等。
 4. 若 bootstrap 后仍出现空 `payloads`，直接在宿主 shell 执行 `twinbox openclaw onboarding-start` 等做验收，并把问题记录为 **OpenClaw model/tool-turn 限制**。

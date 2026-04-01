@@ -147,9 +147,20 @@ class _FakePrompter:
         *,
         paste_hint_label: str | None = None,
         paste_hint_quote: str | None = None,
+        paste_hint_label_2: str | None = None,
+        paste_hint_quote_2: str | None = None,
     ) -> None:
         self.events.append(
-            ("outro", {"text": text, "paste_hint_label": paste_hint_label, "paste_hint_quote": paste_hint_quote})
+            (
+                "outro",
+                {
+                    "text": text,
+                    "paste_hint_label": paste_hint_label,
+                    "paste_hint_quote": paste_hint_quote,
+                    "paste_hint_label_2": paste_hint_label_2,
+                    "paste_hint_quote_2": paste_hint_quote_2,
+                },
+            )
         )
 
     def cancel(self, summary_title: str, summary_value: str, message: str = "Setup cancelled.") -> None:
@@ -286,13 +297,12 @@ def test_run_openclaw_onboard_console_prompter_prints_english_shell(
     assert "Successfully completed host 🔗 wiring" in out
     assert "🔗" in out
     assert "🦞" in out
-    assert "onboarding start --json" in out
-    assert "Handoff — paste into a new twinbox session:" in out
+    assert "onboarding status --json" in out
+    assert "Handoff — paste into each OpenClaw session you use:" in out
+    assert "Optional — bind push to this channel:" in out
     plain = _strip_ansi(out)
-    assert (
-        '"Read ~/.openclaw/skills/twinbox/SKILL.md, then run twinbox onboarding start --json, and follow the prompt."'
-        in plain
-    )
+    assert "twinbox onboarding status --json" in plain
+    assert "twinbox_onboarding_confirm_push" in plain
 
 
 def test_console_journey_prompter_outro_handoff_quote_orange_italic_when_tty() -> None:
@@ -300,12 +310,15 @@ def test_console_journey_prompter_outro_handoff_quote_orange_italic_when_tty() -
     prompter = ConsoleJourneyPrompter(stream=stream)
     prompter.outro(
         "Main success line.",
-        paste_hint_label="Handoff — paste into a new twinbox session:",
-        paste_hint_quote="Read SKILL, run twinbox onboarding start --json.",
+        paste_hint_label="Handoff — paste into each OpenClaw session you use:",
+        paste_hint_quote="Read SKILL, run twinbox onboarding status --json.",
+        paste_hint_label_2="Optional — bind push to this channel:",
+        paste_hint_quote_2="Bind push here with twinbox_onboarding_confirm_push.",
     )
     out = stream.getvalue()
-    assert "\033[1;32mHandoff — paste into a new twinbox session:\033[0m" in out
-    assert '\033[1;3;38;5;208m"Read SKILL, run twinbox onboarding start --json."\033[0m' in out
+    assert "\033[1;32mHandoff — paste into each OpenClaw session you use:\033[0m" in out
+    assert '\033[1;3;38;5;208m"Read SKILL, run twinbox onboarding status --json."\033[0m' in out
+    assert "Optional — bind push to this channel:" in out
 
 
 def test_console_journey_prompter_select_shows_descriptions_and_reprompts() -> None:
@@ -725,7 +738,7 @@ def test_run_openclaw_onboard_requires_explicit_steps_even_with_existing_values(
         event[0] == "outro"
         and "twinbox agent" in event[1]["text"]
         and event[1].get("paste_hint_quote")
-        and "onboarding start --json" in event[1]["paste_hint_quote"]
+        and "onboarding status --json" in event[1]["paste_hint_quote"]
         and event[1].get("paste_hint_label")
         for event in prompter.events
     )
