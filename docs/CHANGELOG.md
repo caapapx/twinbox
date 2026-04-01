@@ -18,7 +18,7 @@
 ### Docs
 
 - **根入口收敛**：`README.md`、`README.zh.md`、`AGENTS.md`、`CLAUDE.md` 改为指向 `docs/README.md` 与新目录结构，不再继续维护旧 `docs/plans/` 索引。
-- **validation 路径保留**：`docs/validation/` 保持不变，仅更新说明文档中的稳定公共入口引用。
+- **validation**：仓库内不再跟踪 `docs/validation/` 占位文件；验证报告仅存本地 / state root，契约见 `docs/ref/validation.md`。
 
 ---
 

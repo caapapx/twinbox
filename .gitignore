@@ -27,12 +27,8 @@ runtime/
 *.pdf
 tmp/
 
-# Instance-specific validation artifacts must stay local
-/docs/validation/*
-!/docs/validation/README.md
-!/docs/validation/diagrams/
-/docs/validation/diagrams/*
-!/docs/validation/diagrams/README.md
+# Instance-specific validation artifacts (under repo docs/ or state root); do not commit
+/docs/validation/
 claude-agent-sdk-demos
 gastown
 # Local symlink to ~/openclaw-docker-compose (machine-specific; may contain secrets)
