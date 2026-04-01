@@ -341,19 +341,20 @@ A: Use [ROADMAP.md](ROADMAP.md). The short summary below is only for quick scann
 
 ### Roadmap snapshot
 
-**Current release gate**
+**Current release gate** — runtime / deploy / onboard implementation is largely complete; focus now is on manual verification and release prep.
 
-- [ ] clean-host OpenClaw run through `twinbox onboard openclaw`
-- [ ] scripted host path: `twinbox deploy openclaw` + rollback + upgrade refresh
-- [ ] vendor / no-clone host path: `twinbox install --archive ...` or `twinbox vendor install`
-- [ ] real-host daemon smoke: `twinbox daemon start` + status/stop + `twinbox task ...`
+- [ ] clean-host OpenClaw run through `twinbox onboard openclaw` + chat onboarding
+- [ ] vendor / no-clone host path: `twinbox install --archive ...` on a clean machine
+- [ ] real-host daemon + `twinbox task todo --json` / `weekly --json` smoke
+- [ ] weekly refresh end-to-end success on a real host
 
 **Next backlog themes**
 
-- [ ] context updates should trigger real reruns, not only hints
+- [ ] context updates should trigger real Phase 1 reruns, not only hints
 - [ ] review / action apply flows with explicit confirmation
-- [ ] stronger OpenClaw platform verification on real builds
 - [ ] one shared LLM boundary across phase thinking paths
+- [ ] multi-mailbox support and IMAP module refactor (replace Himalaya CLI)
+- [ ] heartbeat mechanism for improved push stability
 - [ ] draft approval gates, audit trail, and future automation layers
 
 Canonical source: [ROADMAP.md](ROADMAP.md)
