@@ -2,7 +2,7 @@
 
 > **本文面向运维**：前置条件 → 宿主接线 → 验证 → 对话引导 → 维护与卸载。
 > 设计模型（三层分工、数据流）见 [docs/ref/openclaw-deploy-model.md](../docs/ref/openclaw-deploy-model.md)。
-> 排障与回滚见 [TROUBLESHOOT.md](./TROUBLESHOOT.md)；附录见 [DEPLOY-APPENDIX.md](./DEPLOY-APPENDIX.md)。
+> 排障与问题记录见仓库根 [BUGFIX.md](../../BUGFIX.md)；附录见 [DEPLOY-APPENDIX.md](./DEPLOY-APPENDIX.md)。
 > Agent 行为与命令契约见仓库根 [SKILL.md](../SKILL.md)。
 
 ---
@@ -26,7 +26,7 @@
       → §3.10（调度与 cron 同步；bridge 已在 §3.1–§3.5 默认安装）
 ```
 
-任一步失败先查 [TROUBLESHOOT.md](./TROUBLESHOOT.md)；未完成宿主接线时，**不要**假设 skill 已注入或 onboarding 能代替 env。
+任一步失败先查仓库根 [BUGFIX.md](../../BUGFIX.md)「OpenClaw 集成排障」；未完成宿主接线时，**不要**假设 skill 已注入或 onboarding 能代替 env。
 
 ---
 
@@ -252,7 +252,7 @@ openclaw config validate
 openclaw skills info twinbox
 ```
 
-`skills info` 显示 `Ready` **不等于** 当前会话 prompt 已注入 twinbox（见 [TROUBLESHOOT.md §1](./TROUBLESHOOT.md)）。
+`skills info` 显示 `Ready` **不等于** 当前会话 prompt 已注入 twinbox（见 [BUGFIX.md §env 与会话快照](../../BUGFIX.md)）。
 
 #### 3.6.1 Gateway 与会话级 smoke
 
@@ -420,4 +420,4 @@ bash scripts/reset_twinbox_state.sh
 
 ---
 
-**文档版本**：本文为操作主路径；设计模型见 [docs/ref/openclaw-deploy-model.md](../docs/ref/openclaw-deploy-model.md)，排障见 [TROUBLESHOOT.md](./TROUBLESHOOT.md)，附录见 [DEPLOY-APPENDIX.md](./DEPLOY-APPENDIX.md)。
+**文档版本**：本文为操作主路径；设计模型见 [docs/ref/openclaw-deploy-model.md](../docs/ref/openclaw-deploy-model.md)，排障见仓库根 [BUGFIX.md](../../BUGFIX.md)，附录见 [DEPLOY-APPENDIX.md](./DEPLOY-APPENDIX.md)。

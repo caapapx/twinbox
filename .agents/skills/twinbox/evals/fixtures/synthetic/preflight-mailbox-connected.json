@@ -1,8 +1,0 @@
-{
-  "login_stage": "mailbox-connected",
-  "status": "success",
-  "missing_env": [],
-  "actionable_hint": "",
-  "next_action": "Run queue list or phase refresh as needed.",
-  "generated_at": "2026-03-24T08:00:00Z"
-}

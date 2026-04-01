@@ -10,7 +10,7 @@
 | tests/ | Python 单元测试 | `test_<module>.py` |
 | scripts/ | Shell 流水线脚本（phase 加载/思考/合并）、宿主辅助脚本 | `phase<N>_<step>.sh`、`seed_modular_mail_sim.sh` 等 |
 | config/ | 运行时配置（用户画像、策略、行动模板） | `<name>.yaml` / `<name>.toml` |
-| agent/ | TypeScript 扩展契约骨架（spec-first，尚未完整实现） | `*.ts` |
+| .agents/twinbox/ | 多平台适配 skill（slash 模式 + command 模式） | `slash/<platform>.md`、`command/<platform>.md` |
 | docs/ref/ | 架构、契约、CLI、运行时参考 | 短名优先，如 `cli.md` |
 | （验证输出） | 仅存本机或 state root 下路径（如 `docs/validation/`），**勿将实例数据提交 git** | 见 `docs/ref/validation.md` |
 | （根目录） | **`BUGFIX.md`**：缺陷根因、修复记录与 fix 类提交时间线 | 个案长文与归档 |
@@ -21,7 +21,7 @@
 - 架构：`docs/ref/architecture.md`
 - OpenClaw 部署操作主路径：`integrations/openclaw/DEPLOY.md`
 - OpenClaw 部署设计模型：`docs/ref/openclaw-deploy-model.md`
-- OpenClaw 排障与回滚：`integrations/openclaw/TROUBLESHOOT.md`
+- OpenClaw 排障与回滚：`integrations/openclaw/DEPLOY.md`（操作步骤）+ 根 `BUGFIX.md`（排障摘要）
 - OpenClaw 部署附录：`integrations/openclaw/DEPLOY-APPENDIX.md`
 - 路线与待办索引：`ROADMAP.md`
 - Daemon / Go 薄壳 / 模组化测试（**当前事实，优先于旧「暂缓 Go」表述**）：`docs/ref/daemon-and-runtime-slice.md`
@@ -31,7 +31,7 @@
 - 编排契约：`docs/ref/orchestration.md`
 - 运行时规范：`docs/ref/runtime.md`
 - 语义规则引擎：`docs/ref/routing-rules.md`
-- 缺陷与问题解决记录（根因、缓解、相关提交、**fix 时间线附录**）：`BUGFIX.md`（仓库根）。**后续凡属「修 bug / 排错个案 / 回归分析」的长文，优先写入 `BUGFIX.md`**；OpenClaw 宿主**操作步骤**仍以 `integrations/openclaw/TROUBLESHOOT.md` 为主，本文档侧重「为何坏了、怎么修的、链到哪些 commit」。
+- 缺陷与问题解决记录（根因、缓解、相关提交、**fix 时间线附录**）：`BUGFIX.md`（仓库根）。**后续凡属「修 bug / 排错个案 / 回归分析」的长文，优先写入 `BUGFIX.md`**。
 
 （原 `docs/archive/`、`docs/guide/` 目录已移除；旧版 Phase 报告与归档文如需可查 git 历史。）
 

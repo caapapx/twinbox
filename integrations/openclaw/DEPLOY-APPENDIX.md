@@ -1,6 +1,6 @@
 # Twinbox × OpenClaw 部署附录
 
-> 操作主路径见 [DEPLOY.md](./DEPLOY.md)；排障见 [TROUBLESHOOT.md](./TROUBLESHOOT.md)。
+> 操作主路径见 [DEPLOY.md](./DEPLOY.md)；排障见仓库根 [BUGFIX.md](../../BUGFIX.md)。
 
 ---
 
@@ -99,4 +99,4 @@
 
 ---
 
-**文档版本**：本文为附录；操作主路径见 [DEPLOY.md](./DEPLOY.md)，设计模型见 [docs/ref/openclaw-deploy-model.md](../docs/ref/openclaw-deploy-model.md)，排障见 [TROUBLESHOOT.md](./TROUBLESHOOT.md)。
+**文档版本**：本文为附录；操作主路径见 [DEPLOY.md](./DEPLOY.md)，设计模型见 [docs/ref/openclaw-deploy-model.md](../docs/ref/openclaw-deploy-model.md)，排障见仓库根 [BUGFIX.md](../../BUGFIX.md)。

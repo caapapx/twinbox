@@ -7,14 +7,14 @@
 | 文档 | 用途 |
 |------|------|
 | **[BUGFIX.md](./BUGFIX.md)**（本文） | 问题表现、根因分析、修复思路、**相关提交**、验证要点；可按时间追加小节。 |
-| [integrations/openclaw/TROUBLESHOOT.md](./integrations/openclaw/TROUBLESHOOT.md) | OpenClaw 宿主侧**操作步骤**、探针命令、回滚与配置核对（runbook）。 |
+| [BUGFIX.md](./BUGFIX.md)（本文） | 问题表现、根因分析、修复思路、**相关提交**、验证要点；可按时间追加小节；含 OpenClaw 排障摘要。 |
 | [docs/ref/cli.md](./docs/ref/cli.md) 等 ref | 行为契约与命令参考，非个案记录。 |
 
 ## 如何追加一条记录
 
 1. 在下方「已归档」增加 `## <短标题>（YYYY-MM-DD）`。
 2. 建议包含：**问题表现** → **根因** → **修复或缓解** → **相关提交**（`hash` + 一行说明）→ **验证**。
-3. 若仅为部署误配，优先补 **TROUBLESHOOT.md**；若涉及代码/契约变更，在本文记一笔并链到 TROUBLESHOOT 对应节。
+3. 若仅为部署误配，优先补 **DEPLOY.md**；若涉及代码/契约变更，在本文记一笔。
 
 ---
 
@@ -57,7 +57,7 @@
 
 #### 验证步骤（摘要）
 
-- 有 / 无 bootstrap 下连续多轮提问对比；见下文监控与 [integrations/openclaw/prompt-test.md](./integrations/openclaw/prompt-test.md)。
+- 有 / 无 bootstrap 下连续多轮提问对比；见下文监控与 [integrations/openclaw/tui-test-cases.md](./integrations/openclaw/tui-test-cases.md)。
 
 #### 相关提交（示例）
 
@@ -150,3 +150,61 @@ git log --format='%h %ad %s' --date=short master \
 | 2026-03-19 | 42887f1 | fix: gitignore .beads/, .claude/, .runtime/ local dirs |
 
 （共 58 条；合并提交、`feat`/`docs` 等不含上述模式的修复请用 `git log --grep` 另行检索。）
+
+### 早期稳定性修复（2026-03-19，原 CHANGELOG）
+
+| Hash（估） | 说明 |
+|------------|------|
+| `84c5777` | `fix`: 将 `phase4_merge` 从并行脚本中拆出，避免重复调用 LLM。 |
+| `83b02cd` | `fix`: sync polecat worktrees before sling。 |
+| `5f80c73` | `fix`: reduce polecat exploration in formulas。 |
+| `321d3f7` | `fix`: harden LLM JSON cleanup / 解析鲁棒性。 |
+| `d8cff41` | `fix`: gitignore `.beads/`, `.claude/`, `.runtime/`（本地 agent 目录）。 |
+| `e9db358` | `fix`: resolve `.gitignore` merge conflict from stash pop。 |
+
+**PII 治理**：从 Git 跟踪内容中移除敏感实例数据，改为环境变量等方式注入。
+
+---
+
+## OpenClaw 集成排障（原 TROUBLESHOOT.md，已合并）
+
+### env 与会话快照
+
+- **`state root/twinbox.json`**：Twinbox CLI **主**配置（邮箱/LLM）；无 JSON 时回读历史 `.env`。
+- **`skills.entries.twinbox.env`**：OpenClaw agent run 中注入给 skill 的环境；缺省时 skill 可能被过滤。
+- **`skills info` ≠ 会话注入**：`openclaw skills info twinbox` 显示 `Ready` **不等于** 当前会话 prompt 已包含 `twinbox`。以 `openclaw agent … --json` 的 `systemPromptReport.skills.entries` 为准。
+- **改 env 后**：重启 Gateway → 新会话 → 再查快照。
+
+### 飞书 / 第三方会话只看到「让我执行」复读
+
+**成因**：通道未绑定 `plugin-twinbox-task` + `twinbox` agent 时，模型拿不到 `twinbox_*` 工具，只能口述流程；在 `astron-code-latest` 等模型上还易重复同一段话。
+
+**处理**：在 OpenClaw 里让飞书侧使用已加载插件的 **twinbox** agent，确认 `twinboxBin`、`code-root`、`skills.entries.twinbox.env` 与部署文档一致；改完重启 Gateway 并新开会话。若 Gateway 提示 `plugins.allow is empty`，需显式 allow `twinbox-task-tools`。
+
+### 缺 env 类回复（假报）
+
+模型可能仅根据 `requires.env` 描述报「缺字段」，而非执行 `twinbox mailbox preflight --json`。以宿主 CLI 直接跑的结果为准。
+
+### Gateway 相关
+
+- **RPC 失败**：`openclaw gateway status` RPC probe 非 ok 时，先按 systemd / 端口 / `openclaw doctor` 处理。
+- **`--json` 看不到助手正文**：`result.payloads` 可能为空；以宿主 shell `twinbox … --json` 为准。
+- **Web 控制面完全空白**：若 shell `openclaw agent` 有输出而浏览器无，问题在 WebSocket 链路，`openclaw gateway restart` + 重连。
+
+### 探针排障序
+
+1. `twinbox task latest-mail --json`（与插件 `twinbox_latest_mail` 同路径）
+2. 单独跑 `daytime-sync`：`PYTHONPATH="$TWINBOX_CODE_ROOT" python3 -m twinbox_core.orchestration schedule --job daytime-sync --format json`
+3. 对照：`openclaw agent --agent twinbox --message '只调用 twinbox_latest_mail' --json --timeout 120`
+
+### 平台未闭环（已知 gap）
+
+- 平台是否自动消费 skill schedule metadata。
+- OpenClaw cron / heartbeat 与 Twinbox phase 刷新的责任边界。
+- 部署后日志、通知、失败重试、stale fallback 归属。
+
+---
+
+## 参考
+
+- `docs/CHANGELOG.md` 已删除，开发时间线并入仓库根 `ROADMAP.md`。

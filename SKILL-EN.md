@@ -3,17 +3,16 @@ name: twinbox
 description: >-
   Twinbox mailbox skill. CRITICAL: always call the matching plugin tool
   FIRST, then write a text summary after it returns. Never narrate
-  "let me run", "need to sync first", or Chinese variants like 「让我执行」
+  "let me run", "need to sync first", or equivalents in any language
   without calling a tool in the same turn — that is always a failure.
   Never duplicate the same sentence or near-duplicate paragraphs in one
   assistant message (no repeated "I'll sync then check" boilerplate); at most
   one short lead-in, then the tool call.   If no twinbox_* tools are available
   in this session, output one line saying the plugin or twinbox agent is
   required — do not fabricate a sync narrative.
-  Never tell the user you will "sync mail data first, then show latest" (or
-  Chinese variants like 先同步邮件数据，然后查看最新邮件) — any required sync
+Never tell the user you will "sync mail data first, then show latest" — any required sync
   runs inside twinbox_latest_mail; saying this in prose is wrong.
-  For latest mail / inbox / 最新邮件: call twinbox_latest_mail immediately;
+  For latest mail / inbox: call twinbox_latest_mail immediately;
   it auto-runs daytime-sync inside one tool call when data is missing — do
   not loop in prose. At push_subscription: twinbox_push_confirm_onboarding
   (no session param). At routing_rules: twinbox_onboarding_finish_routing_rules.
@@ -29,7 +28,7 @@ Use this skill for Twinbox mailbox onboarding, read-only preflight checks, lates
 
 ## Session and verification (mechanism, not IDE-specific)
 
-Twinbox mail state is produced by **`twinbox` / `twinbox-orchestrate` on the OpenClaw host** and consumed inside a **`twinbox` agent session** (tool policy + session history + Gateway). Regressions such as empty assistant payloads, "read SKILL only", or silent turns are addressed by **session design and test procedure** (fresh session when needed, bootstrap turn, split long suites, optional **`plugin-twinbox-task`** tools), documented in `integrations/openclaw/prompt-test.md` and `scripts/run_openclaw_prompt_tests.py` — not by relabeling the client app.
+Twinbox mail state is produced by **`twinbox` / `twinbox-orchestrate` on the OpenClaw host** and consumed inside a **`twinbox` agent session** (tool policy + session history + Gateway). Regressions such as empty assistant payloads, "read SKILL only", or silent turns are addressed by **session design and test procedure** (fresh session when needed, bootstrap turn, split long suites, optional **`plugin-twinbox-task`** tools), documented in `integrations/openclaw/tui-test-cases.md` and `scripts/run_openclaw_prompt_tests.py` — not by relabeling the client app.
 
 Known OpenClaw limitation (confirmed 2026-03-27 on some gateway-hosted models): OpenClaw injects this skill's **`description`** into the system prompt, but the rest of `~/.openclaw/skills/twinbox/SKILL.md` is visible only if the agent explicitly reads the file. On those setups, turns that call tools can stop immediately after the tool call and return `payloads=[]`, `assistant.content=[]`, or a short stub such as "Let me run the command:". **Plugin hosts:** use native **`twinbox_onboarding_*`** tools when `plugin-twinbox-task` is loaded; otherwise `twinbox onboarding …` may go through generic `exec` and show the same empty bubble.
 

@@ -1,9 +1,0 @@
-{
-  "digest_type": "daily",
-  "sections": {
-    "urgent": {"items": []},
-    "pending": {"items": []}
-  },
-  "generated_at": "2026-03-24T08:10:00Z",
-  "stale": false
-}

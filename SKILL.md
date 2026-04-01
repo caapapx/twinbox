@@ -22,7 +22,7 @@ metadata: {"openclaw":{"requires":{"env":["IMAP_HOST","IMAP_PORT","IMAP_LOGIN","
 
 ## 会话与验证机制
 
-Twinbox 邮件状态由 **OpenClaw 宿主上的 `twinbox` / `twinbox-orchestrate`** 生成，在 **`twinbox` agent 会话**（工具策略 + 会话历史 + Gateway）中消费。空回复、"只读 SKILL"、静默回合等回归问题通过**会话设计与测试流程**（需要时新建会话、bootstrap 回合、长套件拆分、可选 **`plugin-twinbox-task`** 工具）解决，详见 `integrations/openclaw/prompt-test.md` 和 `scripts/run_openclaw_prompt_tests.py`。
+Twinbox 邮件状态由 **OpenClaw 宿主上的 `twinbox` / `twinbox-orchestrate`** 生成，在 **`twinbox` agent 会话**（工具策略 + 会话历史 + Gateway）中消费。空回复、"只读 SKILL"、静默回合等回归问题通过**会话设计与测试流程**（需要时新建会话、bootstrap 回合、长套件拆分、可选 **`plugin-twinbox-task`** 工具）解决，详见 `integrations/openclaw/tui-test-cases.md` 和 `scripts/run_openclaw_prompt_tests.py`。
 
 已知 OpenClaw 限制（2026-03-27 在部分网关托管模型上确认）：OpenClaw 仅将本技能的 **`description`** 注入系统提示，`~/.openclaw/skills/twinbox/SKILL.md` 其余内容仅在 agent 主动读取文件时可见。在这些环境中，调用工具后可能立即停止并返回 `payloads=[]`、`assistant.content=[]`，或短文本如"让我执行命令："。**插件宿主：**当 `plugin-twinbox-task` 已加载时使用原生 **`twinbox_onboarding_*`** 工具；否则 `twinbox onboarding …` 可能走通用 `exec` 并产生相同空气泡。
 
