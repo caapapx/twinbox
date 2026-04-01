@@ -1849,7 +1849,10 @@ def test_run_openclaw_onboard_tty_routing_push_skips_to_completed(
             "apply",
             "yes",
             "skip",
-            "skip",
+            "default",
+            "both_on",
+            "keep",
+            "keep",
         ],
     )
     report = run_openclaw_onboard(

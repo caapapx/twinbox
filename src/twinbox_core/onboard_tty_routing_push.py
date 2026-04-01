@@ -30,6 +30,8 @@ class _PastePrompter(Protocol):
         layout: str = "vertical",
     ) -> str: ...
 
+    def text(self, prompt: str, *, default: str | None = None) -> str: ...
+
     def note(self, title: str, body: str, *, complete: bool | None = None) -> None: ...
 
 
@@ -157,6 +159,95 @@ def run_routing_rules_tty(
     return {"ok": True, "rule_id": rule.get("id"), "advanced": True}
 
 
+def _tty_schedule_after_push(
+    state_root: Path,
+    prompter: _PastePrompter,
+    *,
+    daily: bool,
+    weekly: bool,
+) -> dict[str, Any]:
+    """Optional cron overrides for daily-refresh / weekly-refresh (runtime schedule-overrides.yaml + OpenClaw sync)."""
+    from twinbox_core.schedule_override import update_schedule_override
+
+    out: dict[str, Any] = {"daily_refresh": None, "weekly_refresh": None}
+    if daily:
+        dchoice = prompter.select(
+            "When to run daily digest refresh (daily-refresh → Phase 4)?",
+            options=[
+                {
+                    "value": "keep",
+                    "label": "Keep current effective cron",
+                    "description": "No change (first daily subscribe may already set hourly).",
+                },
+                {
+                    "value": "hourly",
+                    "label": "Every hour at :00",
+                    "description": "Cron 0 * * * * — frequent refresh.",
+                },
+                {
+                    "value": "morning830",
+                    "label": "Once daily 08:30 (SKILL default)",
+                    "description": "Cron 30 8 * * * in configured timezone.",
+                },
+                {"value": "custom", "label": "Custom 5-field cron", "description": "You type the expression."},
+            ],
+            default="keep",
+            layout="vertical",
+        )
+        try:
+            if dchoice == "hourly":
+                out["daily_refresh"] = update_schedule_override(
+                    state_root=state_root, job_name="daily-refresh", cron="0 * * * *"
+                )
+            elif dchoice == "morning830":
+                out["daily_refresh"] = update_schedule_override(
+                    state_root=state_root, job_name="daily-refresh", cron="30 8 * * *"
+                )
+            elif dchoice == "custom":
+                cron = prompter.text("daily-refresh cron (5 fields)", default="").strip()
+                if cron:
+                    out["daily_refresh"] = update_schedule_override(
+                        state_root=state_root, job_name="daily-refresh", cron=cron
+                    )
+        except ValueError as exc:
+            out["daily_refresh"] = {"error": str(exc)}
+
+    if weekly:
+        wchoice = prompter.select(
+            "When to run weekly digest refresh (weekly-refresh)?",
+            options=[
+                {
+                    "value": "keep",
+                    "label": "Keep current effective cron",
+                    "description": "Default is often Fri 17:30 from config/SKILL.",
+                },
+                {
+                    "value": "fri1730",
+                    "label": "Friday 17:30 (repo default)",
+                    "description": "Cron 30 17 * * 5",
+                },
+                {"value": "custom", "label": "Custom 5-field cron", "description": ""},
+            ],
+            default="keep",
+            layout="vertical",
+        )
+        try:
+            if wchoice == "fri1730":
+                out["weekly_refresh"] = update_schedule_override(
+                    state_root=state_root, job_name="weekly-refresh", cron="30 17 * * 5"
+                )
+            elif wchoice == "custom":
+                cron = prompter.text("weekly-refresh cron (5 fields)", default="").strip()
+                if cron:
+                    out["weekly_refresh"] = update_schedule_override(
+                        state_root=state_root, job_name="weekly-refresh", cron=cron
+                    )
+        except ValueError as exc:
+            out["weekly_refresh"] = {"error": str(exc)}
+
+    return out
+
+
 def run_push_subscription_tty(
     state_root: Path,
     prompter: _PastePrompter,
@@ -169,11 +260,43 @@ def run_push_subscription_tty(
     if st.current_stage != "push_subscription":
         return {"skipped": True, "reason": f"current_stage={st.current_stage}"}
 
+    default_sess = session_target
     prompter.note(
         "Push subscription",
         (
-            "Subscribe this OpenClaw session to daily/weekly digests. Requires host bridge timer enabled. "
-            f"Session target: {session_target}"
+            "Digests are sent to one OpenClaw session (see runtime/push-subscriptions.json). "
+            f"Default target: {default_sess} (env TWINBOX_PUSH_SESSION_TARGET / OPENCLAW_SESSION_ID, else agent:twinbox:main)."
+        ),
+        complete=False,
+    )
+    sess_choice = prompter.select(
+        "Push session target",
+        options=[
+            {
+                "value": "default",
+                "label": f"Use default ({default_sess})",
+                "description": "Typical twinbox main chat.",
+            },
+            {
+                "value": "custom",
+                "label": "Type another session id",
+                "description": "Paste exact OpenClaw session target string.",
+            },
+        ],
+        default="default",
+        layout="vertical",
+    )
+    resolved_session = default_sess
+    if sess_choice == "custom":
+        custom = prompter.text("OpenClaw session target", default="").strip()
+        if custom:
+            resolved_session = custom
+
+    prompter.note(
+        "Push subscription",
+        (
+            "Requires host bridge user timer. "
+            f"Subscribing: {resolved_session}"
         ),
         complete=False,
     )
@@ -198,7 +321,7 @@ def run_push_subscription_tty(
     weekly = choice in ("both_on", "weekly_only")
     result = confirm_push_subscription(
         state_root,
-        session_target,
+        resolved_session,
         daily=daily,
         weekly=weekly,
         openclaw_bin=openclaw_bin,
@@ -208,16 +331,28 @@ def run_push_subscription_tty(
         prompter.note(
             "Push subscription",
             f"Subscribe failed: {result.get('error', 'unknown')}. "
-            "You can run `twinbox host bridge install` later and confirm push in OpenClaw.",
+            "Fix bridge (`twinbox host bridge install`) or subscribe from OpenClaw: "
+            "`twinbox_push_confirm_onboarding` / `twinbox openclaw onboarding-confirm-push <SESSION>`. "
+            "Set TWINBOX_PUSH_SESSION_TARGET for the right session.",
             complete=None,
         )
-        return {**result, "advanced": False}
+        return {**result, "advanced": False, "session_target": resolved_session}
+
+    sched = _tty_schedule_after_push(state_root, prompter, daily=daily, weekly=weekly)
+    prompter.note(
+        "Schedule overrides",
+        (
+            "Cron edits write runtime/context/schedule-overrides.yaml and try to sync OpenClaw cron. "
+            f"Tune later: `twinbox schedule list` / `twinbox schedule update <job> '<cron>'`."
+        ),
+        complete=True,
+    )
 
     st = load_state(state_root)
     if st.current_stage == "push_subscription":
         complete_stage(st, "push_subscription")
         save_state(state_root, st)
-    return {**result, "advanced": True}
+    return {**result, "advanced": True, "session_target": resolved_session, "schedule_tty": sched}
 
 
 _DEFAULT_SESSION = "agent:twinbox:main"
