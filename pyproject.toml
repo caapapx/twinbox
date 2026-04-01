@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "twinbox-core"
 version = "0.1.0"
 description = "Shared Python core for twinbox phase builders and runtime contracts."
+license = { file = "LICENSE" }
 requires-python = ">=3.11"
 dependencies = [
     "PyYAML>=6",

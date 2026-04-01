@@ -3,7 +3,7 @@
 > Thread-level email intelligence for people whose inbox is real work.
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)
 [![Tests](https://img.shields.io/badge/tests-pytest-informational.svg)](./tests/)
 
 [English](./README.md) | [中文](./README.zh.md)
@@ -362,4 +362,4 @@ Canonical source: [ROADMAP.md](ROADMAP.md)
 
 ## License
 
-MIT
+Apache License 2.0 — see [LICENSE](./LICENSE) and [NOTICE](./NOTICE).

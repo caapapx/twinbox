@@ -24,6 +24,7 @@
 
 ## Rules
 
+- **License**：Apache-2.0，见仓库根目录 [LICENSE](../LICENSE) / [NOTICE](../NOTICE)；第三方组件（如 bundled 工具）以各自许可证为准。
 - 根入口保持简短，不维护大段重复索引
 - 新文档优先并入现有文件；确实放不下再新建
 - 优先放 `ref/` 或 `integrations/` 下与主题配套的 README

@@ -1,0 +1,9 @@
+Twinbox
+Copyright 2026 Twinbox contributors
+
+This product is licensed under the Apache License, Version 2.0.
+See the LICENSE file in the root of this repository.
+
+This repository may include or reference third-party components under
+their own licenses (for example, the bundled `himalaya` CLI — see
+`src/twinbox_core/_bundled/himalaya/README.md` and the upstream project).

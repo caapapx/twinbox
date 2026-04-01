@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "OpenClaw plugin: deterministic twinbox task, queue, and schedule tools",
   "type": "module",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "scripts": {
     "test": "node --test register-twinbox-tools.test.mjs",
     "build": "npx esbuild index.mjs --bundle --format=esm --platform=node --outfile=dist/index.mjs --external:node:child_process --external:node:fs --external:node:os --external:node:path"
