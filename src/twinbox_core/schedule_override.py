@@ -35,11 +35,17 @@ def schedule_override_path(state_root: Path) -> Path:
 
 
 def _repo_schedule_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "config" / "schedules.yaml"
+    # __file__ is ~/.twinbox/vendor/twinbox_core/schedule_override.py
+    # parents[0] is twinbox_core, parents[1] is vendor
+    twinbox_core_dir = Path(__file__).resolve().parent
+    vendor_dir = twinbox_core_dir.parent
+    return vendor_dir / "config" / "schedules.yaml"
 
 
 def _repo_skill_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "SKILL.md"
+    twinbox_core_dir = Path(__file__).resolve().parent
+    vendor_dir = twinbox_core_dir.parent
+    return vendor_dir / "SKILL.md"
 
 
 def _read_frontmatter(path: Path) -> dict[str, Any]:

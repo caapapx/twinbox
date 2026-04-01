@@ -3729,7 +3729,14 @@ def _build_parser() -> argparse.ArgumentParser:
     dep_oc.add_argument(
         "--skip-bridge",
         action="store_true",
-        help="Skip vendor-safe bridge timer install/health (advanced; default installs bridge)",
+        default=True,
+        help="Skip vendor-safe bridge timer install/health (default: True)",
+    )
+    dep_oc.add_argument(
+        "--no-skip-bridge",
+        action="store_false",
+        dest="skip_bridge",
+        help="Enable bridge health check (advanced)",
     )
     dep_oc.add_argument(
         "--twinbox-bin",
@@ -3783,7 +3790,14 @@ def _build_parser() -> argparse.ArgumentParser:
     onboard_oc.add_argument(
         "--skip-bridge",
         action="store_true",
-        help="Skip bridge prerequisite bundle (not recommended)",
+        default=True,
+        help="Skip bridge prerequisite bundle (default: True)",
+    )
+    onboard_oc.add_argument(
+        "--no-skip-bridge",
+        action="store_false",
+        dest="skip_bridge",
+        help="Enable bridge health check (not recommended)",
     )
     onboard_oc.add_argument(
         "--no-start-daemon",
