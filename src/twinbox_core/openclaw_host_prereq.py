@@ -123,7 +123,7 @@ def run_openclaw_prerequisite_bundle(
 
     plugin_ok = plugin.get("status") == "ok"
     if skip_bridge:
-        phase2_ready = False
+        phase2_ready = plugin_ok  # skip_bridge时只检查plugin，不检查bridge
     else:
         install_st = bridge_block.get("install", {}).get("status")
         install_ok = install_st in ("ok", "dry_run")

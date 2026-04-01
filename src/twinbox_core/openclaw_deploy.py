@@ -67,7 +67,7 @@ def run_openclaw_deploy(
     fragment_path: Path | None = None,
     no_fragment: bool = False,
     openclaw_bin: str = "openclaw",
-    skip_bridge: bool = False,
+    skip_bridge: bool = True,
     twinbox_bin: str | None = None,
     start_daemon: bool = True,
     run_subprocess: Callable[..., subprocess.CompletedProcess[str]] | None = None,

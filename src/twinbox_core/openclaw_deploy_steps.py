@@ -254,14 +254,10 @@ def sync_skill_md_step(
         runtime.file_ops.mkdir(canonical.parent, parents=True, exist_ok=True)
         runtime.file_ops.copy_file(ctx.skill_src, canonical)
         runtime.file_ops.unlink(ctx.skill_dest)
-        try:
-            runtime.file_ops.symlink(canonical, ctx.skill_dest)
-            mode = "symlink"
-            extra = ""
-        except OSError as exc:
-            runtime.file_ops.copy_file(canonical, ctx.skill_dest)
-            mode = "copy_fallback"
-            extra = str(exc)
+        # Always copy instead of symlink to avoid OpenClaw security restrictions
+        runtime.file_ops.copy_file(canonical, ctx.skill_dest)
+        mode = "copy"
+        extra = ""
     except OSError as exc:
         return fail_step(report, "sync_skill_md", str(exc))
 
