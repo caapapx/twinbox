@@ -10,7 +10,10 @@
 | tests/ | Python 单元测试 | `test_<module>.py` |
 | scripts/ | Shell 流水线脚本（phase 加载/思考/合并）、宿主辅助脚本 | `phase<N>_<step>.sh`、`seed_modular_mail_sim.sh` 等 |
 | config/ | 运行时配置（用户画像、策略、行动模板） | `<name>.yaml` / `<name>.toml` |
-| .agents/twinbox/ | 多平台适配 skill（slash 模式 + command 模式） | `slash/<platform>.md`、`command/<platform>.md` |
+| .claude/skills/twinbox/ | Claude Code 技能适配 | `SKILL.md` |
+| .cursor/skills/twinbox/ | Cursor 技能适配 | `SKILL.md` |
+| .codex/skills/twinbox/ | Codex 技能适配 | `AGENTS.md` |
+| .agents/twinbox/ | 平台无关 command 模式 | `command/default.md` |
 | docs/ref/ | 架构、契约、CLI、运行时参考 | 短名优先，如 `cli.md` |
 | （验证输出） | 仅存本机或 state root 下路径（如 `docs/validation/`），**勿将实例数据提交 git** | 见 `docs/ref/validation.md` |
 | （根目录） | **`BUGFIX.md`**：缺陷根因、修复记录与 fix 类提交时间线 | 个案长文与归档 |
