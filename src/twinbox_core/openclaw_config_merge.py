@@ -92,6 +92,50 @@ def remove_twinbox_skill_entry_from_openclaw(
     return out, had
 
 
+def ensure_twinbox_plugin_config(data: dict[str, Any], state_root: Path) -> dict[str, Any]:
+    """Ensure plugins.entries.twinbox-task-tools exists with proper paths."""
+    from twinbox_core.vendor_sync import vendor_root
+    import shutil
+
+    out = _deep_copy_json(data) if data else {}
+    plugins = out.setdefault("plugins", {})
+    if not isinstance(plugins, dict):
+        plugins = {}
+        out["plugins"] = plugins
+
+    load = plugins.setdefault("load", {})
+    if not isinstance(load, dict):
+        load = {}
+        plugins["load"] = load
+
+    paths = load.setdefault("paths", [])
+    if not isinstance(paths, list):
+        paths = []
+        load["paths"] = paths
+
+    vr = vendor_root(state_root)
+    plugin_path = str((vr / "integrations" / "openclaw" / "plugin-twinbox-task").resolve())
+    if plugin_path not in paths:
+        paths.append(plugin_path)
+
+    entries = plugins.setdefault("entries", {})
+    if not isinstance(entries, dict):
+        entries = {}
+        plugins["entries"] = entries
+
+    if "twinbox-task-tools" not in entries:
+        twinbox_bin = shutil.which("twinbox") or "twinbox"
+        entries["twinbox-task-tools"] = {
+            "enabled": True,
+            "config": {
+                "cwd": str(vr.resolve()),
+                "twinboxBin": twinbox_bin,
+            },
+        }
+
+    return out
+
+
 def apply_openclaw_plugin_vendor_cwd(data: dict[str, Any], state_root: Path) -> dict[str, Any]:
     """If ``vendor/twinbox_core`` exists under the shared vendor home, set plugin ``config.cwd`` there.
 

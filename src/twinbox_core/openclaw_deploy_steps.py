@@ -14,6 +14,7 @@ from .bundled_himalaya import bundled_linux_himalaya_tgz, try_materialize_bundle
 from .openclaw_config_merge import (
     apply_openclaw_plugin_vendor_cwd,
     deep_merge_openclaw,
+    ensure_twinbox_plugin_config,
     merge_twinbox_openclaw_entry,
     remove_twinbox_skill_entry_from_openclaw,
 )
@@ -194,6 +195,7 @@ def merge_openclaw_json_step(
         dotenv=dotenv,
         sync_env_from_dotenv=ctx.sync_env_from_dotenv,
     )
+    merged = ensure_twinbox_plugin_config(merged, ctx.state_root)
     merged = apply_openclaw_plugin_vendor_cwd(merged, ctx.state_root)
 
     if ctx.dry_run:
