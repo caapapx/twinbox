@@ -13,10 +13,14 @@ from twinbox_core.material_extract import MAX_EXTRACT_CHARS
 
 def polish_profile_notes(raw: str, *, env_file: Path, max_input_chars: int = 12000) -> str:
     """Normalize messy user prose into clear Markdown for profile_notes (single LLM call)."""
+    import sys
+    print("[DEBUG] polish_profile_notes called", file=sys.stderr, flush=True)
     text = (raw or "").strip()
     if not text:
+        print("[DEBUG] polish_profile_notes: empty text, returning", file=sys.stderr, flush=True)
         return ""
     clipped = text[:max_input_chars]
+    print(f"[DEBUG] polish_profile_notes: text length={len(text)}, clipped={len(clipped)}", file=sys.stderr, flush=True)
     system = (
         "You normalize onboarding notes. Output ONLY valid Markdown (no code fences, no preamble). "
         "Use short headings and bullets. Preserve facts; fix grammar and structure; do not invent employers or people."
@@ -26,7 +30,9 @@ def polish_profile_notes(raw: str, *, env_file: Path, max_input_chars: int = 120
         f"{clipped}\n\n"
         "Rewrite as concise profile notes for an email assistant."
     )
+    print(f"[DEBUG] polish_profile_notes: calling call_llm with env_file={env_file}", file=sys.stderr, flush=True)
     out = call_llm(user, max_tokens=2048, system_prompt=system, env_file=str(env_file))
+    print(f"[DEBUG] polish_profile_notes: got result length={len(out)}", file=sys.stderr, flush=True)
     return out.strip()
 
 
@@ -161,20 +167,26 @@ def apply_onboarding_paste_bundle(
     Persist profile/calibration to human-context.yaml; optional material file + manifest.
     When polish=True and LLM fails, falls back to raw text for that field.
     """
+    import sys
+    print("[DEBUG] apply_onboarding_paste_bundle called", file=sys.stderr, flush=True)
     profile_final = profile_raw.strip()
     calibration_final = calibration_raw.strip()
     material_final = material_raw.strip()
 
     if polish and profile_final:
+        print("[DEBUG] Polishing profile with LLM...", file=sys.stderr, flush=True)
         try:
             profile_final = polish_profile_notes(profile_final, env_file=env_file)
-        except LLMError:
-            pass
+            print("[DEBUG] Profile polish succeeded", file=sys.stderr, flush=True)
+        except Exception as e:
+            print(f"[DEBUG] Profile polish failed: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
     if polish and calibration_final:
+        print("[DEBUG] Polishing calibration with LLM...", file=sys.stderr, flush=True)
         try:
             calibration_final = polish_calibration_notes(calibration_final, env_file=env_file)
-        except LLMError:
-            pass
+            print("[DEBUG] Calibration polish succeeded", file=sys.stderr, flush=True)
+        except Exception as e:
+            print(f"[DEBUG] Calibration polish failed: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
 
     if profile_final or calibration_final:
         update_human_context_store(

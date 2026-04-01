@@ -42,6 +42,27 @@ def merged_env(
     env: dict[str, str] | None = None,
 ) -> dict[str, str]:
     merged = load_env_file(env_file)
+
+    # Also load from twinbox.json if available
+    try:
+        from pathlib import Path
+        config_path = Path.home() / ".twinbox" / "twinbox.json"
+        if config_path.exists():
+            import json
+            with open(config_path) as f:
+                cfg = json.load(f)
+            if cfg.get("llm"):
+                llm = cfg["llm"]
+                if llm.get("api_key"):
+                    merged["LLM_API_KEY"] = llm["api_key"]
+                if llm.get("model"):
+                    merged["LLM_MODEL"] = llm["model"]
+                if llm.get("api_url"):
+                    merged["LLM_API_URL"] = llm["api_url"]
+                print(f"[DEBUG] Loaded LLM config from twinbox.json: model={llm.get('model')}, url={llm.get('api_url')}", file=sys.stderr)
+    except Exception as e:
+        print(f"[DEBUG] Failed to load twinbox.json: {e}", file=sys.stderr)
+
     merged.update(env or os.environ)
     return merged
 
@@ -60,8 +81,8 @@ def resolve_backend(
     env: dict[str, str] | None = None,
 ) -> BackendConfig:
     resolved_env = merged_env(env_file=env_file, env=env)
-    timeout = _int_value(resolved_env.get("LLM_TIMEOUT"), 180)
-    retries = _int_value(resolved_env.get("LLM_RETRIES"), 2)
+    timeout = _int_value(resolved_env.get("LLM_TIMEOUT"), 30)
+    retries = _int_value(resolved_env.get("LLM_RETRIES"), 1)
 
     if resolved_env.get("LLM_API_KEY"):
         model = resolved_env.get("LLM_MODEL", "").strip()
@@ -222,6 +243,7 @@ def call_llm(
     model_override: str | None = None,
 ) -> str:
     config = resolve_backend(env_file=env_file, env=env)
+    print(f"[DEBUG] LLM config: model={config.model}, url={config.url}, timeout={config.timeout}", file=sys.stderr, flush=True)
     if model_override:
         config = BackendConfig(
             backend=config.backend,
@@ -235,12 +257,16 @@ def call_llm(
     last_error: Exception | None = None
     for attempt in range(config.retries + 1):
         try:
-            return _request_once(prompt, max_tokens, system_prompt, config)
+            print(f"[DEBUG] Calling LLM (attempt {attempt + 1})...", file=sys.stderr, flush=True)
+            result = _request_once(prompt, max_tokens, system_prompt, config)
+            print(f"[DEBUG] LLM success, got {len(result)} chars", file=sys.stderr, flush=True)
+            return result
         except (LLMError, TimeoutError, urllib.error.URLError, urllib.error.HTTPError) as exc:
             last_error = exc
+            print(f"[DEBUG] LLM error: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
             if attempt >= config.retries:
                 break
-            print(f"Retry {attempt + 1}/{config.retries}...", file=sys.stderr)
+            print(f"Retry {attempt + 1}/{config.retries}...", file=sys.stderr, flush=True)
             time.sleep(5)
 
     raise LLMError(str(last_error) if last_error else "Unknown LLM failure")
