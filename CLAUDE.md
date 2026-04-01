@@ -26,6 +26,10 @@ twinbox 是以线程为中心的邮件 Copilot 基础设施。核心路径：rea
 4. **文档**：新增前先查 `docs/README.md`，优先合并进现有文件；入口级路径变更须更新索引（见 AGENTS.md）。
 5. **验证与 Git**：默认**不自动** `git commit` / `git push`；用户明确要求时再执行。相关校验通过后若要提交，仍遵守提交信息与粒度约定；禁止对共享分支 `push --force`。细则见 AGENTS.md。
 6. **OpenClaw / Skill**：改 CLI、核心行为或 Tool 时须同步 `SKILL.md` 并部署（步骤见 AGENTS.md）。
+7. **开发调试同步**：修改 `twinbox` CLI 或 `twinbox_core` 代码后，必须手动同步：
+   - `src/twinbox_core/*.py` → `~/.twinbox/vendor/twinbox_core/`
+   - **重启 daemon**：`twinbox daemon stop && twinbox daemon start`（daemon 启动时加载代码到内存，必须重启才能生效）
+   - 确保运行时使用最新代码便于调试
 
 ## Feature 分支（如 dev-go）
 

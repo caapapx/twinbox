@@ -69,3 +69,10 @@
    - **PATH 持久化**（按需一次）：加 **`--ensure-path`**（或 **`TWINBOX_GO_ENSURE_PATH=1`**），在 **`~/.bashrc`** 中按标记行幂等追加 `export PATH="$HOME/.local/bin:$PATH"`（与第 8 条约定一致；非 bash 用户请自行配置）。
    - 一键组合示例：`bash scripts/build_go_twinbox.sh --install --ensure-path`
    - **验证**：`go test ./cmd/twinbox-go/...` 通过后再提交；若沙箱无法写 `~/.local/bin`，至少完成 **`dist/`** 构建并在说明中注明。
+10. **开发调试同步约束**：修改 `twinbox` CLI 或 `twinbox_core` 代码后，必须手动同步到运行时目录以便调试：
+   - **Python 核心库**：`cp src/twinbox_core/<modified_file>.py ~/.twinbox/vendor/twinbox_core/`
+   - **重启 daemon**：`twinbox daemon stop && twinbox daemon start`（daemon 启动时加载代码到内存，必须重启才能生效）
+   - **清理缓存**（可选）：`find ~/.twinbox/vendor/twinbox_core -name "*.pyc" -delete && find ~/.twinbox/vendor/twinbox_core -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true`
+   - **验证**：修改后立即同步并重启 daemon，确保 `twinbox` 命令使用最新代码
+   - **批量同步**：`cp -r src/twinbox_core/*.py ~/.twinbox/vendor/twinbox_core/`（谨慎使用，避免覆盖未测试代码）
+
