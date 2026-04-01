@@ -1,144 +1,241 @@
-# twinbox 路线与待办（ROADMAP）
+# twinbox Roadmap
 
-**最后更新：** 2026-03-29  
-
----
-
-## 已完成（树内可核对或计划已结案）
-
-### 提交主题（2026-03）
-
-- **Phase 4 / prompts：** loading 修复、`recipient_role` 打分与展示分离、真实的 `--dry-run`、calibration 与 onboarding notes 进 context（`024ea99` 及相关）。
-- **Onboarding / config：** OpenClaw journey shell、从 OpenClaw 导入 LLM、单一配置源、TTY/journey 与 secret 遮罩。
-- **OpenClaw deploy：** 分步模块、JSON merge 辅助、deploy 测试、捆绑 Himalaya、state root 下 canonical `SKILL.md`、链到 OpenClaw skills 目录的 symlink。
-- **Runtime：** JSON-RPC daemon + 协议测试、可注入的 `cli_invoke` CLI runner、`twinbox vendor install|status|integrity`、`twinbox install --archive`（本地/HTTP）、用户交付命令默认名为 `twinbox`、`--profile` + `TWINBOX_HOME` 共享 vendor。
-- **Orchestration：** Phase 1/4 loading 编排进 Python；`task_cli` lazy import 以加快 daemon 子进程。
-- **增量邮件（计划结案）：** `imap_incremental`、`merge_context`、`user_queue_state`、`daytime-sync` 路径、queue dismiss/complete/restore + tests — 按 2026-03-26 实施计划状态。
-- **运行时验证入口：** `scripts/verify_runtime_slice.sh` 已覆盖 daemon / vendor / loading / OpenClaw deploy / Go entrypoint 的仓库内回归检查。
-
-### 核心重构（高层）
-
-- **Paths / roots：** Python `paths.py`，`~/.config/twinbox/` 下指针文件，见 `[docs/ref/code-root-developer.md](docs/ref/code-root-developer.md)`。
-- **Orchestration contract：** `twinbox_core.orchestration` 为共享契约 + `twinbox-orchestrate` 入口。
-- **Loading：** Phase 2/3 context 构建与大量 loading 逻辑已在 Python（新工作不再堆 shell 重复实现）。
-- **LLM 模块：** 已有 `src/twinbox_core/llm.py`；「所有 phase thinking 走单一 boundary」仍是渐进目标（见 backlog）。
-- **Daemon + Go thin client + vendor：** 已交付；见 daemon slice 文档。
+**Last Updated:** 2026-04-01
 
 ---
 
-## 未完成 / 开放 backlog
+## Overview
 
-按执行优先级分组；与 README「当前聚焦」重叠处以此文为准。
+twinbox 是以线程为中心的邮件 Copilot 基础设施。核心路径：read-only → draft → controlled send。
 
-### 当前发布门槛（优先于长期 backlog）
-
-
-| 项                          | 说明                                                                                                     |
-| -------------------------- | ------------------------------------------------------------------------------------------------------ |
-| **OpenClaw 宿主全流程手测**       | 从干净宿主按 `twinbox onboard openclaw --json` 走完：门槛检查、roots、SKILL 同步、Gateway 重启、交接到 `twinbox onboarding …`。 |
-| **宿主脚本化替代路径**              | `twinbox deploy openclaw --json`、`--rollback --json`、升级后再次 deploy 的手测闭环。                               |
-| **vendor / no-clone 交付路径** | 用 `twinbox install --archive …` 或 `twinbox vendor install` 验证无完整仓库 checkout 时仍可运行。                     |
-| **daemon / CLI 真实宿主烟测**    | `twinbox daemon start`、`status --json`、`stop`，以及 `twinbox task todo --json` / `weekly --json` 的宿主实测。   |
-| **平台真实行为核实**               | 若本轮要对外承诺 OpenClaw 自动能力，需在真实版本核实 `preflightCommand` 与 `metadata.openclaw.schedules` 的实际消费方式。            |
-
-
-### 发布后 backlog（非本轮上线阻塞）
-
-### P0 — 产品契约
-
-
-| 项                            | 说明                                                                                                                     |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `**context_updated` → 真实重跑** | 在 `context import-material` / `upsert-fact` / 画像更新后发 marker 或事件；`context refresh` 应触发 Phase 1（或范围重跑），不能只做提示。（原 TODO-2） |
-| **Review / action CLI**      | `twinbox review approve                                                                                                |
-| **Skill 呈现 vs phase 术语**     | Task-facing CLI 已较宽；根 `SKILL.md` 应保持薄，主路径不必让读者理解 phase 编号。（原 TODO-1 余量）                                                |
-
-
-### P1 — OpenClaw / Track B（平台 + 宿主）
-
-
-| 项                                 | 说明                                                                                          |
-| --------------------------------- | ------------------------------------------------------------------------------------------- |
-| `**preflightCommand` 自动执行**       | 核实 OpenClaw 是否自动跑；文档化真实行为。                                                                  |
-| `**metadata.openclaw.schedules`** | 在平台 import 未证实前视为声明层；对照真实 cron / system-event 验证。                                           |
-| `**twinbox` agent 会话隔离**          | 减少 `agent:twinbox:main` 复用 / 空 `assistant`；与「skill/env 变更后新开 session」一致。                    |
-| **宿主加固**                          | 生产级 service 安装、retry、告警、**stale-artifact fallback** 责任边界（与 P3「运行时归档快照」互补：前者偏运行中恢复，后者偏历史保留）。 |
-| **Subscription registry**         | 多渠道投递，不依赖临时 session history。                                                                |
-| **Track A 打磨**                    | `.claude/skills/twinbox` 与根 `SKILL.md` 边界、references 深度、与 hosted smoke 的 eval 对齐。           |
-
-
-### P2 — 工程质量
-
-
-| 项                         | 说明                                                                                                               |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| **统一 LLM boundary**       | 各 phase thinking 路径集中处理 provider 差异、retry、timeout、JSON repair（超出当前 `llm.py` 覆盖面）。                                |
-| **Render / merge 去重**     | merge-only 与并行 Phase 4 路径仍分叉处减少重复。                                                                               |
-| **Attention-budget 驱动依赖** | 以 `attention-budget.yaml` 作 phase gate 的测试加强，而非仅「文件存在」。                                                          |
-| **Eval / baseline**       | `twinbox-eval-phase4` 与 baseline：仓库策略为**本地 `pytest`**（树内无 GitHub Actions workflow）；是否接外部 CI 由宿主决定。（原 TODO-4，已改述） |
-
-
-### P3 — 自动化（闸门到位前 Phase 1–4 仍只读）
-
-
-| 项                                            | 说明                                 |
-| -------------------------------------------- | ---------------------------------- |
-| **Draft + approval**                         | 显式闸门后；Phase 1–4 保持 read-only。      |
-| **结构化 audit trail**                          | 如 README 所述 `runtime/audit/` 叙事。   |
-| **Action template registry + review UI/CLI** | 文档侧 contract 已有；产品面仍开放。            |
-| **Runtime archive snapshots**                | 夜间/每周/失败时的产物快照。                    |
-| **Fully local LLM**                          | 可选部署模式；不阻塞 OpenAI-compatible 托管路径。 |
-
+本路线图基于 commit 记录维护，按业界通用格式组织：已完成功能、进行中工作、计划功能。
 
 ---
 
-## 增量邮件设计说明
+## Completed (已完成)
 
-UID watermark + user queue state 的**设计稿**曾位于已移除的 `docs/superpowers/specs/`；行为**已实现**（见上文「已完成」）。若需旧叙事可从 git history 恢复。
+### Q1 2026 (March - April)
+
+#### Core Infrastructure
+
+**Runtime & Daemon**
+- JSON-RPC daemon + protocol tests (`2026-03-29`)
+- Go thin client as standalone entrypoint (`twinbox-go` → `twinbox`) (`2026-03-29`)
+- Lazy daemon start on RPC dial failure (`2026-03-30`)
+- Supervised daemon with restart capability (`2026-03-29`)
+- Vendor tarball installation (`twinbox install --archive`, `twinbox vendor install|status|integrity`) (`2026-03-30`)
+- Shared vendor via `--profile` + `TWINBOX_HOME` (`2026-03-29`)
+- Runtime verification script (`scripts/verify_runtime_slice.sh`) (`2026-03-29`)
+
+**Configuration & Onboarding**
+- Primary config file `twinbox.json` with IMAP UTF-7 support (`2026-03-30`)
+- OpenClaw onboarding flow with TTY interaction (`2026-03-30` - `2026-04-01`)
+  - Bootstrap and push binding handoff (`2026-04-01`)
+  - TTY push session picker and digest cron presets (`2026-04-01`)
+  - TTY routing rules and push after deploy (`2026-04-01`)
+  - Context bundle paste and `import-material --stdin` (`2026-03-31`)
+- Mailbox auto-login reset on email change (`2026-03-30`)
+- Merged mailbox env for immediate validation (`2026-03-30`)
+
+**OpenClaw Integration**
+- Vendor-safe OpenClaw bridge with cadence push (`2026-03-29`)
+- OpenClaw plugin bundled in vendor tarball (`2026-03-30`)
+- Bundled dist without npm requirement on hosts (`2026-03-30`)
+- OpenClaw skill moved to `integrations/openclaw` (`2026-03-30`)
+- Onboarding tools: `twinbox_push_confirm_onboarding`, `twinbox_onboarding_finish_routing_rules`, `twinbox_context_import_material` (`2026-03-30`)
+- SKILL.md hardened advance rules for profile setup and routing (`2026-03-30`)
+
+#### Orchestration & Loading
+
+**Python Core Migration**
+- Phase 1-4 thinking migrated to Python (`2026-03-20`)
+- Phase 2-3 loading converged to shared builder (`2026-03-20`)
+- Shared orchestration contract CLI (`task_cli`) (`2026-03-20`)
+- Canonical state root extended to Phase 1-3 (`2026-03-20`)
+- `task_cli` lazy import for faster daemon subprocess (`2026-03-29`)
+
+**Phase 4 Enhancements**
+- Loading fixes, `recipient_role` scoring separation (`2026-03-29`)
+- Real `--dry-run` implementation (`2026-03-29`)
+- Calibration and onboarding notes in context (`2026-03-29`)
+- Shared action candidates across phase4 (`2026-03-29`)
+- Configurable CC downweight (`2026-03-29`)
+
+**Context & Profile**
+- Unified human context storage (`2026-03-29`)
+- Bridge onboarding calibration into loading (`2026-03-29`)
+
+#### Task-Facing CLI
+
+**Core Commands** (`2026-03-23`)
+- `queue list/show/explain` - Queue management
+- `context import-material/upsert-fact/profile-set/refresh` - Context operations
+- `thread inspect/explain` - Thread analysis
+- `digest daily/weekly` - Digest generation
+- Unified entrypoint `scripts/twinbox` with default `--json` output
+
+**Action & Review** (`2026-03-24`)
+- `action suggest/materialize` with ActionCard model
+- `review list/show` with ReviewItem model
+- DigestView and object contracts
+
+#### Digest & Reporting
+
+- Daily ledger replay into weekly brief (`2026-03-29`)
+- Customizable weekly digest template (`2026-03-29`)
+- Reference material path for weekly brief (`2026-03-29`)
+- Weekly digest snapshot contract (`2026-03-29`)
+- Digest text output as markdown (`2026-03-29`)
+
+#### Documentation & Repository
+
+**Docs Restructure** (`2026-03-24`)
+- `docs/README.md` as single entry point
+- New structure: `architecture/`, `roadmap/`, `archive/`
+- `architecture.md` moved to `docs/ref/`
+- Root entry convergence: README, AGENTS.md, CLAUDE.md point to `docs/`
+- Validation contract at `docs/ref/validation.md` (local-only, not tracked)
+
+**Recent Updates** (`2026-03-31` - `2026-04-01`)
+- Apache-2.0 relicense with LICENSE and NOTICE (`2026-04-01`)
+- Removed docs/assets, docs/openclaw, docs/superpowers (`2026-04-01`)
+- Removed beta case study and sensitive references (`2026-04-01`)
+- Added BUGFIX.md for bug narratives (`2026-03-31`)
+- Case study moved to how-to-make-twinbox (`2026-03-31`)
+
+#### Testing & Quality
+
+- `test_task_cli.py` covering CLI and view models (`2026-03-23`)
+- Runtime verification script for daemon/vendor/loading/OpenClaw/Go (`2026-03-29`)
+
+#### Bug Fixes
+
+**March 2026**
+- Surface onboard errors when OpenClaw CLI missing (`2026-03-31`)
+- Parse vendor tarball version without tomllib (Python <3.11) (`2026-03-30`)
+- Structured JSON recovery on missing pulse/thread (`2026-03-30`)
+- Start daemon in `run_openclaw_deploy` (`2026-03-30`)
+- Ignore stale fragment_path in twinbox.json (`2026-03-30`)
+- Resolve code root to repo root when cwd under cmd/twinbox-go (`2026-03-30`)
+- Explain skipped tools-fragment prompt when file missing (`2026-03-30`)
+- Reset auto mailbox login on email change (`2026-03-30`)
+- Use merged mailbox env for immediate validation (`2026-03-30`)
+
+#### Earlier Milestones (March 2026)
+
+**LLM Pipeline**
+- Phase 1-4 loading/thinking separation
+- Intent classification via LLM
+- Dual backend with OpenAI-compatible interface
+- JSON output robustness
+
+**Paths & Roots**
+- Python `paths.py` with `~/.config/twinbox/` pointer files
+- See `docs/ref/code-root-developer.md`
+
+**Incremental Mail** (Design closed)
+- `imap_incremental`, `merge_context`, `user_queue_state`
+- `daytime-sync` path
+- Queue dismiss/complete/restore with tests
 
 ---
 
-## 开发历程（原 CHANGELOG，2026-03-16 ~ 03-24）
+## In Progress (进行中)
 
-按时间倒序；仓库首提交 **2026-03-16**（原名 `email-skill` → `email-bot` → **twinbox**）。修复类记录见仓库根 `BUGFIX.md`。
-
-### 2026-03-24
-
-- **Task-facing CLI — action / review**：`ActionCard`、`ReviewItem` 与 `action suggest` / `action materialize`、`review list` / `review show`。
-- **docs 目录重构（phase 1）**：`docs/README.md` 为唯一入口；新增 `architecture/`、`roadmap/`、`archive/` 骨架。
-- **路径归位**：`architecture.md` 迁至 `docs/ref/`；计划迁至 `docs/`；旧报告归入 `docs/archive/`。
-- **根入口收敛**：`README.md`、`README.zh.md`、`AGENTS.md`、`CLAUDE.md` 指向 `docs/README.md`。
-- **validation**：仓库内不再跟踪 `docs/validation/` 占位文件；契约见 `docs/ref/validation.md`。
-
-### 2026-03-23
-
-- **Task-facing CLI（核心命令面）**：`queue list/show/explain`、`context import-material/upsert-fact/profile-set/refresh`、`thread inspect/explain`、`digest daily/weekly`；统一入口 `scripts/twinbox`，默认 `--json`。
-- **DigestView 与对象契约**。
-- **遗留脚本整理**：phase 脚本迁入 `scripts/old/`；新增 `docs/ref/scheduling.md`。
-- **Docs**：`docs/ref/cli.md` 迭代、CLAUDE.md/AGENTS.md 清理、README 改为线程为中心、Gog / ClawHub 分析、Phase 4 评测。
-- **Tests**：`test_task_cli.py` 覆盖 CLI 与视图模型。
-
-### 2026-03-20
-
-- **Python 核心路径**：`python` 包与核心模块；Phase 1–4 thinking 迁入 Python；Phase 2–3 loading 收敛到共享 builder；渲染收敛到共享 renderer。
-- **共享编排契约 CLI**：`task_cli` / 编排相关实现。
-- **Canonical state root** 扩展到 Phase 1–3。
-- **Docs**：验证工件契约 `docs/ref/validation.md`、语言层优化、Gastown 集成清理。
-
-### 2026-03-16 ~ 2026-03-19
-
-- **起源**：email-skill 脚手架 → email-bot → twinbox；preflight 冒烟脚本；Phase 3 早期文档。
-- **LLM 管线**：Phase 1–4 loading / thinking 分层；意图分类 LLM 化；双后端、OpenAI 兼容接口；JSON 输出鲁棒性。
-- **Gastown 编排**：formula + sling 全链路；`phase4_merge` 拆分、polecat worktree 同步、DAG 验证。
-- **Security & 仓库卫生**：PII 移除；`.gitignore` 扩展。
-- **Docs**：目录重组、多 agent 集成计划、架构审视、各 Phase LLM 迁移报告。
+Currently no active development branches.
 
 ---
 
-## 如何维护本文
+## Planned (计划中)
 
-- 每个**可交付**切片落地后，将对应条从 **未完成** 挪到 **已完成**（或删除），必要时补一行 merge commit 指针。
-- 深度设计优先链到 **参考文档**；本文保持为**单一 backlog 索引**。
-- 根 **README** / **README.zh** 中「当前聚焦 / 待办摘要」应与本文 **P0–P3 同步**（日期行 + 归类）；**长表只维护在本文**，README 仅保留短列表。
-- 发布窗口内，优先维护「当前发布门槛」；只有确认不阻塞上线的事项才放回 P0–P3 长期 backlog。
+### P0 - Critical for Production
+
+| Item | Description | Status |
+|------|-------------|--------|
+| **多邮箱支持** | Multi-mailbox support for handling multiple email accounts | Not Started |
+| **IMAP 接入模块重构** | Replace Himalaya CLI with new IMAP integration module | Not Started |
+| **心跳机制改造** | Adapt Categraf-like heartbeat mechanism for improved push stability and performance | Not Started |
+| **Context refresh triggers Phase 1 rerun** | `context import-material`/`upsert-fact`/profile updates should trigger actual Phase 1 rerun, not just prompt | Planned |
+| **Review/Action CLI completion** | `twinbox review approve <id>`, `twinbox action execute <id>` | Planned |
+
+### P1 - OpenClaw & Host Integration
+
+| Item | Description | Status |
+|------|-------------|--------|
+| **preflightCommand auto-execution** | Verify and document OpenClaw's automatic execution behavior | Planned |
+| **metadata.openclaw.schedules verification** | Validate against real cron/system-event behavior | Planned |
+| **Agent session isolation** | Reduce `agent:twinbox:main` reuse; align with skill/env change → new session | Planned |
+| **Host hardening** | Production-grade service install, retry, alerting, stale-artifact fallback | Planned |
+| **Subscription registry** | Multi-channel delivery without relying on temporary session history | Planned |
+| **Track A polish** | `.claude/skills/twinbox` vs root `SKILL.md` boundary, references depth, eval alignment | Planned |
+
+### P2 - Engineering Quality
+
+| Item | Description | Status |
+|------|-------------|--------|
+| **Unified LLM boundary** | Centralize provider differences, retry, timeout, JSON repair across all phases | Planned |
+| **Render/merge deduplication** | Reduce duplication in merge-only and parallel Phase 4 paths | Planned |
+| **Attention-budget driven dependencies** | Strengthen phase gate tests using `attention-budget.yaml`, not just file existence | Planned |
+| **Eval/baseline** | Local `pytest` for `twinbox-eval-phase4` and baseline (no GitHub Actions in repo) | Planned |
+
+### P3 - Automation (Phase 1-4 remain read-only until gates in place)
+
+| Item | Description | Status |
+|------|-------------|--------|
+| **Draft + approval** | Explicit gates before send; Phase 1-4 stay read-only | Planned |
+| **Structured audit trail** | `runtime/audit/` narrative as described in README | Planned |
+| **Action template registry + review UI/CLI** | Contract exists in docs; product surface open | Planned |
+| **Runtime archive snapshots** | Nightly/weekly/on-failure artifact snapshots | Planned |
+| **Fully local LLM** | Optional deployment mode; doesn't block OpenAI-compatible hosted path | Planned |
+
+---
+
+## Release Gates (发布门槛)
+
+Before next release, these must be validated:
+
+- [ ] **OpenClaw host full flow manual test** - Clean host walkthrough via `twinbox onboard openclaw --json`
+- [ ] **Host scripted alternative path** - `twinbox deploy openclaw --json`, `--rollback --json`, upgrade + redeploy loop
+- [ ] **Vendor/no-clone delivery path** - Verify `twinbox install --archive` or `twinbox vendor install` works without full repo checkout
+- [ ] **Daemon/CLI real host smoke test** - `twinbox daemon start/status/stop`, `twinbox task todo/weekly --json` on real host
+- [ ] **Platform behavior verification** - If committing OpenClaw auto-capability, verify `preflightCommand` and `metadata.openclaw.schedules` actual consumption
+
+---
+
+## Maintenance Guidelines (维护指南)
+
+### How to Update This Roadmap
+
+1. **After each deliverable merge**: Move item from Planned → Completed with commit reference and date
+2. **Deep design**: Link to reference docs; keep this file as single backlog index
+3. **Sync with README**: Root README/README.zh "Current Focus" should sync with P0-P3 (date + categorization); long tables only maintained here
+4. **Release window**: Prioritize "Release Gates" section; only non-blocking items go to P0-P3 long-term backlog
+
+### Commit Message Format
+
+Use conventional commits: `type: short description`
+
+Examples:
+- `feat: add multi-mailbox support`
+- `fix: resolve IMAP connection timeout`
+- `docs: update architecture diagram`
+- `refactor: simplify heartbeat mechanism`
+- `test: add integration tests for daemon`
+
+### Branch Strategy
+
+- Main branch: `master`
+- Feature branches: independent (e.g., `dev-go`), delete after merge
+- Merge commits should reference related issues/PRs
+
+---
+
+## References
+
+- Architecture: `docs/ref/architecture.md`
+- Current implementation slice: `docs/ref/daemon-and-runtime-slice.md`
+- CLI reference: `docs/ref/cli.md`
+- Bug fixes: `BUGFIX.md`
+- Full documentation: `docs/README.md`
+
 

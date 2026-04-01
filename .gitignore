@@ -7,6 +7,7 @@ twinbox.json
 .beads/formulas/*
 !.beads/formulas/twinbox-*.formula.toml
 .claude/
+!.claude/skills/
 .runtime/
 __pycache__/
 *.pyc
