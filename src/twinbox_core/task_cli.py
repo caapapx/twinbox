@@ -1970,6 +1970,7 @@ def _cmd_onboard_openclaw_journey(args: argparse.Namespace) -> int:
         skip_bridge=getattr(args, "skip_bridge", False),
         start_daemon=not getattr(args, "no_start_daemon", False),
         skip_tty_context_bundle=getattr(args, "skip_tty_context_bundle", False),
+        skip_tty_routing_push=getattr(args, "skip_tty_routing_push", False),
     )
     if args.json:
         print(json.dumps(report.to_json_dict(), ensure_ascii=False, indent=2))
@@ -3768,6 +3769,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--skip-tty-context-bundle",
         action="store_true",
         help="Skip optional TTY paste steps (profile/calibration/material) after LLM validate",
+    )
+    onboard_oc.add_argument(
+        "--skip-tty-routing-push",
+        action="store_true",
+        help="Skip TTY routing rules + push subscription after deploy (finish those in OpenClaw)",
     )
     onboard_oc.add_argument(
         "--openclaw-bin",

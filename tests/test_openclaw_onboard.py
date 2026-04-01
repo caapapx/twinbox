@@ -267,6 +267,7 @@ def test_run_openclaw_onboard_console_prompter_prints_english_shell(
         code_root=repo,
         openclaw_home=openclaw_home,
         skip_tty_context_bundle=True,
+        skip_tty_routing_push=True,
     )
     out = capsys.readouterr().out
 
@@ -686,6 +687,7 @@ def test_run_openclaw_onboard_requires_explicit_steps_even_with_existing_values(
         openclaw_home=openclaw_home,
         prompter=prompter,
         skip_tty_context_bundle=True,
+        skip_tty_routing_push=True,
     )
 
     assert report.ok is True
@@ -768,6 +770,7 @@ def test_run_openclaw_onboard_reads_existing_values_from_twinbox_json(
         openclaw_home=openclaw_home,
         prompter=prompter,
         skip_tty_context_bundle=True,
+        skip_tty_routing_push=True,
     )
 
     assert report.ok is True
@@ -822,6 +825,7 @@ def test_run_openclaw_onboard_collects_llm_inputs_before_validation_progress(
         openclaw_home=openclaw_home,
         prompter=prompter,
         skip_tty_context_bundle=True,
+        skip_tty_routing_push=True,
     )
 
     assert report.ok is True
@@ -897,6 +901,7 @@ def test_run_openclaw_onboard_collects_mailbox_inputs_before_validation_progress
         openclaw_home=openclaw_home,
         prompter=prompter,
         skip_tty_context_bundle=True,
+        skip_tty_routing_push=True,
     )
 
     assert report.ok is True
@@ -980,6 +985,7 @@ def test_run_openclaw_onboard_uses_updated_mailbox_secret_for_preflight(
         openclaw_home=openclaw_home,
         prompter=prompter,
         skip_tty_context_bundle=True,
+        skip_tty_routing_push=True,
     )
 
     assert report.ok is True
@@ -1070,6 +1076,7 @@ def test_run_openclaw_onboard_auto_update_resets_login_when_email_changes(
         openclaw_home=openclaw_home,
         prompter=prompter,
         skip_tty_context_bundle=True,
+        skip_tty_routing_push=True,
     )
 
     assert report.ok is True
@@ -1124,6 +1131,7 @@ def test_run_openclaw_onboard_starts_detection_progress_before_mailbox_auto_dete
         openclaw_home=openclaw_home,
         prompter=prompter,
         skip_tty_context_bundle=True,
+        skip_tty_routing_push=True,
     )
 
     assert report.ok is True
@@ -1193,6 +1201,7 @@ def test_run_openclaw_onboard_times_out_llm_validation(
         llm_update_runner=slow_llm_update_runner,
         llm_validation_timeout_seconds=0.01,
         skip_tty_context_bundle=True,
+        skip_tty_routing_push=True,
     )
 
     assert report.ok is False
@@ -1260,6 +1269,7 @@ def test_run_openclaw_onboard_llm_validation_failure_returns_to_llm_menu(
         prompter=prompter,
         llm_update_runner=failing_llm_update_runner,
         skip_tty_context_bundle=True,
+        skip_tty_routing_push=True,
     )
 
     assert report.ok is False
@@ -1323,6 +1333,7 @@ def test_run_openclaw_onboard_times_out_mailbox_validation(
         mailbox_apply_runner=slow_mailbox_apply_runner,
         mailbox_validation_timeout_seconds=0.01,
         skip_tty_context_bundle=True,
+        skip_tty_routing_push=True,
     )
 
     assert report.ok is False
@@ -1385,6 +1396,7 @@ def test_run_openclaw_onboard_allows_llm_skip_and_returns_incomplete_handoff(
         openclaw_home=openclaw_home,
         prompter=prompter,
         skip_tty_context_bundle=True,
+        skip_tty_routing_push=True,
     )
 
     assert report.ok is False
@@ -1458,6 +1470,7 @@ def test_run_openclaw_onboard_hides_use_current_llm_when_only_api_key_exists(
         openclaw_home=openclaw_home,
         prompter=prompter,
         skip_tty_context_bundle=True,
+        skip_tty_routing_push=True,
     )
 
     llm_select = next(
@@ -1550,6 +1563,7 @@ def test_run_openclaw_onboard_journey_imports_llm_from_openclaw_json(
         prompter=prompter,
         llm_update_runner=capture_llm_runner,
         skip_tty_context_bundle=True,
+        skip_tty_routing_push=True,
     )
 
     assert report.ok is True
@@ -1602,6 +1616,7 @@ def test_run_openclaw_onboard_journey_openclaw_import_error_returns_to_llm_menu(
         openclaw_home=openclaw_home,
         prompter=prompter,
         skip_tty_context_bundle=True,
+        skip_tty_routing_push=True,
     )
 
     assert report.ok is False
@@ -1664,6 +1679,7 @@ def test_run_openclaw_onboard_validates_existing_llm_before_continue(
         openclaw_home=openclaw_home,
         prompter=prompter,
         skip_tty_context_bundle=True,
+        skip_tty_routing_push=True,
     )
 
     assert report.ok is True
@@ -1717,6 +1733,7 @@ def test_run_openclaw_onboard_stops_when_existing_llm_validation_fails(
         openclaw_home=openclaw_home,
         prompter=prompter,
         skip_tty_context_bundle=True,
+        skip_tty_routing_push=True,
     )
 
     assert report.ok is False
@@ -1778,6 +1795,7 @@ def test_run_openclaw_onboard_tty_context_bundle_saves_profile_and_material(
         openclaw_home=openclaw_home,
         prompter=prompter,
         skip_tty_context_bundle=False,
+        skip_tty_routing_push=True,
     )
     assert report.ok is True
     hc = (state_root / "runtime" / "context" / "human-context.yaml").read_text(encoding="utf-8")
@@ -1790,6 +1808,62 @@ def test_run_openclaw_onboard_tty_context_bundle_saves_profile_and_material(
     st = load_state(state_root)
     assert "profile_setup" in st.completed_stages
     assert "material_import" in st.completed_stages
+
+
+def test_run_openclaw_onboard_tty_routing_push_skips_to_completed(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    _write_ready_env(state_root)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "SKILL.md").write_text("---\nname: twinbox\n---\n", encoding="utf-8")
+    (repo / "integrations" / "openclaw").mkdir(parents=True)
+    (repo / "integrations" / "openclaw" / "openclaw.fragment.json").write_text("{}\n", encoding="utf-8")
+    openclaw_home = tmp_path / ".openclaw"
+    openclaw_home.mkdir()
+
+    monkeypatch.setenv("TWINBOX_STATE_ROOT", str(state_root))
+    monkeypatch.setenv("TWINBOX_CODE_ROOT", str(repo))
+    monkeypatch.setattr("twinbox_core.openclaw_onboard.shutil.which", lambda _bin: "/usr/bin/openclaw")
+    monkeypatch.setattr("twinbox_core.mailbox.run_preflight", _fake_run_preflight)
+    monkeypatch.setattr("twinbox_core.llm.validate_backend", lambda _backend: (True, ""))
+    monkeypatch.setattr(
+        "twinbox_core.openclaw_onboard.run_openclaw_deploy",
+        lambda **_: OpenClawDeployReport(ok=True, steps=[], phase2_ready=True),
+    )
+    monkeypatch.setattr(
+        "twinbox_core.onboard_tty_routing_push.confirm_push_subscription",
+        lambda *_a, **_k: {"ok": True},
+    )
+
+    prompter = _FakePrompter(
+        select_values=[
+            "continue",
+            "quickstart",
+            "use_existing",
+            "use_existing",
+            "yes",
+            "apply",
+            "yes",
+            "skip",
+            "skip",
+        ],
+    )
+    report = run_openclaw_onboard(
+        code_root=repo,
+        openclaw_home=openclaw_home,
+        prompter=prompter,
+        skip_tty_context_bundle=True,
+        skip_tty_routing_push=False,
+    )
+    assert report.ok is True
+    from twinbox_core.onboarding import load_state
+
+    st = load_state(state_root)
+    assert st.current_stage == "completed"
 
 
 def test_run_openclaw_onboard_ctrl_c_returns_cancelled_report(
@@ -1819,6 +1893,7 @@ def test_run_openclaw_onboard_ctrl_c_returns_cancelled_report(
         openclaw_home=openclaw_home,
         prompter=prompter,
         skip_tty_context_bundle=True,
+        skip_tty_routing_push=True,
     )
 
     assert report.ok is False

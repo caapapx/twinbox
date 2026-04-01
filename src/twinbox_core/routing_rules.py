@@ -50,6 +50,37 @@ def save_rules_raw(config_path: Path, data: dict[str, object]) -> None:
     config_path.write_text(yaml.dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
 
 
+def add_or_merge_rule(config_path: Path, rule: dict[str, object]) -> dict[str, object]:
+    """
+    Insert or replace one rule in routing-rules.yaml by ``id``.
+    Returns the normalized rule dict (with generated id if missing).
+    """
+    raw_data = load_rules_raw(config_path)
+    rules = raw_data.setdefault("rules", [])
+    if not isinstance(rules, list):
+        rules = []
+        raw_data["rules"] = rules
+
+    rid = str(rule.get("id", "") or "").strip()
+    if not rid:
+        import uuid
+
+        rid = f"rule_{uuid.uuid4().hex[:8]}"
+        rule = {**dict(rule), "id": rid}
+
+    replaced = False
+    for i, existing in enumerate(rules):
+        if isinstance(existing, dict) and str(existing.get("id", "")) == rid:
+            rules[i] = dict(rule)
+            replaced = True
+            break
+    if not replaced:
+        rules.append(dict(rule))
+
+    save_rules_raw(config_path, raw_data)
+    return dict(rule)
+
+
 def load_rules(config_path: Path) -> list[RoutingRule]:
     if not config_path.is_file():
         return []

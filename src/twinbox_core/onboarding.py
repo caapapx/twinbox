@@ -144,19 +144,15 @@ STAGE_PROMPTS = {
     ),
     "routing_rules": (
         "Phase 2 of 2 · 邮件过滤规则\n"
-        "继续完成 Twinbox onboarding。询问用户是否需要语义路由规则（自动过滤群组通知、系统告警等）。\n"
-        "用户给出规则后调用 twinbox_onboarding_finish_routing_rules(rule_json=...)；"
-        "用户跳过时调用 twinbox_onboarding_finish_routing_rules(skip_rules=true)。"
-        "一个工具完成 rule add + advance，无需链式调用。"
+        "若已在 `twinbox onboard openclaw` TTY 中配置并推进，本阶段可能已完成。\n"
+        "否则：询问是否需要语义路由规则；用户给出规则后调用 twinbox_onboarding_finish_routing_rules(rule_json=...)；"
+        "跳过时 twinbox_onboarding_finish_routing_rules(skip_rules=true)。"
     ),
     "push_subscription": (
         "Phase 2 of 2 · 推送通知设置\n"
-        "向用户确认是否开启 Twinbox 推送通知（这是 onboarding 最后一步）：\n"
-        "• 每日邮件摘要（daily digest）— 默认开启\n"
-        "• 每周工作简报（weekly brief）— 默认开启\n\n"
-        "用户确认后（如「确认」「好」「开启」「可以」），**立即同轮调用** "
-        "twinbox_push_confirm_onboarding(daily='on', weekly='on') 完成此阶段。"
-        "无需传 session 参数。不要说「下一步执行…」然后停下——必须在同一条回复里调用工具并输出摘要。"
+        "若已在 `twinbox onboard openclaw` TTY 中完成推送订阅，本阶段可能已完成。\n"
+        "否则：确认 daily / weekly；用户确认后 **同轮** 调用 twinbox_push_confirm_onboarding(daily='on', weekly='on')，"
+        "无需 session。须调用工具并输出摘要。"
     ),
 }
 
