@@ -19,7 +19,6 @@
 - [`../integrations/openclaw/`](../integrations/openclaw/README.md): OpenClaw 托管 skill、部署与宿主桥接（仓库根目录）；正式部署步骤见 [`../integrations/openclaw/DEPLOY.md`](../integrations/openclaw/DEPLOY.md)；排障见 [`../integrations/openclaw/TROUBLESHOOT.md`](../integrations/openclaw/TROUBLESHOOT.md)；附录见 [`../integrations/openclaw/DEPLOY-APPENDIX.md`](../integrations/openclaw/DEPLOY-APPENDIX.md)
 - [`ref/openclaw-deploy-model.md`](./ref/openclaw-deploy-model.md): OpenClaw 三层分工设计模型与数据流（配合 DEPLOY.md 操作路径阅读）
 - **验证报告**：仅存本地 / `runtime/validation/`，勿向仓库提交实例数据（见 `docs/ref/validation.md`）
-- [`assets/`](./assets/README.md): 文档配图（`docs/assets/images/`）
 - [`troubleshooting/session-pollution.md`](./troubleshooting/session-pollution.md): 会话污染说明入口（正文在仓库根 [`BUGFIX.md`](../BUGFIX.md)）
 
 ## Rules
@@ -28,5 +27,5 @@
 - 根入口保持简短，不维护大段重复索引
 - 新文档优先并入现有文件；确实放不下再新建
 - 优先放 `ref/` 或 `integrations/` 下与主题配套的 README
-- `validation/` 下的实例数据不能当成通用事实
+- 本地或 state root 下验证输出中的实例数据不能当成通用事实
 - 新增**读者常打开的**文档时，在本页 **Read first** / **Layout** 或 `AGENTS.md`「核心文档入口」补一条链向（`validation/` 实例可只链到子索引）；详见 `AGENTS.md` 协作约束第 5 条

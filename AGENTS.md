@@ -13,7 +13,6 @@
 | agent/ | TypeScript 扩展契约骨架（spec-first，尚未完整实现） | `*.ts` |
 | docs/ref/ | 架构、契约、CLI、运行时参考 | 短名优先，如 `cli.md` |
 | （验证输出） | 仅存本机或 state root 下路径（如 `docs/validation/`），**勿将实例数据提交 git** | 见 `docs/ref/validation.md` |
-| docs/assets/ | 图片、静态资源 | 按需 |
 | （根目录） | **`BUGFIX.md`**：缺陷根因、修复记录与 fix 类提交时间线 | 个案长文与归档 |
 
 ## 核心文档入口

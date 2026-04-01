@@ -2,7 +2,7 @@
 
 **最后更新：** 2026-03-29（发布前手动验收整理）  
 
-本文档**取代**仓库内已删除的分散计划稿：`skill-creator-plan.md`、`.cursor/plans/prompt_and_code_optimization_*.plan.md`、`docs/superpowers/plans/*`、`docs/superpowers/specs/*`（增量邮件设计）、`docs/core-refactor-v1.md`，以及空的 `docs/core-refactor-v2-latest.md` 占位。  
+本文档**取代**仓库内已删除的分散计划稿：`skill-creator-plan.md`、`.cursor/plans/prompt_and_code_optimization_*.plan.md`、原 `docs/superpowers/` 下计划与规格稿（增量邮件设计，目录已移除）、`docs/core-refactor-v1.md`，以及空的 `docs/core-refactor-v2-latest.md` 占位。  
 
 **当前实现事实**（daemon、Go 薄壳、vendor、模组化模拟邮箱、**phase1/4 取信仍经 himalaya CLI**）：[`docs/ref/daemon-and-runtime-slice.md`](docs/ref/daemon-and-runtime-slice.md)。**架构：** [`docs/ref/architecture.md`](docs/ref/architecture.md)。**CLI：** [`docs/ref/cli.md`](docs/ref/cli.md)。**OpenClaw 宿主：** [`integrations/openclaw/DEPLOY.md`](integrations/openclaw/DEPLOY.md)。**简版已交付清单：** 根目录 [README.md](README.md) / [README.zh.md](README.zh.md)「当前聚焦」— 与本文冲突时**以本文为准**。
 
@@ -16,7 +16,7 @@
 |--------|------|
 | `skill-creator-plan.md` | Track A（本地 agent）vs Track B（OpenClaw）分包、验证阶梯、平台缺口 |
 | `.cursor/plans/prompt_and_code_optimization_*.plan.md` | Phase 2–4 prompt 架构 + Phase 4 正确性（loading、`recipient_role`、`--dry-run`、calibration） |
-| `docs/superpowers/plans/2026-03-26-incremental-mail-processing-implementation.md` | UID watermark、`daytime-sync`、merge context、queue state、orchestration 接线 |
+| （原 `docs/superpowers/plans/2026-03-26-incremental-mail-processing-implementation.md`，已移除） | UID watermark、`daytime-sync`、merge context、queue state、orchestration 接线 |
 | `docs/core-refactor-v1.md` | 分阶段核心重构（paths → LLM boundary → context → skill surface → Go 再评估）+ 原 TODO-1…4 |
 | `dev-go` 上近期 `git log`（约 80 条） | Onboarding v2、单一 `twinbox.json`、OpenClaw deploy 拆分、daemon/RPC、vendor、tests |
 | Cursor `twinbox_runtime_daemon_vendor_merged.plan.md`（本机 `.cursor/plans/`，可选） | 运行时切片叙事：daemon/vendor/deploy、**纯 Python mail transport** 等待办、Go 单一入口等；**以仓库内 `daemon-and-runtime-slice.md` + 本文为准** |
@@ -107,7 +107,7 @@
 
 ## 增量邮件设计说明
 
-UID watermark + user queue state 的**设计稿**原在 `docs/superpowers/specs/`（随合并已删）；行为**已实现**（见上文「已完成」）。若需旧叙事可从 git history 恢复。
+UID watermark + user queue state 的**设计稿**曾位于已移除的 `docs/superpowers/specs/`；行为**已实现**（见上文「已完成」）。若需旧叙事可从 git history 恢复。
 
 ---
 

@@ -103,11 +103,9 @@
    - 核心场景演示（GIF/视频）
    - 常见问题（FAQ 前置）
 
-2. 创建 `docs/openclaw/` 目录
-   - `installation.md` - 详细安装指南
-   - `first-use.md` - 首次使用教程
-   - `troubleshooting.md` - 故障排查索引
-   - `architecture.md` - 架构说明（给高级用户）
+2. OpenClaw 文档面（优先并入现有路径，而非新建 `docs/openclaw/`）
+   - 安装 / 首次使用 / 排障：扩展 [`integrations/openclaw/DEPLOY.md`](../../integrations/openclaw/DEPLOY.md)、[`TROUBLESHOOT.md`](../../integrations/openclaw/TROUBLESHOOT.md)
+   - 架构：[`docs/ref/openclaw-deploy-model.md`](../ref/openclaw-deploy-model.md) + [`daemon-and-runtime-slice.md`](../ref/daemon-and-runtime-slice.md)
 
 3. 改进 SKILL.md 可读性
    - 精简 frontmatter description（< 200 字）
