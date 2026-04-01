@@ -77,7 +77,7 @@ def probe_tls(host: str, port: int, timeout: float = 5.0) -> tuple[bool, Optiona
             with ctx.wrap_socket(sock, server_hostname=host):
                 return True, None
     except ssl.SSLError as e:
-        return False, f"TLS: {e.reason}"
+        return False, f"TLS: {e.reason if hasattr(e, 'reason') else str(e)}"
     except OSError as e:
         return False, str(e)
 

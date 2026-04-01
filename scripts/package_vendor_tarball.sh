@@ -27,6 +27,6 @@ tar -czf "$OUT" \
   --exclude='*.pyc' \
   --exclude='integrations/openclaw/plugin-twinbox-task/node_modules' \
   -C "$ROOT/src" twinbox_core \
-  -C "$ROOT" integrations/openclaw SKILL.md \
+  -C "$ROOT" integrations/openclaw SKILL.md config \
   -C "$TMP" scripts
 echo "$OUT"
