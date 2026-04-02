@@ -49,31 +49,35 @@ jobs:
           echo "pyproject_version=$V" >> "$GITHUB_OUTPUT"
           echo "pyproject_version=$V"
 
+      # go.mod lives in cmd/twinbox-go; build from that module root (not repo root).
       - name: Build CLI — Linux x86_64 (amd64)
+        working-directory: cmd/twinbox-go
         env:
           CGO_ENABLED: "0"
           GOOS: linux
           GOARCH: amd64
         run: |
-          mkdir -p dist
-          go build -o "dist/twinbox-${RELEASE_TAG}-linux-x86_64" ./cmd/twinbox-go
-          chmod +x "dist/twinbox-${RELEASE_TAG}-linux-x86_64"
+          mkdir -p ../../dist
+          go build -o "../../dist/twinbox-${RELEASE_TAG}-linux-x86_64" .
+          chmod +x "../../dist/twinbox-${RELEASE_TAG}-linux-x86_64"
 
       - name: Build CLI — Linux arm64
+        working-directory: cmd/twinbox-go
         env:
           CGO_ENABLED: "0"
           GOOS: linux
           GOARCH: arm64
         run: |
-          go build -o "dist/twinbox-${RELEASE_TAG}-linux-arm64" ./cmd/twinbox-go
-          chmod +x "dist/twinbox-${RELEASE_TAG}-linux-arm64"
+          go build -o "../../dist/twinbox-${RELEASE_TAG}-linux-arm64" .
+          chmod +x "../../dist/twinbox-${RELEASE_TAG}-linux-arm64"
 
       - name: Build CLI — Windows x86_64 (amd64)
+        working-directory: cmd/twinbox-go
         env:
           CGO_ENABLED: "0"
           GOOS: windows
           GOARCH: amd64
-        run: go build -o "dist/twinbox-${RELEASE_TAG}-windows-amd64.exe" ./cmd/twinbox-go
+        run: go build -o "../../dist/twinbox-${RELEASE_TAG}-windows-amd64.exe" .
 
       - name: Package vendor core tarball
         run: bash scripts/package_vendor_tarball.sh
