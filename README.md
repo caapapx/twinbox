@@ -363,7 +363,7 @@ Canonical source: [ROADMAP.md](ROADMAP.md)
 
 ## GitHub Releases
 
-Tagged releases (e.g. `v0.1.0`) are built by [`.github/workflows/release.yml`](.github/workflows/release.yml): **Linux x86_64** (`amd64`) **CLI** plus **`twinbox_core-<version>.tar.gz`** (vendor/core bundle) and `SHA256SUMS-linux-x86_64.txt`. Push tag `v*` to trigger, or run the workflow manually with an existing tag.
+Tagged releases (e.g. `v0.1.0`) are built by [`.github/workflows/release.yml`](.github/workflows/release.yml): **CLI** binaries for **Linux x86_64**, **Linux arm64**, and **Windows x86_64** (`.exe`), plus one **`twinbox_core-<version>.tar.gz`** (vendor/core bundle) and **`SHA256SUMS.txt`**. Push tag `v*` to trigger, or run the workflow manually with an existing tag.
 
 ---
 

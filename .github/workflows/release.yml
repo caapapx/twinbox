@@ -1,13 +1,15 @@
-# Build Linux x86_64 (amd64) CLI + vendor core tarball and attach to GitHub Releases.
+# Build twinbox CLI for Linux x86_64, Linux arm64, Windows x86_64 + vendor core tarball → GitHub Release.
 #
 # Trigger:
-#   - Push a tag matching v* (e.g. v0.1.0)
-#   - Or: Actions → Release → Run workflow (enter existing tag, e.g. v0.1.0)
+#   - Push tag v* (e.g. v0.1.0)
+#   - Or: Actions → Release → Run workflow (existing tag)
 #
-# Artifacts (Linux x86_64 only):
-#   - twinbox-<tag>-linux-x86_64  — Go CLI
-#   - twinbox_core-<version>.tar.gz — from pyproject.toml version + scripts/package_vendor_tarball.sh
-#   - SHA256SUMS-linux-x86_64.txt
+# Artifacts:
+#   - twinbox-<tag>-linux-x86_64
+#   - twinbox-<tag>-linux-arm64
+#   - twinbox-<tag>-windows-amd64.exe
+#   - twinbox_core-<version>.tar.gz (same for all platforms; Python/OpenClaw bundle)
+#   - SHA256SUMS.txt
 name: Release
 
 on:
@@ -47,18 +49,31 @@ jobs:
           echo "pyproject_version=$V" >> "$GITHUB_OUTPUT"
           echo "pyproject_version=$V"
 
-      - name: Build twinbox CLI (Linux x86_64, static)
+      - name: Build CLI — Linux x86_64 (amd64)
         env:
           CGO_ENABLED: "0"
           GOOS: linux
           GOARCH: amd64
-        run: bash scripts/build_go_twinbox.sh
-
-      - name: Rename CLI for release
         run: |
-          cp dist/twinbox "dist/twinbox-${RELEASE_TAG}-linux-x86_64"
+          mkdir -p dist
+          go build -o "dist/twinbox-${RELEASE_TAG}-linux-x86_64" ./cmd/twinbox-go
           chmod +x "dist/twinbox-${RELEASE_TAG}-linux-x86_64"
-          ls -la dist/
+
+      - name: Build CLI — Linux arm64
+        env:
+          CGO_ENABLED: "0"
+          GOOS: linux
+          GOARCH: arm64
+        run: |
+          go build -o "dist/twinbox-${RELEASE_TAG}-linux-arm64" ./cmd/twinbox-go
+          chmod +x "dist/twinbox-${RELEASE_TAG}-linux-arm64"
+
+      - name: Build CLI — Windows x86_64 (amd64)
+        env:
+          CGO_ENABLED: "0"
+          GOOS: windows
+          GOARCH: amd64
+        run: go build -o "dist/twinbox-${RELEASE_TAG}-windows-amd64.exe" ./cmd/twinbox-go
 
       - name: Package vendor core tarball
         run: bash scripts/package_vendor_tarball.sh
@@ -67,8 +82,13 @@ jobs:
         working-directory: dist
         run: |
           shopt -s nullglob
-          sha256sum "twinbox-${RELEASE_TAG}-linux-x86_64" twinbox_core-*.tar.gz > SHA256SUMS-linux-x86_64.txt
-          cat SHA256SUMS-linux-x86_64.txt
+          sha256sum \
+            "twinbox-${RELEASE_TAG}-linux-x86_64" \
+            "twinbox-${RELEASE_TAG}-linux-arm64" \
+            "twinbox-${RELEASE_TAG}-windows-amd64.exe" \
+            twinbox_core-*.tar.gz > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          ls -la
 
       - name: Write release notes
         env:
@@ -76,19 +96,36 @@ jobs:
           VER: ${{ steps.ver.outputs.pyproject_version }}
         run: |
           cat > /tmp/release-notes.md << EOF
-          **Platform:** Linux **x86_64** (\`amd64\`) only for the CLI binary below.
+          Prebuilt **twinbox** CLI (Go, \`CGO_ENABLED=0\`) plus one **vendor core** tarball (Python + OpenClaw assets).
 
-          | Artifact | Description |
-          |----------|-------------|
-          | \`twinbox-${RELEASE_TAG}-linux-x86_64\` | \`twinbox\` CLI (Go); install to e.g. \`~/.local/bin/twinbox\` |
-          | \`twinbox_core-${VER}.tar.gz\` | Python core + OpenClaw bundle for \`twinbox install --archive\` |
-          | \`SHA256SUMS-linux-x86_64.txt\` | \`sha256sum\` for the above |
+          | CLI artifact | OS / arch |
+          |--------------|-----------|
+          | \`twinbox-${RELEASE_TAG}-linux-x86_64\` | Linux **x86_64** (\`amd64\`) |
+          | \`twinbox-${RELEASE_TAG}-linux-arm64\` | Linux **arm64** (\`aarch64\`) |
+          | \`twinbox-${RELEASE_TAG}-windows-amd64.exe\` | Windows **x86_64** (\`amd64\`) |
+
+          | Other | Description |
+          |-------|-------------|
+          | \`twinbox_core-${VER}.tar.gz\` | Same bundle for all platforms; use with \`twinbox install --archive\` on a machine with **Python ≥ 3.11** |
+          | \`SHA256SUMS.txt\` | \`sha256sum\` for all of the above |
+
+          **Linux (amd64) example**
 
           \`\`\`bash
           curl -sLO https://github.com/${REPO}/releases/download/${RELEASE_TAG}/twinbox-${RELEASE_TAG}-linux-x86_64
           chmod +x twinbox-${RELEASE_TAG}-linux-x86_64
           mv twinbox-${RELEASE_TAG}-linux-x86_64 ~/.local/bin/twinbox
           \`\`\`
+
+          **Linux (arm64) example**
+
+          \`\`\`bash
+          curl -sLO https://github.com/${REPO}/releases/download/${RELEASE_TAG}/twinbox-${RELEASE_TAG}-linux-arm64
+          chmod +x twinbox-${RELEASE_TAG}-linux-arm64
+          mv twinbox-${RELEASE_TAG}-linux-arm64 ~/.local/bin/twinbox
+          \`\`\`
+
+          **Windows:** download \`.exe\`, place on \`PATH\`, run from **cmd** or **PowerShell**.
 
           Deploy / archive usage: \`integrations/openclaw/DEPLOY.md\` on the default branch.
           EOF
@@ -97,12 +134,14 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          name: "${{ env.RELEASE_TAG }} (Linux x86_64)"
+          name: "${{ env.RELEASE_TAG }} (CLI: Linux amd64/arm64, Windows amd64)"
           body_path: /tmp/release-notes.md
           files: |
             dist/twinbox-${{ env.RELEASE_TAG }}-linux-x86_64
+            dist/twinbox-${{ env.RELEASE_TAG }}-linux-arm64
+            dist/twinbox-${{ env.RELEASE_TAG }}-windows-amd64.exe
             dist/twinbox_core-${{ steps.ver.outputs.pyproject_version }}.tar.gz
-            dist/SHA256SUMS-linux-x86_64.txt
+            dist/SHA256SUMS.txt
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
