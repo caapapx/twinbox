@@ -361,6 +361,12 @@ Canonical source: [ROADMAP.md](ROADMAP.md)
 
 ---
 
+## GitHub Releases
+
+Tagged releases (e.g. `v0.1.0`) are built by [`.github/workflows/release.yml`](.github/workflows/release.yml): **Linux x86_64** (`amd64`) **CLI** plus **`twinbox_core-<version>.tar.gz`** (vendor/core bundle) and `SHA256SUMS-linux-x86_64.txt`. Push tag `v*` to trigger, or run the workflow manually with an existing tag.
+
+---
+
 ## License
 
 Apache License 2.0 — see [LICENSE](./LICENSE) and [NOTICE](./NOTICE).

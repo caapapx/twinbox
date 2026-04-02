@@ -1,0 +1,108 @@
+# Build Linux x86_64 (amd64) CLI + vendor core tarball and attach to GitHub Releases.
+#
+# Trigger:
+#   - Push a tag matching v* (e.g. v0.1.0)
+#   - Or: Actions → Release → Run workflow (enter existing tag, e.g. v0.1.0)
+#
+# Artifacts (Linux x86_64 only):
+#   - twinbox-<tag>-linux-x86_64  — Go CLI
+#   - twinbox_core-<version>.tar.gz — from pyproject.toml version + scripts/package_vendor_tarball.sh
+#   - SHA256SUMS-linux-x86_64.txt
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing git tag (e.g. v0.1.0)"
+        required: true
+        default: "v0.1.0"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', github.event.inputs.tag) || github.ref }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Parse version from pyproject.toml
+        id: ver
+        run: |
+          V=$(grep -E '^version[[:space:]]*=' pyproject.toml | head -1 | sed -E 's/^version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/')
+          echo "pyproject_version=$V" >> "$GITHUB_OUTPUT"
+          echo "pyproject_version=$V"
+
+      - name: Build twinbox CLI (Linux x86_64, static)
+        env:
+          CGO_ENABLED: "0"
+          GOOS: linux
+          GOARCH: amd64
+        run: bash scripts/build_go_twinbox.sh
+
+      - name: Rename CLI for release
+        run: |
+          cp dist/twinbox "dist/twinbox-${RELEASE_TAG}-linux-x86_64"
+          chmod +x "dist/twinbox-${RELEASE_TAG}-linux-x86_64"
+          ls -la dist/
+
+      - name: Package vendor core tarball
+        run: bash scripts/package_vendor_tarball.sh
+
+      - name: SHA256 checksums
+        working-directory: dist
+        run: |
+          shopt -s nullglob
+          sha256sum "twinbox-${RELEASE_TAG}-linux-x86_64" twinbox_core-*.tar.gz > SHA256SUMS-linux-x86_64.txt
+          cat SHA256SUMS-linux-x86_64.txt
+
+      - name: Write release notes
+        env:
+          REPO: ${{ github.repository }}
+          VER: ${{ steps.ver.outputs.pyproject_version }}
+        run: |
+          cat > /tmp/release-notes.md << EOF
+          **Platform:** Linux **x86_64** (\`amd64\`) only for the CLI binary below.
+
+          | Artifact | Description |
+          |----------|-------------|
+          | \`twinbox-${RELEASE_TAG}-linux-x86_64\` | \`twinbox\` CLI (Go); install to e.g. \`~/.local/bin/twinbox\` |
+          | \`twinbox_core-${VER}.tar.gz\` | Python core + OpenClaw bundle for \`twinbox install --archive\` |
+          | \`SHA256SUMS-linux-x86_64.txt\` | \`sha256sum\` for the above |
+
+          \`\`\`bash
+          curl -sLO https://github.com/${REPO}/releases/download/${RELEASE_TAG}/twinbox-${RELEASE_TAG}-linux-x86_64
+          chmod +x twinbox-${RELEASE_TAG}-linux-x86_64
+          mv twinbox-${RELEASE_TAG}-linux-x86_64 ~/.local/bin/twinbox
+          \`\`\`
+
+          Deploy / archive usage: \`integrations/openclaw/DEPLOY.md\` on the default branch.
+          EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: "${{ env.RELEASE_TAG }} (Linux x86_64)"
+          body_path: /tmp/release-notes.md
+          files: |
+            dist/twinbox-${{ env.RELEASE_TAG }}-linux-x86_64
+            dist/twinbox_core-${{ steps.ver.outputs.pyproject_version }}.tar.gz
+            dist/SHA256SUMS-linux-x86_64.txt
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
