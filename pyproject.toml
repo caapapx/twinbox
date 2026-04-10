@@ -1,38 +1,16 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "twinbox-core"
 version = "0.1.0"
-description = "Shared Python core for twinbox phase builders and runtime contracts."
-license = { file = "LICENSE" }
+description = "Lightweight email intelligence for OpenClaw"
 requires-python = ">=3.11"
-dependencies = [
-    "PyYAML>=6",
-]
+dependencies = ["PyYAML>=6.0"]
 
 [project.scripts]
-twinbox = "twinbox_core.task_cli:main"
-twinbox-orchestrate = "twinbox_core.orchestration:main"
-twinbox-eval-phase4 = "twinbox_core.evaluation:main"
-
-[tool.setuptools]
-package-dir = {"" = "src"}
+twinbox = "twinbox_core.cli:main"
 
 [tool.setuptools.packages.find]
-where = ["src"]
-
-[tool.setuptools.package-data]
-twinbox_core = [
-    "_bundled/himalaya/*.tgz",
-    "_bundled/himalaya/README.md",
-]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-markers = [
-    "unit: fast, isolated tests with no file I/O or LLM calls",
-    "integration: tests that exercise multiple modules or touch the filesystem",
-    "contract: schema and fixture contract validation tests",
-]
+include = ["twinbox_core*"]

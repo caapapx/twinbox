@@ -1,0 +1,7 @@
+{
+  "name": "plugin-twinbox",
+  "displayName": "Twinbox Email Intelligence",
+  "version": "0.1.0",
+  "description": "Thread-level email intelligence skill — read IMAP, classify, surface urgent/pending/weekly.",
+  "main": "index.mjs"
+}

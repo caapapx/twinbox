@@ -1,6 +1,0 @@
-#!/usr/bin/env bash
-# Stable command name for runtimes that consume the repo directly from PATH.
-set -euo pipefail
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-exec bash "${SCRIPT_DIR}/twinbox_orchestrate.sh" "$@"

@@ -1,0 +1,9 @@
+{
+  "name": "plugin-twinbox",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "index.mjs",
+  "dependencies": {
+    "@sinclair/typebox": "^0.32.0"
+  }
+}
