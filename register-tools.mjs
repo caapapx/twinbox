@@ -5,7 +5,7 @@
  * No Go binary, no daemon, no himalaya.
  */
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { Type } from "@sinclair/typebox";
@@ -25,7 +25,6 @@ function resolvePythonPath(pluginConfig) {
   }
   // Fallback: read ~/.twinbox/code-root
   try {
-    const { readFileSync } = await import("node:fs");
     const root = readFileSync(join(homedir(), ".twinbox", "code-root"), "utf8").trim();
     if (root && existsSync(join(root, "twinbox_core", "__init__.py"))) return root;
   } catch {}

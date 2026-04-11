@@ -5,5 +5,11 @@
   "main": "index.mjs",
   "dependencies": {
     "@sinclair/typebox": "^0.32.0"
+  },
+  "openclaw": {
+    "id": "twinbox",
+    "extensions": [
+      "./index.mjs"
+    ]
   }
 }

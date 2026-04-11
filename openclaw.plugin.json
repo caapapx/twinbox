@@ -1,7 +1,17 @@
 {
-  "name": "plugin-twinbox",
-  "displayName": "Twinbox Email Intelligence",
+  "id": "twinbox",
+  "name": "Twinbox",
+  "description": "Email intelligence skill — read-only IMAP, thread analysis, urgent/pending/weekly output.",
   "version": "0.1.0",
-  "description": "Thread-level email intelligence skill — read IMAP, classify, surface urgent/pending/weekly.",
-  "main": "index.mjs"
+  "kind": "tool",
+  "enabledByDefault": true,
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "cwd": {
+        "type": "string",
+        "description": "Path to twinbox_core source root"
+      }
+    }
+  }
 }
