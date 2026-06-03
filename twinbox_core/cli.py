@@ -9,6 +9,7 @@ Commands:
   todo         — Urgent / pending queue
   weekly       — Weekly brief
   thread       — Inspect or search threads
+  extract      — Targeted IMAP extract by date range + keywords (isolated from sync)
   queue        — Mark thread complete / dismiss / restore
   status       — Mailbox health + setup status
 """
@@ -159,6 +160,76 @@ def cmd_thread_inspect(query: str) -> dict[str, Any]:
     return {"ok": True, "query": query, "results": results, "count": len(results)}
 
 
+def _code_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def _parse_extract_args(remaining: list[str]) -> dict[str, Any]:
+    overrides: dict[str, Any] = {}
+    i = 0
+    while i < len(remaining):
+        arg = remaining[i]
+        if arg == "--profile" and i + 1 < len(remaining):
+            overrides["profile"] = remaining[i + 1]
+            i += 2
+        elif arg == "--since" and i + 1 < len(remaining):
+            overrides["since"] = remaining[i + 1]
+            i += 2
+        elif arg == "--until" and i + 1 < len(remaining):
+            overrides["until"] = remaining[i + 1]
+            i += 2
+        elif arg == "--folder":
+            overrides.setdefault("folders", [])
+            if i + 1 < len(remaining):
+                overrides["folders"].append(remaining[i + 1])
+            i += 2
+        elif arg == "--subject-contains" and i + 1 < len(remaining):
+            overrides["subject_contains"] = remaining[i + 1]
+            i += 2
+        elif arg == "--subject-regex":
+            overrides.setdefault("subject_regex", [])
+            if i + 1 < len(remaining):
+                overrides["subject_regex"].append(remaining[i + 1])
+            i += 2
+        elif arg == "--body-contains" and i + 1 < len(remaining):
+            overrides["body_contains"] = remaining[i + 1]
+            i += 2
+        elif arg == "--weekdays" and i + 1 < len(remaining):
+            overrides["weekdays"] = remaining[i + 1]
+            i += 2
+        elif arg == "--bucket" and i + 1 < len(remaining):
+            overrides["bucket"] = remaining[i + 1]
+            i += 2
+        elif arg == "--from-self":
+            overrides["from_self"] = True
+            i += 1
+        elif arg == "--no-body":
+            overrides["fetch_bodies"] = False
+            i += 1
+        else:
+            i += 1
+    return overrides
+
+
+def cmd_extract(remaining: list[str]) -> dict[str, Any]:
+    from .extract import ExtractCriteria, merge_criteria, run_extract
+
+    overrides = _parse_extract_args(remaining)
+    base = ExtractCriteria()
+    try:
+        criteria = merge_criteria(base, overrides, code_root=_code_root())
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+
+    if not criteria.since and not overrides.get("profile"):
+        return {
+            "ok": False,
+            "error": "Provide --since YYYY-MM-DD or --profile <name> (e.g. weekly_report)",
+        }
+
+    return run_extract(_state_root(), criteria, code_root=_code_root())
+
+
 def cmd_queue_action(action: str, thread_key: str, reason: str = "") -> dict[str, Any]:
     from .queue import complete_thread, dismiss_thread, restore_thread
     root = _state_root()
@@ -233,6 +304,8 @@ def main(argv: list[str] | None = None) -> int:
         elif cmd == "thread":
             query = remaining[0] if remaining else ""
             result = cmd_thread_inspect(query)
+        elif cmd == "extract":
+            result = cmd_extract(remaining)
         elif cmd == "queue":
             action = remaining[0] if remaining else ""
             thread_key = remaining[1] if len(remaining) > 1 else ""

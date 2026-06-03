@@ -10,7 +10,7 @@ import imaplib
 import json
 import os
 import re
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from email import message_from_bytes
 from email.parser import BytesHeaderParser
 from email.policy import default as email_policy
@@ -22,6 +22,7 @@ from zoneinfo import ZoneInfo
 from .imap_utf7 import mailbox_for_wire
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
+IMAP_TIMEOUT_SEC = int(os.environ.get("TWINBOX_IMAP_TIMEOUT", "90") or "90")
 
 
 def _now_iso() -> str:
@@ -61,15 +62,23 @@ def _raw_dir(state_root: Path) -> Path:
 
 # --- IMAP helpers ---
 
+def _apply_imap_timeout(client: imaplib.IMAP4 | imaplib.IMAP4_SSL) -> None:
+    sock = getattr(client, "sock", None) or getattr(client, "socket", None)
+    if sock is not None:
+        sock.settimeout(IMAP_TIMEOUT_SEC)
+
+
 def _build_client(imap_config: dict[str, Any]):
     host = str(imap_config["host"])
     port = int(imap_config.get("port", 993))
     encryption = str(imap_config.get("encryption", "tls") or "tls").lower()
     if encryption in {"tls", "ssl"}:
-        return imaplib.IMAP4_SSL(host, port)
-    client = imaplib.IMAP4(host, port)
-    if encryption == "starttls":
-        client.starttls()
+        client = imaplib.IMAP4_SSL(host, port)
+    else:
+        client = imaplib.IMAP4(host, port)
+        if encryption == "starttls":
+            client.starttls()
+    _apply_imap_timeout(client)
     return client
 
 
@@ -139,24 +148,33 @@ def _decode_fetch_rows(fetch_data: list[Any], folder: str) -> list[dict[str, Any
     return rows
 
 
-# --- Body sampling (replaces himalaya) ---
+# --- Body fetch ---
 
-def sample_bodies_imap(
+def _imap_date(value: date) -> str:
+    """Format date for IMAP SEARCH (dd-Mon-yyyy)."""
+    return value.strftime("%d-%b-%Y")
+
+
+def fetch_bodies_imap(
     envelopes: list[dict[str, Any]],
     imap_config: dict[str, Any],
-    sample_count: int = 30,
-) -> dict[str, dict[str, str]]:
-    """Fetch body text for top N envelopes via IMAP FETCH BODY.PEEK[TEXT]."""
-    if not envelopes or sample_count <= 0:
+    *,
+    max_chars: int = 500_000,
+    client: imaplib.IMAP4 | imaplib.IMAP4_SSL | None = None,
+) -> dict[str, str]:
+    """Fetch body text for envelopes; key is uid within folder (folder#uid)."""
+    if not envelopes:
         return {}
 
-    client = _build_client(imap_config)
-    client.login(str(imap_config["login"]), str(imap_config["password"]))
-    out: dict[str, dict[str, str]] = {}
+    own_client = client is None
+    if own_client:
+        client = _build_client(imap_config)
+        client.login(str(imap_config["login"]), str(imap_config["password"]))
 
+    out: dict[str, str] = {}
     try:
         by_folder: dict[str, list[dict[str, Any]]] = {}
-        for env in envelopes[:sample_count]:
+        for env in envelopes:
             folder = str(env.get("folder", "INBOX") or "INBOX")
             by_folder.setdefault(folder, []).append(env)
 
@@ -169,6 +187,7 @@ def sample_bodies_imap(
                 uid = str(env.get("id", "") or "")
                 if not uid:
                     continue
+                key = f"{folder}#{uid}"
                 try:
                     status, data = client.uid("FETCH", uid, "(BODY.PEEK[TEXT])")
                     if status != "OK" or not data:
@@ -180,19 +199,182 @@ def sample_bodies_imap(
                             if isinstance(raw, bytes):
                                 body_text = raw.decode("utf-8", errors="replace")
                             break
-                    out[uid] = {
-                        "subject": str(env.get("subject", "") or ""),
-                        "body": body_text[:3000],
-                    }
+                    out[key] = body_text[:max_chars] if max_chars > 0 else body_text
                 except Exception:
                     continue
+    finally:
+        if own_client:
+            try:
+                client.logout()
+            except Exception:
+                pass
+
+    return out
+
+
+def sample_bodies_imap(
+    envelopes: list[dict[str, Any]],
+    imap_config: dict[str, Any],
+    sample_count: int = 30,
+) -> dict[str, dict[str, str]]:
+    """Fetch body text for top N envelopes via IMAP FETCH BODY.PEEK[TEXT]."""
+    if not envelopes or sample_count <= 0:
+        return {}
+
+    bodies = fetch_bodies_imap(envelopes[:sample_count], imap_config, max_chars=3000)
+    out: dict[str, dict[str, str]] = {}
+    for env in envelopes[:sample_count]:
+        uid = str(env.get("id", "") or "")
+        folder = str(env.get("folder", "INBOX") or "INBOX")
+        key = f"{folder}#{uid}"
+        if key in bodies:
+            out[uid] = {
+                "subject": str(env.get("subject", "") or ""),
+                "body": bodies[key],
+            }
+    return out
+
+
+def _imap_search_uids(
+    client: imaplib.IMAP4 | imaplib.IMAP4_SSL,
+    *,
+    since: date,
+    until: date | None,
+    subject_term: str | None = None,
+) -> list[int]:
+    """Run UID SEARCH for date window, optionally narrowing by Subject header."""
+    criteria: list[str] = ["SINCE", _imap_date(since)]
+    if until is not None:
+        criteria.extend(["BEFORE", _imap_date(until)])
+    if subject_term:
+        criteria.extend(["HEADER", "Subject", subject_term])
+
+    # Prefer UTF-8 for CJK subject terms; fall back to default charset.
+    for charset in ("UTF-8", None):
+        try:
+            if charset:
+                status, search_data = client.uid("SEARCH", charset, *criteria)
+            else:
+                status, search_data = client.uid("SEARCH", None, *criteria)
+        except Exception:
+            continue
+        if status == "OK":
+            return _decode_uid_list(search_data)
+    return []
+
+
+def _fetch_envelope_headers(
+    client: imaplib.IMAP4 | imaplib.IMAP4_SSL,
+    folder: str,
+    uids: list[int],
+    *,
+    chunk_size: int = 80,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for i in range(0, len(uids), chunk_size):
+        chunk = uids[i : i + chunk_size]
+        uid_set = ",".join(str(u) for u in chunk)
+        status, fetch_data = client.uid(
+            "FETCH",
+            uid_set,
+            "(UID FLAGS BODY.PEEK[HEADER.FIELDS (SUBJECT FROM DATE MESSAGE-ID)])",
+        )
+        if status != "OK":
+            continue
+        try:
+            rows.extend(_decode_fetch_rows(fetch_data, folder))
+        except Exception:
+            continue
+    return rows
+
+
+def fetch_by_query(
+    imap_config: dict[str, Any],
+    folders: list[str],
+    *,
+    since: date,
+    until: date | None = None,
+    fetch_bodies: bool = True,
+    subject_terms: list[str] | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    """Fetch envelopes in date range across folders; does not touch sync state.
+
+    When subject_terms is set, IMAP HEADER Subject searches are unioned first to
+    avoid fetching every message in the window (important for multi-month ranges).
+    Client-side regex/body filters still apply after headers are retrieved.
+    """
+    if not folders:
+        return [], [{"detail": "no folders specified"}]
+
+    client = _build_client(imap_config)
+    client.login(str(imap_config["login"]), str(imap_config["password"]))
+
+    envelopes: list[dict[str, Any]] = []
+    folder_errors: list[dict[str, str]] = []
+
+    try:
+        for folder in folders:
+            wire = mailbox_for_wire(folder)
+            status, _ = client.select(wire, readonly=True)
+            if status != "OK":
+                folder_errors.append({"folder": folder, "step": "select", "detail": "SELECT failed"})
+                continue
+
+            criteria = ["SINCE", _imap_date(since)]
+            if until is not None:
+                criteria.extend(["BEFORE", _imap_date(until)])
+
+            uids: list[int] = []
+            terms = [t.strip() for t in (subject_terms or []) if t and t.strip()]
+            if terms:
+                uid_set: set[int] = set()
+                for term in terms:
+                    uid_set.update(_imap_search_uids(client, since=since, until=until, subject_term=term))
+                uids = sorted(uid_set)
+            else:
+                status, search_data = client.uid("SEARCH", None, *criteria)
+                if status != "OK":
+                    folder_errors.append({"folder": folder, "step": "search", "detail": "SEARCH failed"})
+                    continue
+                uids = _decode_uid_list(search_data)
+
+            if not uids:
+                continue
+
+            try:
+                envelopes.extend(_fetch_envelope_headers(client, folder, uids))
+            except Exception as exc:
+                folder_errors.append({"folder": folder, "step": "fetch", "detail": str(exc)})
+
+        if folder_errors and not envelopes:
+            return [], folder_errors
+
+        normalized: list[dict[str, Any]] = []
+        for row in envelopes:
+            normalized.append({
+                "id": str(row.get("id", "") or ""),
+                "folder": str(row.get("folder", "INBOX") or "INBOX"),
+                "subject": str(row.get("subject", "") or ""),
+                "from_name": str(row.get("from_name", "") or ""),
+                "from_addr": str(row.get("from_addr", "") or "").lower(),
+                "date": str(row.get("date", "") or ""),
+                "has_attachment": bool(row.get("has_attachment", False)),
+                "flags": [str(f) for f in row.get("flags", [])],
+            })
+
+        if fetch_bodies and normalized:
+            bodies = fetch_bodies_imap(normalized, imap_config, client=client)
+            for row in normalized:
+                key = f"{row['folder']}#{row['id']}"
+                row["body"] = bodies.get(key, "")
+
+        normalized.sort(key=lambda r: str(r.get("date", "")), reverse=True)
+        return normalized, folder_errors
     finally:
         try:
             client.logout()
         except Exception:
             pass
-
-    return out
 
 
 # --- Incremental fetch ---
