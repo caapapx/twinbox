@@ -5,6 +5,7 @@ description: >-
   先调工具，再写文字摘要。禁止只说不调。
   最新邮件：twinbox_latest_mail（自动同步）。
   待办/紧急：twinbox_todo。周报：twinbox_weekly。
+  历史/关键词抽取：twinbox_extract（不触发 sync）。
   搜索线程：twinbox_thread_inspect。
   标记完成/忽略：twinbox_queue_action。
   邮箱状态：twinbox_status。初始化：twinbox_setup。
@@ -30,7 +31,8 @@ metadata:
 |----------|------|
 | 最新邮件 / 今日摘要 | `twinbox_latest_mail` |
 | 待办 / 紧急 / 待回复 | `twinbox_todo` |
-| 周报 | `twinbox_weekly` |
+| 周报（当前 sync 产物） | `twinbox_weekly` |
+| 历史周报 / 关键词抽取 | `twinbox_extract`（profile=`weekly_report` 或自定义 since/keywords） |
 | 查看/搜索线程 | `twinbox_thread_inspect` |
 | 标记完成/忽略/恢复 | `twinbox_queue_action` |
 | 同步邮件数据 | `twinbox_sync` |
@@ -43,3 +45,4 @@ metadata:
 2. `twinbox_latest_mail` 在数据缺失时自动同步，不要说"先同步再查看"。
 3. `twinbox_queue_action` 后确认操作结果。
 4. 默认只读，不发送/删除/归档邮件。
+5. 查历史周报或按标题关键词批量拉邮件用 `twinbox_extract`，不要用 `twinbox_sync`。

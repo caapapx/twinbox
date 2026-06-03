@@ -1,5 +1,5 @@
 /**
- * Twinbox Lite — 8 OpenClaw tools for email intelligence.
+ * Twinbox Lite — 9 OpenClaw tools for email intelligence.
  *
  * Each tool calls `python3 -m twinbox_core.cli <cmd> --json` directly.
  * No Go binary, no daemon, no himalaya.
@@ -187,7 +187,70 @@ export function registerTwinboxTools(api) {
     },
   });
 
-  // 7. twinbox_status
+  // 8. twinbox_extract
+  api.registerTool({
+    name: "twinbox_extract",
+    description:
+      "Targeted mail extract by date range + keywords (INBOX/Sent). " +
+      "Does NOT refresh daily pulse — use for historical weekly reports or custom keyword searches. " +
+      "Chinese: 抽取周报、按关键词拉历史邮件、extract weekly reports.",
+    parameters: Type.Object({
+      profile: Type.Optional(
+        Type.String({
+          description: "Preset profile name, e.g. weekly_report (see config/extract-profiles.yaml)",
+        })
+      ),
+      since: Type.Optional(Type.String({ description: "Start date YYYY-MM-DD" })),
+      until: Type.Optional(Type.String({ description: "End date YYYY-MM-DD (exclusive)" })),
+      folders: Type.Optional(
+        Type.Array(Type.String(), {
+          description: "IMAP folders, e.g. [\"Sent\", \"INBOX\"]",
+        })
+      ),
+      subject_contains: Type.Optional(
+        Type.String({ description: "Comma-separated subject substrings (OR)" })
+      ),
+      subject_regex: Type.Optional(
+        Type.Array(Type.String(), { description: "Subject regex patterns (OR)" })
+      ),
+      body_contains: Type.Optional(
+        Type.String({ description: "Comma-separated body substrings (OR)" })
+      ),
+      weekdays: Type.Optional(
+        Type.String({ description: "Comma-separated weekdays: fri,sat,sun. Empty string disables." })
+      ),
+      from_self: Type.Optional(
+        Type.Boolean({ description: "If true, only messages from MAIL_ADDRESS" })
+      ),
+      bucket: Type.Optional(
+        Type.Union([Type.Literal("iso_week"), Type.Literal("none")], {
+          description: "Group output by ISO week (iso_week) or flat list (none)",
+        })
+      ),
+    }),
+    async execute(...args) {
+      const params = args.length >= 2 ? args[1] : args[0];
+      const cliArgs = ["extract", "--json"];
+      if (params?.profile) cliArgs.push("--profile", params.profile);
+      if (params?.since) cliArgs.push("--since", params.since);
+      if (params?.until) cliArgs.push("--until", params.until);
+      if (Array.isArray(params?.folders)) {
+        for (const f of params.folders) cliArgs.push("--folder", f);
+      }
+      if (params?.subject_contains) cliArgs.push("--subject-contains", params.subject_contains);
+      if (Array.isArray(params?.subject_regex)) {
+        for (const r of params.subject_regex) cliArgs.push("--subject-regex", r);
+      }
+      if (params?.body_contains) cliArgs.push("--body-contains", params.body_contains);
+      if (params?.weekdays !== undefined) cliArgs.push("--weekdays", params.weekdays);
+      if (params?.from_self) cliArgs.push("--from-self");
+      if (params?.bucket) cliArgs.push("--bucket", params.bucket);
+      const r = await runCli(cliArgs, pythonPath);
+      return formatResult(r);
+    },
+  });
+
+  // 9. twinbox_status
   api.registerTool({
     name: "twinbox_status",
     description:
@@ -200,7 +263,7 @@ export function registerTwinboxTools(api) {
     },
   });
 
-  // 8. twinbox_setup
+  // 10. twinbox_setup
   api.registerTool({
     name: "twinbox_setup",
     description:

@@ -2,7 +2,7 @@
 
 线程级邮件智能 — OpenClaw Skill。只读 IMAP，分析紧急度/待回复/周报。
 
-~2,000 行 Python + 8 个 OpenClaw 工具。零二进制依赖。
+~2,000 行 Python + 9 个 OpenClaw 工具。零二进制依赖。
 
 ## Quick Start
 
@@ -26,28 +26,41 @@ python3 -m twinbox_core.cli setup --json
 ```
 IMAP (imaplib) → fetch envelopes + bodies → LLM analysis (single pass) → activity-pulse.json
                                                                             ↓
-OpenClaw plugin → python3 -m twinbox_core.cli <cmd> --json ← 8 tools
+OpenClaw plugin → python3 -m twinbox_core.cli <cmd> --json ← 9 tools
+
+Extract (isolated): IMAP SEARCH by date → keyword filter → runtime/queries/{id}/result.json
 ```
 
 | 层 | 技术 | 说明 |
 |----|------|------|
 | IMAP | Python `imaplib` | 零二进制，stdlib |
 | 分析 | 单次 LLM 调用 | 合并 intent+urgent+pending+weekly |
-| 插件 | Node.js (`@sinclair/typebox`) | 8 个 OpenClaw 工具 |
+| 插件 | Node.js (`@sinclair/typebox`) | 9 个 OpenClaw 工具 |
 | 配置 | `~/.twinbox/twinbox.json` | IMAP + LLM (从 OpenClaw 导入) |
 
-## Tools (8)
+## Tools (9)
 
 | 工具 | 功能 |
 |------|------|
 | `twinbox_sync` | 邮件同步 + LLM 分析 |
 | `twinbox_latest_mail` | 最新邮件摘要（自动同步） |
 | `twinbox_todo` | 紧急/待回复队列 |
-| `twinbox_weekly` | 周报 |
+| `twinbox_weekly` | 周报（当前 sync 产物） |
+| `twinbox_extract` | 历史/定向抽取（时间范围 + 关键词，不触发 sync） |
 | `twinbox_thread_inspect` | 查看/搜索线程 |
 | `twinbox_queue_action` | 标记完成/忽略/恢复 |
 | `twinbox_status` | 邮箱健康检查 |
 | `twinbox_setup` | 初始配置 |
+
+### Extract CLI
+
+```bash
+python3 -m twinbox_core.cli extract --profile weekly_report --since 2025-06-01 --json
+python3 -m twinbox_core.cli extract --since 2025-01-01 --folder INBOX --folder Sent \
+  --subject-contains "周报,Weekly" --weekdays fri,sat,sun --json
+```
+
+Presets: [`config/extract-profiles.yaml`](config/extract-profiles.yaml)
 
 ## Dependencies
 
@@ -57,10 +70,10 @@ OpenClaw plugin → python3 -m twinbox_core.cli <cmd> --json ← 8 tools
 
 ## TODO
 
-- [ ] Multi-folder support (Sent, Drafts)
 - [ ] Claw Hub manifest for one-click deploy
 - [ ] OpenClaw native cron integration
 - [ ] Profile/calibration onboarding flow
+- [ ] Extract Phase 2: optional per-message LLM summarize
 
 ## License
 

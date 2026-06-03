@@ -1,65 +1,64 @@
 ---
 name: twinbox
 description: >-
-  Twinbox mailbox skill. Use this for mailbox onboarding, preflight checks,
-  latest-mail summaries, queue triage, thread progress, weekly digests,
-  queue refresh, schedule management, and deployment debugging.
-  Always run the matching twinbox command with --json FIRST,
-  then write a text summary. Never narrate without executing.
-  For latest mail: run twinbox task latest-mail --json immediately.
-  For todo: run twinbox task todo --json. Never end a turn with only
-  text when the user asked for mail, todo, digest, or onboarding action.
-  If activity-pulse.json is missing, run daytime-sync first then retry.
-  Stay read-only unless user explicitly asks for draft/action generation.
+  邮件智能技能。调用 twinbox_* 工具查看邮件、待办、周报。
+  先调工具，再写文字摘要。禁止只说不调。
+  最新邮件：twinbox_latest_mail（自动同步）。
+  待办/紧急：twinbox_todo。周报：twinbox_weekly。
+  历史/关键词抽取：twinbox_extract（不触发 sync）。
+  搜索线程：twinbox_thread_inspect。
+  标记完成/忽略：twinbox_queue_action。
+  邮箱状态：twinbox_status。初始化：twinbox_setup。
+metadata:
+  openclaw:
+    requires:
+      env: [IMAP_HOST, IMAP_PORT, IMAP_LOGIN, IMAP_PASS, MAIL_ADDRESS]
+    primaryEnv: IMAP_LOGIN
+    login:
+      mode: password-env
+      runtimeRequiredEnv: [IMAP_HOST, IMAP_PORT, IMAP_LOGIN, IMAP_PASS, MAIL_ADDRESS]
+      optionalDefaults:
+        IMAP_ENCRYPTION: tls
 ---
 
 # twinbox
 
-Twinbox is a thread-centric email Copilot. Use this skill for all mailbox-related tasks.
+线程级邮件智能。只读 IMAP，分析线程紧急度/待回复/周报摘要。
 
-## Required Steps for Any Task
+## 工具表
 
-1. Match the user's request to a command below.
-2. Execute that command with `--json`.
-3. Write a text answer summarizing the real output.
+| 用户意图 | 工具 |
+|----------|------|
+| 最新邮件 / 今日摘要 | `twinbox_latest_mail` |
+| 待办 / 紧急 / 待回复 | `twinbox_todo` |
+| 周报（当前 sync 产物） | `twinbox_weekly` |
+| 历史周报 / 关键词抽取 | `twinbox_extract`（profile=`weekly_report` 或自定义 since/keywords） |
+| 查看/搜索线程 | `twinbox_thread_inspect` |
+| 标记完成/忽略/恢复 | `twinbox_queue_action` |
+| 同步邮件数据 | `twinbox_sync` |
+| 邮箱健康检查 | `twinbox_status` |
+| 初始配置 | `twinbox_setup` |
 
-## Task Entrypoints
+## 规则
 
-| User intent | Command |
-|---|---|
-| Latest mail / today summary | `twinbox task latest-mail --json` |
-| Todo / pending replies | `twinbox task todo --json` |
-| Thread progress | `twinbox task progress QUERY --json` |
-| Weekly brief | `twinbox task weekly --json` |
-| Mailbox status / env diagnosis | `twinbox task mailbox-status --json` |
-| Daily digest | `twinbox digest daily --json` |
-| Weekly digest | `twinbox digest weekly --json` |
-| Queue dismiss | `twinbox queue dismiss THREAD_ID --reason "..." --json` |
-| Queue complete | `twinbox queue complete THREAD_ID --action-taken "..." --json` |
-| Queue restore | `twinbox queue restore THREAD_ID --json` |
-| Schedule list | `twinbox schedule list --json` |
-| Schedule enable/disable | `twinbox schedule enable\|disable JOB_NAME --json` |
-| Inspect thread | `twinbox thread inspect THREAD_ID --json` |
-| Explain thread | `twinbox thread explain THREAD_ID --json` |
-| Suggest actions | `twinbox action suggest --json` |
-| Review items | `twinbox review list --json` |
-| Import material | `twinbox context import-material FILE --intent reference --json` |
-| Onboarding start/status/next | `twinbox onboarding start\|status\|next --json` |
-| Preflight | `twinbox mailbox preflight --json` |
-| Config show | `twinbox config show --json` |
-| Daemon status | `twinbox daemon status --json` |
+1. 先调工具，再用文字总结输出。禁止纯文字无工具调用。
+2. `twinbox_latest_mail` 在数据缺失时自动同步，不要说"先同步再查看"。
+3. `twinbox_queue_action` 后确认操作结果。
+4. 默认只读，不发送/删除/归档邮件。
+5. 查历史周报或按标题关键词批量拉邮件用 `twinbox_extract`，不要用 `twinbox_sync`。
 
-## Guardrails
+## extract 示例
 
-- Stay read-only by default (IMAP is read-only in Phase 1-4)
-- `queue complete`/`queue dismiss` only update local queue visibility
-- Do not send, delete, archive, or mutate mailbox state unless explicitly requested
-- Never end a task turn with only file reads and no text answer
-- If `activity-pulse.json` is missing/stale, run `twinbox-orchestrate schedule --job daytime-sync` then retry
+历史周报（发件箱 + 收件箱，近一年，周五六日，标题含「周报」）：
 
-## Runtime Notes
+```
+twinbox_extract(profile="weekly_report", since="2025-06-01")
+```
 
-- State root: `~/.twinbox` (config: `~/.twinbox/twinbox.json`)
-- Code root: `~/.config/twinbox/code-root`
-- Daemon socket: `$TWINBOX_STATE_ROOT/run/daemon.sock`
-- Vendor install: `twinbox vendor install`; status: `twinbox vendor status --json`
+自定义关键词：
+
+```
+twinbox_extract(since="2025-01-01", folders=["INBOX","Sent"], subject_contains="合同,Contract", weekdays="")
+```
+
+输出在 `reports[].body_text`；结果路径见 JSON 的 `result_path`。
