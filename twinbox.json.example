@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "mailbox": {
+    "email": "you@example.com",
+    "imap": {
+      "host": "imap.example.com",
+      "port": 993,
+      "encryption": "tls",
+      "login": "you@example.com",
+      "password": "YOUR_IMAP_PASSWORD"
+    }
+  },
+  "llm": {
+    "provider": "openai",
+    "api_key": "YOUR_LLM_API_KEY",
+    "model": "YOUR_MODEL_ID",
+    "api_url": "https://api.example.com/v1"
+  }
+}

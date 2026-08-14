@@ -1,22 +1,78 @@
+# Secrets and credentials — never commit
 .env
-twinbox.json
 .env.local
 .env.*.local
+!.env.example
+twinbox.json
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+credentials.json
+secrets.json
+himalaya.toml
+**/himalaya/config.toml
+
+# macOS / editor junk
+.DS_Store
+.idea/
+*.swp
+*~
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage.xml
+.worktrees/
+build/
+
+# Node
+node_modules/
+
+# Local Twinbox state, runtime mail dumps, and temp data (PII)
+.twinbox
+.runtime/
+runtime/
+logs/
+.logs/
+*.log
+tmp/
+*.db
+*.sqlite
+*.sqlite3
+*.eml
+*.mbox
+activity-pulse.json
+state.json
+
+# Local leftover stack / machine-specific paths (not part of openclaw-skill)
+/bin/
+/packages/
+/src/
+/docs/
+/scripts/
+
+# Local scratch notes (may contain machine paths, links, or secrets)
+/issue.md
+/INSTALL_GUIDE.md
+/README_REFACTOR.md
+/REFACTOR_COMPLETE_FINAL.md
+/REFACTOR_FINAL.md
+/VERIFICATION_COMPLETE.md
+
 .beads/*
 !.beads/formulas/
 .beads/formulas/*
 !.beads/formulas/twinbox-*.formula.toml
 .claude/
 !.claude/skills/
-.runtime/
-__pycache__/
-*.pyc
-*.egg-info/
-.venv/
-.worktrees/
-logs/
-*.log
-runtime/
 
 # Local user materials and office documents
 *.xlsx
@@ -26,7 +82,6 @@ runtime/
 *.pptx
 *.ppt
 *.pdf
-tmp/
 
 # Instance-specific validation artifacts (under repo docs/ or state root); do not commit
 /docs/validation/
@@ -36,22 +91,13 @@ gastown
 openclaw-docker-compose
 # Dolt database files (added by bd init)
 .dolt/
-*.db
-
-# Gas Town (added by gt)
-.logs/
-state.json
 
 # OpenClaw plugin (install deps locally; lockfile is committed slim)
 integrations/openclaw/plugin-twinbox-task/node_modules/
 
 # Local Twinbox state root, vendored unpack, and Go build output (see AGENTS.md)
-.twinbox
 vendor/
 dist/
-
-# Local scratch notes at repo root (may contain links or secrets)
-/issue.md
 
 # Host-specific OpenClaw JSON fragment (copy from openclaw.fragment.example.json)
 integrations/openclaw/openclaw.fragment.json
