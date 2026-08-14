@@ -1,6 +1,6 @@
 # Preset extract queries. CLI flags override profile defaults.
 weekly_report:
-  folders: [Sent, INBOX]
+  folders: [Sent Items, INBOX]
   subject_contains: ["周报", "Weekly", "WBR"]
   subject_regex:
     - ".*的周报"
