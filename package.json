@@ -3,7 +3,15 @@
   "version": "0.1.0",
   "type": "module",
   "main": "index.mjs",
+  "bin": {
+    "twinbox-mcp": "./mcp-server.mjs"
+  },
+  "scripts": {
+    "mcp": "node ./mcp-server.mjs",
+    "test:mcp": "node ./tests/mcp-smoke.mjs"
+  },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@sinclair/typebox": "^0.32.0"
   },
   "openclaw": {

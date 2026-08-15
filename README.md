@@ -38,7 +38,46 @@ Extract (isolated): IMAP SEARCH by date → keyword filter → runtime/queries/{
 | 插件 | Node.js (`@sinclair/typebox`) | 9 个 OpenClaw 工具 |
 | 配置 | `~/.twinbox/twinbox.json` | IMAP + LLM (从 OpenClaw 导入) |
 
-## Tools (9)
+## MCP stdio server
+
+A real MCP stdio server is included so Cursor / Grok Bot / Claude Desktop can use twinbox as a local connector. It exposes the same 9 tools as the OpenClaw plugin by wrapping `python3 -m twinbox_core.cli <cmd> --json`.
+
+### Add as a local MCP connector
+
+```json
+{
+  "mcpServers": {
+    "twinbox": {
+      "command": "node",
+      "args": ["/absolute/path/to/twinbox/mcp-server.mjs"],
+      "cwd": "/absolute/path/to/twinbox",
+      "env": {
+        "IMAP_HOST": "imap.example.com",
+        "IMAP_PORT": "993",
+        "IMAP_ENCRYPTION": "tls",
+        "IMAP_LOGIN": "you@example.com",
+        "IMAP_PASS": "...",
+        "MAIL_ADDRESS": "you@example.com"
+      }
+    }
+  }
+}
+```
+
+- `command` / `args`: launch the stdio server; use absolute paths.
+- `cwd`: repo root so `node` can resolve `twinbox_core/` via `PYTHONPATH` (or install the package and omit `cwd`).
+- `env`: IMAP credentials and owner email. `TWINBOX_CODE_ROOT` and `TWINBOX_STATE_ROOT` are optional; `LLM_API_KEY` / `LLM_MODEL` / `LLM_API_URL` are read by the Python CLI when needed.
+
+### Run locally
+
+```bash
+npm install
+node mcp-server.mjs
+```
+
+The server listens on stdio and speaks MCP. It lists 9 tools and routes each call to the Python CLI.
+
+### Tools (9)
 
 | 工具 | 功能 |
 |------|------|
