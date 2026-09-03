@@ -52,11 +52,12 @@ tmp/
 activity-pulse.json
 state.json
 
-# Local leftover stack / machine-specific paths (not part of openclaw-skill)
+# Local leftover stack / machine-specific paths (not part of MCP trunk)
 /bin/
 /packages/
 /src/
-/docs/
+/docs/*
+!/docs/governance/
 /scripts/
 
 # Local scratch notes (may contain machine paths, links, or secrets)

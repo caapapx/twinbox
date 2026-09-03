@@ -1,66 +1,80 @@
 ---
 name: twinbox
 description: >-
-  Twinbox mailbox skill. Use this for mailbox onboarding, preflight checks,
-  latest-mail summaries, queue triage, thread progress, weekly digests,
-  queue refresh, schedule management, and deployment debugging.
-  CRITICAL: always run the matching twinbox command with --json FIRST,
-  then write a text summary after it returns. Never narrate
-  "let me run" or "need to sync first" without executing a command
-  in the same turn. For latest mail: run twinbox task latest-mail --json
-  immediately. For todo: run twinbox task todo --json. Never end a turn
-  with only text when the user asked for mail, todo, digest, or onboarding action.
-  If activity-pulse.json is missing, run daytime-sync first then retry.
-  Stay read-only unless user explicitly asks for draft/action generation.
+  Twinbox MCP email skill. Use the twinbox_* MCP tools for mailbox setup,
+  synchronization, latest-mail summaries, todo triage, thread inspection,
+  historical extraction, weekly briefs, and local queue actions. CRITICAL:
+  call the matching MCP tool FIRST, then write a visible summary based on its
+  result. These are MCP tools, not shell commands. Stay read-only with respect
+  to the real mailbox unless the user explicitly requests a future write
+  capability; queue actions only change Twinbox's local queue state.
 ---
 
-# twinbox
+# Twinbox MCP skill
 
-Twinbox is a thread-centric email Copilot. Use this skill for all mailbox-related tasks.
+Twinbox is a thread-centric email copilot exposed through the local MCP stdio
+server. For mailbox requests, use the MCP tool with the exact name below rather
+than inventing a CLI subcommand or telling the user to run one.
 
-## Required Steps for Any Task
+## Required interaction rule
 
-1. Match the user's request to a command below.
-2. Execute that command with `--json`.
-3. Write a text answer summarizing the real output.
+1. Identify the user's intent and call the matching `twinbox_*` MCP tool first.
+2. Treat the returned JSON/text as the source of truth for the response.
+3. Write a concise, visible summary after the tool returns. Include errors and
+   recovery guidance when the tool reports them; do not claim a result that was
+   not returned by the tool.
+4. Never answer a mailbox data request with text only.
 
-## Task Entrypoints
+## Tool map
 
-| User intent | Command |
-|---|---|
-| Latest mail / today summary | `twinbox task latest-mail --json` |
-| Todo / pending replies | `twinbox task todo --json` |
-| Thread progress | `twinbox task progress QUERY --json` |
-| Weekly brief | `twinbox task weekly --json` |
-| Mailbox status / env diagnosis | `twinbox task mailbox-status --json` |
-| Daily digest | `twinbox digest daily --json` |
-| Weekly digest | `twinbox digest weekly --json` |
-| Queue dismiss | `twinbox queue dismiss THREAD_ID --reason "..." --json` |
-| Queue complete | `twinbox queue complete THREAD_ID --action-taken "..." --json` |
-| Queue restore | `twinbox queue restore THREAD_ID --json` |
-| Schedule list | `twinbox schedule list --json` |
-| Schedule enable/disable | `twinbox schedule enable\|disable JOB_NAME --json` |
-| Inspect thread | `twinbox thread inspect THREAD_ID --json` |
-| Explain thread | `twinbox thread explain THREAD_ID --json` |
-| Suggest actions | `twinbox action suggest --json` |
-| Review items | `twinbox review list --json` |
-| Import material | `twinbox context import-material FILE --intent reference --json` |
-| Onboarding start/status/next | `twinbox onboarding start\|status\|next --json` |
-| Preflight | `twinbox mailbox preflight --json` |
-| Config show | `twinbox config show --json` |
-| Daemon status | `twinbox daemon status --json` |
+| User intent | MCP tool | Important inputs / behavior |
+|---|---|---|
+| Refresh mail and analysis | `twinbox_sync` | `job`: `daytime-sync` (default) or `nightly-full` |
+| Latest mail / today snapshot | `twinbox_latest_mail` | Optional `unread_only`; automatically syncs when the activity pulse is missing |
+| Todo / urgent / pending replies | `twinbox_todo` | Read-only queue snapshot |
+| Current weekly brief | `twinbox_weekly` | Reads the latest sync artifacts; does not replace a historical extraction |
+| Inspect or search a thread | `twinbox_thread_inspect` | Required `query`: subject fragment, thread key, or keyword |
+| Complete, dismiss, or restore a queue item | `twinbox_queue_action` | Required `action` (`complete`, `dismiss`, `restore`) and `thread_key`; optional `reason` |
+| Historical or targeted mail extraction | `twinbox_extract` | `profile`, `since`, `until`, `folders`, `subject_contains`, `subject_regex`, `body_contains`, `weekdays`, `from_self`, `bucket` |
+| Mailbox health / configuration check | `twinbox_status` | No inputs; checks IMAP, LLM validation, and artifacts |
+| Initial setup | `twinbox_setup` | No inputs; validates environment-backed IMAP and LLM setup |
 
-## Guardrails
+## Choosing between tools
 
-- Stay read-only by default (IMAP is read-only in Phase 1-4)
-- `queue complete`/`queue dismiss` only update local queue visibility
-- Do not send, delete, archive, or mutate mailbox state unless explicitly requested
-- Never end a task turn with only file reads and no text answer
-- If `activity-pulse.json` is missing/stale, run `twinbox-orchestrate schedule --job daytime-sync` then retry
+- Use `twinbox_latest_mail` for the latest activity. It handles a missing
+  `activity-pulse.json` by running the recovery sync internally; do not tell the
+  user to sync first.
+- Use `twinbox_sync` when the user explicitly asks to refresh/rebuild data, or
+  when another tool reports a recovery request and the tool itself cannot
+  recover.
+- Use `twinbox_weekly` for the current sync-produced weekly brief.
+- Use `twinbox_extract` for historical reports or targeted searches by date,
+  folder, sender, subject, body, weekday, or profile. It does **not** trigger a
+  daily sync.
+- Use `twinbox_thread_inspect` for a specific topic/thread and summarize the
+  returned evidence rather than guessing progress.
+- After a user confirms that a queue item is complete, ignored, or should be
+  restored, call `twinbox_queue_action` and report the persisted local result.
 
-## Runtime Notes
+## Safety and scope
 
-- State root: `~/.twinbox` (config: `~/.twinbox/twinbox.json`)
-- Code root: `~/.config/twinbox/code-root`
-- Daemon socket: `$TWINBOX_STATE_ROOT/run/daemon.sock`
-- Vendor install: `twinbox vendor install`; status: `twinbox vendor status --json`
+- Twinbox currently reads IMAP and performs local analysis. Default behavior is
+  read-only for the real mailbox.
+- `twinbox_queue_action` changes only Twinbox's local queue visibility/state. It
+  does not send, delete, archive, mark-read, or otherwise mutate a real email.
+- Do not invent or promise send/reply/draft/archive/delete actions that are not
+  exposed by the current MCP server.
+- Do not expose credentials in summaries. Setup/status output may contain masked
+  configuration and health information; preserve that masking.
+
+## MCP connection
+
+The MCP server is `mcp-server.mjs` at the repository root. A client should
+register it as a local stdio server with `node`, an absolute path to that file,
+and the repository as `cwd`. IMAP credentials are supplied through the
+connection environment (`IMAP_HOST`, `IMAP_PORT`, `IMAP_ENCRYPTION`,
+`IMAP_LOGIN`, `IMAP_PASS`, `MAIL_ADDRESS`); optional state/code-root and LLM
+environment variables are documented in `README.md`.
+
+Do not use the obsolete CLI command families from the pre-MCP line; `main`
+exposes the `twinbox_*` MCP tools instead.
