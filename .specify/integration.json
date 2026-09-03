@@ -1,0 +1,15 @@
+{
+  "version": "0.13.2",
+  "integration_state_schema": 1,
+  "installed_integrations": [
+    "generic"
+  ],
+  "integration_settings": {
+    "generic": {
+      "script": "sh",
+      "invoke_separator": "-"
+    }
+  },
+  "integration": "generic",
+  "default_integration": "generic"
+}

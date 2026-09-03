@@ -1,0 +1,11 @@
+project:
+  name: twinbox
+  integration: generic
+
+artifacts:
+  constitution: constitution.md
+  spec: spec.md
+  plan: plan.md
+  tasks: tasks.md
+
+version: "0.13.2"
