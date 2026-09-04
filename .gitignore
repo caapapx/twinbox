@@ -58,7 +58,9 @@ state.json
 /src/
 /docs/*
 !/docs/governance/
+!/docs/governance/**
 !/docs/decisions/
+!/docs/decisions/**
 /scripts/
 
 # Local scratch notes (may contain machine paths, links, or secrets)
