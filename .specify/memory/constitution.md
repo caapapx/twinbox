@@ -1,6 +1,6 @@
 <!--
 Sync Impact Report
-- Version: 1.0.0 → 1.1.0 (MINOR: delivery-surface + trunk naming + body-boundary clarification)
+- Version: 1.1.0 → 1.1.1 (PATCH: default trunk renamed main → master)
 - Modified principles: II Full Text Never Leaves twinbox (clarified local MCP vs platform)
 - Added sections: Delivery Surface; Trunk
 - Removed sections: none
@@ -45,7 +45,7 @@ Sync Impact Report
 
 ## Delivery Surface
 
-- **Implemented**: local MCP stdio server + Python CLI on branch `main`.
+- **Implemented**: local MCP stdio server + Python CLI on branch `master`.
 - **Planned**: Agent OS Everything ingest / multi-account vault (`specs/001-everything-mail-adapter`). That contract is not implemented; do not describe it as current behavior.
 - twinbox owns mail semantics; Agent OS owns aggregation. Neither side imports the other's internals.
 
@@ -66,9 +66,9 @@ Sync Impact Report
 
 ## Trunk
 
-- **`main`** is the default trunk (MCP Skill / CLI). Do not keep a long-lived `feat/*` trunk.
-- **`archive/openclaw-monolith`** is the frozen pre-MCP monolith (formerly `master`). It is not the default branch.
-- Do not call the trunk `openclaw-skill`.
+- **`master`** is the default trunk (MCP Skill / CLI). Do not keep a long-lived `feat/*` trunk.
+- **`archive/openclaw-monolith`** is the frozen pre-MCP monolith. It is not the default branch.
+- Do not call the trunk `openclaw-skill`, `feat/mcp-server`, or `main`.
 
 ## Development Workflow
 
@@ -81,4 +81,4 @@ Sync Impact Report
 
 This constitution supersedes all other practices for this repository. Amendments require documentation, approval, and a migration plan. All PRs/reviews must verify compliance with the principles above; complexity must be justified.
 
-**Version**: 1.1.0 | **Ratified**: 2026-08-26 | **Last Amended**: 2026-09-03
+**Version**: 1.1.1 | **Ratified**: 2026-08-26 | **Last Amended**: 2026-09-04

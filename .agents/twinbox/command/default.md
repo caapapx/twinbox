@@ -1,6 +1,6 @@
 # Twinbox MCP mode (platform-agnostic)
 
-Twinbox on `main` is used through MCP, not the
+Twinbox on `master` is used through MCP, not the
 legacy `twinbox ... --json` command families. Register the repository-root
 `mcp-server.mjs` as a local stdio MCP server, then call the tools below by their
 exact names.

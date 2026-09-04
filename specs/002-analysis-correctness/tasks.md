@@ -134,4 +134,4 @@ description: "Task list for analysis correctness"
 1. 先 T001 复现，再 T003–T006
 2. MVP = US1 + US2 + US3
 3. 再 US4 / US5 / US6
-4. 实现落在 `main`，不要建 `feat/002-*`
+4. 实现落在 `master`，不要建 `feat/002-*`

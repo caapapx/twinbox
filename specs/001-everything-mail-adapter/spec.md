@@ -6,7 +6,7 @@
 
 **Status**: Planned / 未收敛
 
-> 代码事实：当前 `main` 只实现 9 个本地 MCP 工具；本 feature 的 ingest / 多账号 vault / 事件抽取尚未落地。不要把它描述为已实现能力。权威顺序：代码 > constitution > 本契约。
+> 代码事实：当前 `master` 只实现 9 个本地 MCP 工具；本 feature 的 ingest / 多账号 vault / 事件抽取尚未落地。不要把它描述为已实现能力。权威顺序：代码 > constitution > 本契约。
 
 **Input**: User description: "twinbox 作为 Agent OS Everything 过程数据层的邮件 adapter：公共邮箱接入、多用户集中管理与凭据加密、邮件数据以 ingest.attributes（多归类轴：人/事物/意图/紧急/敏感/线程）形式输出给平台、OS 侧只收引用不收全文、按事件抽取（周报/风险/计划变更等）。"
 

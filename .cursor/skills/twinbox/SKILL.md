@@ -46,7 +46,7 @@ commands.
 4. 用户确认队列项完成、忽略或恢复时调用 `twinbox_queue_action`，并确认工具返回结果。
 5. 默认只读真实邮箱；`twinbox_queue_action` 只修改 Twinbox 本地队列状态，
    不会发送、删除、归档或标记邮件。
-6. 不要使用 MCP 改造前的旧 CLI 命令体系；在 `main` 上只调用 `twinbox_*` MCP 工具。
+6. 不要使用 MCP 改造前的旧 CLI 命令体系；在 `master` 上只调用 `twinbox_*` MCP 工具。
 
 ## extract 示例
 
