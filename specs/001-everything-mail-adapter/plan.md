@@ -6,7 +6,7 @@
 
 ## Summary
 
-把 twinbox 从「单用户邮件智能 Skill」升级为 Agent OS Everything 过程数据层的邮件 adapter：在现有 `twinbox_core`（imap_fetch / analyze / extract / pulse / llm / queue）之上新增 adapter 层，输出「引用 + 六轴 attributes + 事件」的 ingest envelope；在 `mcp-server.mjs` 工具层以新增 `twinbox_*` 工具暴露能力，保持既有 9 个工具的入口形状不变；凭据集中加密存储。
+把 twinbox 从「单用户邮件智能 Skill」升级为 Agent OS Everything 过程数据层的邮件 adapter：在现有 `twinbox_core`（imap_fetch / analyze / extract / pulse / llm / queue）之上新增 adapter 层，输出「引用 + 版本化 opaque attributes + 事件」的 ingest envelope；在 `mcp-server.mjs` 工具层以新增 `twinbox_*` 工具暴露能力，保持既有 9 个工具的入口形状不变；凭据集中加密存储。周报运营、注意力投影与策略写操作分别由 `004`/`005`/`006` 承担，不在本 plan 范围。领域语义见 ADR-001 / `003`。
 
 ## Technical Context
 
@@ -32,9 +32,9 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-- **I. Read-Only Mailbox**: 本 feature 不新增任何服务器写操作；公共邮箱接入复用只读 IMAP 通路。✅
+- **I. Mailbox Mutation Boundary**: 本 feature 数据平面不新增邮箱写操作；公共邮箱接入复用只读 IMAP。策略执行见 ADR-002/`006`。✅
 - **II. Full Text Never Leaves twinbox**: ingest envelope schema 无 body/attachment 字段；摘要有界；LLM 抽取输出 schema 不含原文字段。✅
-- **III. Classification Axes Stay in twinbox**: 六轴定义落在 `config/extract-profiles.yaml`，轴值对平台透明（opaque string）。✅
+- **III. Classification Axes Stay in twinbox**: 归类轴定义落在 twinbox 侧配置/Semantic Pack，轴值对平台透明（opaque string）；starter 轴可含 person/thing/intent/urgency/sensitivity/thread，但不是冻结六键 enum。✅
 - **IV. Stable Tool Contract Surface**: 既有 9 个 `twinbox_*` 工具签名不动；新能力以新工具（如 `twinbox_ingest`、`twinbox_events`、`twinbox_accounts`）或 `data` 内新字段添加。✅
 - **V. Credentials Never Leak**: vault 加密存储，输出只含存在性布尔值；spec/plan/tasks 与日志不含凭据。✅
 

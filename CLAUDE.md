@@ -7,9 +7,11 @@
 冲突时按以下顺序处理；低层文档不得覆盖高层事实或约束：
 
 1. **代码、测试、运行事实**：当前行为、可复现验证与本地状态。易变数值（采样条数、截断长度、TTL）以代码与当前 feature plan 为准，不在本文件硬编码。
-2. [**constitution**](.specify/memory/constitution.md)：不可违背的只读邮箱、全文边界、工具契约与凭据不变量。
+2. [**constitution**](.specify/memory/constitution.md)：邮箱变更边界、全文边界、工具契约与凭据不变量。
 3. **SpecKit feature contract**：当前功能目录中的 `spec.md`、`plan.md`、`tasks.md`，定义已批准功能的范围与验收。
-4. [**变更分类**](docs/governance/change-classification.md)：决定是否建 artifact、以及 artifact 不能冒充运行事实。
+4. [**ADR**](docs/decisions/README.md)：长期取舍；修宪须引用。
+5. [**变更分类**](docs/governance/change-classification.md)：决定是否建 artifact、以及 artifact 不能冒充运行事实。
+6. [**As-built baseline**](specs/000-as-built-mcp-baseline/spec.md)：SpecKit 插入前的已验证事实回填（非历史 provenance）。
 
 ## 先分类，再行动
 
@@ -26,7 +28,7 @@
 
 ## 不可绕过的护栏
 
-完整约束以 [constitution](.specify/memory/constitution.md) 为准。尤其不得：对真实邮箱 send / move / delete / archive / flag；把邮件全文写入 Agent OS / 平台侧存储；破坏既有 `twinbox_*` 工具名与 envelope 形状；在输出、日志或追踪文件中暴露凭据。
+完整约束以 [constitution](.specify/memory/constitution.md) 为准。尤其：默认读路径不对真实邮箱 send / move / delete / archive / flag；任何副作用须匹配 Automation Policy（见 ADR-002 / `006`）；不得把邮件全文写入 Agent OS / 平台侧存储；不得破坏既有 `twinbox_*` 工具名与 envelope 形状；不得在输出、日志或追踪文件中暴露凭据；Semantic Pack 禁止可执行代码。
 
 ## 主干
 
@@ -49,9 +51,11 @@
 
 ## 当前交付面 vs Planned
 
-- **已实现**：9 个 `twinbox_*` MCP 工具（`mcp-server.mjs` → `python3 -m twinbox_core.cli`）。
-- **Planned / 未收敛**：[`specs/001-everything-mail-adapter`](specs/001-everything-mail-adapter/spec.md)（Agent OS ingest、多账号 vault）。不要把它写成已上线能力。
-- **当前 feature**：分析正确性见 [`specs/002-analysis-correctness`](specs/002-analysis-correctness/spec.md)。实现前以该 contract 为准；[`twinbox-evolution-prompt.md`](twinbox-evolution-prompt.md) 只是历史输入。
+- **已实现（as-built）**：[`specs/000-as-built-mcp-baseline`](specs/000-as-built-mcp-baseline/spec.md) — 9 个 `twinbox_*` MCP 工具等。
+- **当前实施焦点**：[`specs/002-analysis-correctness`](specs/002-analysis-correctness/spec.md)（`.specify/feature.json`）；[`twinbox-evolution-prompt.md`](twinbox-evolution-prompt.md) 只是历史输入。
+- **Planned 数据平面**：[`specs/001-everything-mail-adapter`](specs/001-everything-mail-adapter/spec.md)。
+- **Planned 产品合同**：`003` 语义/事件、`004` 周报运营、`005` 注意力 onboarding、`006` 策略约束自动化。
+- **决策**：[`docs/decisions/`](docs/decisions/README.md)（ADR-001 语义解耦；ADR-002 策略执行）。
 
 ## 关键路径
 
@@ -63,3 +67,4 @@
 | MCP 入口 | `mcp-server.mjs` |
 | 本地配置 | `~/.twinbox/twinbox.json` |
 | 宪法 | `.specify/memory/constitution.md` |
+| ADR | `docs/decisions/` |
