@@ -1,6 +1,6 @@
 # Implementation Plan: Analysis Correctness
 
-**Branch**: `main` (spec dir `002-analysis-correctness`) | **Date**: 2026-09-03 | **Spec**: [spec.md](./spec.md)
+**Branch**: `master` (spec dir `002-analysis-correctness`) | **Date**: 2026-09-03 | **Spec**: [spec.md](./spec.md)
 
 **Input**: Feature specification from `/specs/002-analysis-correctness/spec.md`
 
@@ -37,7 +37,7 @@
 - **III. Classification Axes Stay in twinbox**: 动作词表放 `config/action-verbs.yaml`；不锁进平台。✅
 - **IV. Stable Tool Contract Surface**: 九工具名不变；staleness / attachments / diagnostics / pipeline 均为新字段。✅
 - **V. Credentials Never Leak**: 测试夹具不含真实口令；status 继续脱敏。✅
-- **Trunk**: 实现落在 `main`，不为本 feature 建长期 `feat/*` 分支。✅
+- **Trunk**: 实现落在 `master`，不为本 feature 建长期 `feat/*` 分支。✅
 
 ## Project Structure
 

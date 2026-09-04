@@ -1,7 +1,7 @@
 # AGENTS.md — twinbox MCP skill
 
 Twinbox is a thread-centric email copilot exposed through the local MCP stdio
-server. The `main` branch has nine MCP tools. Use those
+server. The `master` branch has nine MCP tools. Use those
 registered tools directly; do not use the obsolete CLI command families from
 older Twinbox versions.
 
@@ -40,7 +40,7 @@ claim that an action happened unless the tool returned a successful result.
   queue visibility/state; they do not send, delete, archive, mark-read, or
   otherwise modify the real mailbox.
 - Do not invent tools for sending, drafting, scheduling, onboarding, daemon
-  control, or mailbox mutation; they are not exposed on `main`.
+  control, or mailbox mutation; they are not exposed on `master`.
 - Never reveal IMAP/LLM credentials. Preserve masked setup/status output.
 
 The MCP server entrypoint is the repository-root `mcp-server.mjs`; see

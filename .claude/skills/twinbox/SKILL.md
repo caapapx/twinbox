@@ -76,5 +76,5 @@ connection environment (`IMAP_HOST`, `IMAP_PORT`, `IMAP_ENCRYPTION`,
 `IMAP_LOGIN`, `IMAP_PASS`, `MAIL_ADDRESS`); optional state/code-root and LLM
 environment variables are documented in `README.md`.
 
-Do not use the obsolete CLI command families from the pre-MCP line; `main`
+Do not use the obsolete CLI command families from the pre-MCP line; `master`
 exposes the `twinbox_*` MCP tools instead.

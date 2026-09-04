@@ -1,6 +1,6 @@
 # twinbox
 
-线程级邮件智能 — 只读 IMAP，分析紧急度/待回复/周报。默认主干是 **`main`**（MCP Skill / CLI）。旧大栈在 `archive/openclaw-monolith`。
+线程级邮件智能 — 只读 IMAP，分析紧急度/待回复/周报。默认主干是 **`master`**（MCP Skill / CLI）。旧大栈在 `archive/openclaw-monolith`。
 
 ~2,000 行 Python + 9 个 OpenClaw 工具。零二进制依赖。
 

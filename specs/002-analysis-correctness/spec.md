@@ -4,7 +4,7 @@
 
 **Created**: 2026-09-03
 
-**Status**: Draft（实现前冻结；git 主干是 `main`，本目录名不是 git 分支）
+**Status**: Draft（实现前冻结；git 主干是 `master`，本目录名不是 git 分支）
 
 **Input**: User description: "纠正 Twinbox 分析与工具层：MIME 解码、按线程最新邮件判定 waiting_on、thread_key 归一化 join、过期快照自动同步、extract 返回可读正文、采样与 needs_attention 校准。历史输入见仓库根 `twinbox-evolution-prompt.md`。"
 

@@ -30,9 +30,9 @@
 
 ## 主干
 
-- **`main`**：默认主干（MCP Skill / CLI）。不要用 `feat/*` 当长期主干。
-- **`archive/openclaw-monolith`**：冻结的旧大栈（原 `master`），不再当默认分支。
-- 不要再把主干叫 `openclaw-skill` 或 `feat/mcp-server`。
+- **`master`**：默认主干（MCP Skill / CLI）。不要用 `feat/*` 当长期主干。
+- **`archive/openclaw-monolith`**：冻结的旧大栈，不再当默认分支。
+- 不要再把主干叫 `openclaw-skill`、`feat/mcp-server` 或 `main`。
 
 ## 任务手册（最小路径）
 
