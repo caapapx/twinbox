@@ -4,25 +4,27 @@
 
 **Created**: 2026-09-04
 
-**Status**: Draft / Planned（依赖 [ADR-002](../../docs/decisions/ADR-002-read-only-to-policy-governed-execution.md) 与 constitution I 1.2.0；实现前代码保持只读默认）
+**Status**: Draft / Planned（依赖 [ADR-002](../../docs/decisions/ADR-002-read-only-to-policy-governed-execution.md)、[ADR-003](../../docs/decisions/ADR-003-retrieval-spine-and-external-services.md) 与 constitution I 1.2.0）
+
+**This increment (v0.3 dry-run)**: 提案引擎 + 审计 jsonl + 确认卡片 payload。**无 SMTP、无写邮箱**。FR-007 保持只读默认。通道由 agent-os 8090 承担。完整自动执行仍是后续增量。
 
 **Input**: 管理员预授权范围内的全自动流转（转发/推进）；未命中策略转人工；审计与幂等。
 
 ## User Scenarios & Testing *(mandatory)*
 
-### User Story 1 - 策略命中后自动执行 (Priority: P1)
+### User Story 1 - 策略命中后生成提案 (Priority: P1)
 
-管理员声明流程、允许的目标范围与动作类型。系统识别匹配邮件事件后，在策略内自动执行（例如转发至允许的角色解析结果），并写审计。
+管理员声明流程、允许的目标范围与动作类型。本增量识别匹配后**生成提案与审计**，不发送邮件。完整自动执行留待后续增量。
 
 **Why this priority**: 会议明确要减少人工中转；且必须可验收安全边界。
 
-**Independent Test**: 策略内夹具执行成功且有审计；策略外夹具拒绝，无副作用。
+**Independent Test**: 策略内夹具产生一条提案且有审计；策略外夹具 0 提案，无邮箱副作用。
 
 **Acceptance Scenarios**:
 
-1. **Given** 匹配策略的事件与可解析目标，**When** 执行，**Then** 动作完成一次，审计含策略版本、目标、幂等键。
-2. **Given** 同类事件重放相同幂等键，**When** 再次执行，**Then** 不产生第二次副作用。
-3. **Given** 事件不匹配任何策略，**When** 评估，**Then** 转人工/拒绝，无发送。
+1. **Given** 匹配策略的事件与可解析目标，**When** 评估，**Then** 产出一条提案，审计含策略版本、目标、幂等键。
+2. **Given** 同类事件重放相同幂等键，**When** 再次评估，**Then** 不新增第二条 proposed 记录。
+3. **Given** 事件不匹配任何策略，**When** 评估，**Then** 提案列表为空，无发送。
 
 ### User Story 2 - 确认通道与超时 (Priority: P2)
 
@@ -60,7 +62,7 @@
 
 ### Functional Requirements
 
-- **FR-001**: System MUST execute mailbox/outbound side effects only under an explicit Automation Policy (process, target scope, action types).
+- **FR-001**: Mailbox/outbound side effects MUST occur only under an explicit Automation Policy. **This increment MUST NOT send or write mail**; it MUST emit proposals, audit records, and card payloads only.
 - **FR-002**: Model confidence MUST NOT authorize execution without policy match.
 - **FR-003**: System MUST record audit events for every side-effect attempt (success or failure).
 - **FR-004**: System MUST enforce idempotency keys for side effects.
@@ -78,14 +80,14 @@
 
 ### Measurable Outcomes
 
-- **SC-001**: 策略外夹具 0 次成功副作用。
-- **SC-002**: 相同幂等键重放副作用次数 ≤ 1。
-- **SC-003**: 审计可追溯每次成功转发至策略版本与目标。
-- **SC-004**: 确认通道超时用例 100% 进入人工/升级态而非「已确认」。
+- **SC-001**: 策略外夹具 0 条提案、0 次邮箱副作用。
+- **SC-002**: 相同幂等键重放不新增第二条 proposed 成功记录。
+- **SC-003**: 审计可追溯每条提案至策略版本与目标（或 `needs_human`）。
+- **SC-004**: 确认通道超时/失败用例 100% 保持未确认，不得标为 confirmed。
 
 ## Assumptions
 
-- SMTP/写邮箱能力与确认通道的具体厂商适配在 plan 阶段选定；本 spec 不绑定单一 IM 产品为唯一实现。
+- 本增量不接 SMTP / 飞书 SDK；Twinbox 只产 card payload（ADR-003）。
 - 样例「财务收入确认 → 项目经理」仅作语义包+策略夹具。
 
 ## Out of Scope

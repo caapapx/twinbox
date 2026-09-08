@@ -94,15 +94,37 @@ function needsSync(stdout) {
   }
 }
 
-async function latestMailWithAutoSync(cliArgs) {
+function needsRefresh(stdout) {
+  try {
+    const parsed = JSON.parse(stdout.trim());
+    if (parsed?.ok === false && parsed?.recovery_tool === "twinbox_sync") return true;
+    if (parsed?.staleness?.stale) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+async function withAutoSync(cliArgs, label) {
   const r1 = await runCli(cliArgs);
-  if (!needsSync(r1.stdout)) return makeResult(r1);
+  if (!needsRefresh(r1.stdout)) return makeResult(r1);
   const rSync = await runCli(["sync", "--json"]);
+  if (isError(rSync)) {
+    return {
+      content: [
+        {
+          type: "text",
+          text: `=== auto sync failed ===\n${formatResult(rSync).content[0].text}`,
+        },
+      ],
+      isError: true,
+    };
+  }
   const r2 = await runCli(cliArgs);
   const parts = [
-    "=== auto sync (activity-pulse was missing) ===",
+    `=== auto sync (${label}) ===`,
     formatResult(rSync).content[0].text,
-    "=== latest-mail (after sync) ===",
+    `=== ${cliArgs[0]} (after sync) ===`,
     formatResult(r2).content[0].text,
   ];
   return {
@@ -247,6 +269,14 @@ const TOOLS = [
           enum: ["iso_week", "none"],
           description: "Group output by ISO week (iso_week) or flat list (none)",
         },
+        from_hour: {
+          type: "number",
+          description: "Local-hour start filter (inclusive, Asia/Shanghai)",
+        },
+        to_hour: {
+          type: "number",
+          description: "Local-hour end filter (exclusive)",
+        },
       },
     },
   },
@@ -264,6 +294,38 @@ const TOOLS = [
       "Call once after deployment. Chinese: 初始化、配置邮箱.",
     inputSchema: { type: "object", properties: {} },
   },
+  {
+    name: "twinbox_onboard",
+    description: "Write a user Semantic Pack from ≤5 questionnaire answers. Chinese: 初始化关注点.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        approvals: { type: "string" },
+        watch: { type: "string" },
+        extra: { type: "string" },
+        broadcast: { type: "string" },
+        sensitive: { type: "string" },
+      },
+    },
+  },
+  {
+    name: "twinbox_action_proposals",
+    description: "Dry-run policy proposals (no SMTP). Chinese: 动作提案.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "twinbox_action_review",
+    description: "Confirm or reject a local dry-run proposal. Does not write the mailbox.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        proposal_id: { type: "string" },
+        action: { type: "string", enum: ["confirm", "reject", "expire"] },
+        reason: { type: "string" },
+      },
+      required: ["proposal_id", "action"],
+    },
+  },
 ];
 
 async function handleToolCall(request) {
@@ -279,17 +341,15 @@ async function handleToolCall(request) {
     case "twinbox_latest_mail": {
       const cliArgs = ["latest-mail", "--json"];
       if (args?.unread_only) cliArgs.push("--unread-only");
-      return latestMailWithAutoSync(cliArgs);
+      return withAutoSync(cliArgs, "stale or missing pulse");
     }
 
     case "twinbox_todo": {
-      const r = await runCli(["todo", "--json"]);
-      return makeResult(r);
+      return withAutoSync(["todo", "--json"], "stale or missing pulse");
     }
 
     case "twinbox_weekly": {
-      const r = await runCli(["weekly", "--json"]);
-      return makeResult(r);
+      return withAutoSync(["weekly", "--json"], "stale or missing weekly");
     }
 
     case "twinbox_thread_inspect": {
@@ -322,6 +382,8 @@ async function handleToolCall(request) {
       if (args?.weekdays !== undefined) cliArgs.push("--weekdays", args.weekdays);
       if (args?.from_self) cliArgs.push("--from-self");
       if (args?.bucket) cliArgs.push("--bucket", args.bucket);
+      if (args?.from_hour !== undefined) cliArgs.push("--from-hour", String(args.from_hour));
+      if (args?.to_hour !== undefined) cliArgs.push("--to-hour", String(args.to_hour));
       const r = await runCli(cliArgs);
       return makeResult(r);
     }
@@ -336,6 +398,33 @@ async function handleToolCall(request) {
       return makeResult(r);
     }
 
+    case "twinbox_onboard": {
+      const cliArgs = ["onboard", "--json"];
+      for (const key of ["approvals", "watch", "extra", "broadcast", "sensitive"]) {
+        if (args?.[key]) cliArgs.push(`--${key}`, String(args[key]));
+      }
+      const r = await runCli(cliArgs);
+      return makeResult(r);
+    }
+
+    case "twinbox_action_proposals": {
+      const r = await runCli(["actions", "--json"]);
+      return makeResult(r);
+    }
+
+    case "twinbox_action_review": {
+      const cliArgs = [
+        "actions",
+        "review",
+        args.proposal_id,
+        args.action,
+        "--json",
+      ];
+      if (args.reason) cliArgs.push("--reason", args.reason);
+      const r = await runCli(cliArgs);
+      return makeResult(r);
+    }
+
     default:
       return {
         content: [{ type: "text", text: `Unknown tool: ${name}` }],
@@ -345,7 +434,7 @@ async function handleToolCall(request) {
 }
 
 const server = new Server(
-  { name: "twinbox", version: "0.1.0" },
+  { name: "twinbox", version: "0.3.0" },
   { capabilities: { tools: {} } }
 );
 

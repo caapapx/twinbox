@@ -16,6 +16,8 @@ from zoneinfo import ZoneInfo
 
 import yaml
 
+from .recipient import aggregate_thread_recipient_role
+
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
@@ -54,6 +56,10 @@ def _parse_dt(value: object) -> datetime | None:
     except ValueError:
         return None
     return parsed.replace(tzinfo=SHANGHAI) if parsed.tzinfo is None else parsed
+
+
+def normalize_thread_key(subject: object) -> str:
+    return _normalize_thread(subject)
 
 
 def _normalize_thread(subject: object) -> str:
@@ -98,7 +104,7 @@ def _queue_membership(state_root: Path) -> dict[str, dict[str, Any]]:
         for row in artifact.get(key, []):
             if not isinstance(row, dict):
                 continue
-            tk = str(row.get("thread_key", "") or "")
+            tk = normalize_thread_key(row.get("thread_key", "") or "")
             if not tk:
                 continue
             slot = membership.setdefault(tk, {"queue_tags": []})
@@ -108,6 +114,36 @@ def _queue_membership(state_root: Path) -> dict[str, dict[str, Any]]:
     for slot in membership.values():
         slot["queue_tags"] = sorted(set(str(t) for t in slot.get("queue_tags", [])))
     return membership
+
+
+def _load_action_verbs() -> set[str]:
+    root = Path(__file__).resolve().parents[1]
+    path = root / "config" / "action-verbs.yaml"
+    data = _load_yaml(path)
+    verbs = data.get("verbs", [])
+    if isinstance(verbs, list):
+        return {str(v).strip() for v in verbs if str(v).strip()}
+    return {"请审批", "请确认", "请登记", "请处理"}
+
+
+def _queue_join_diagnostics(state_root: Path, snapshots: list[ThreadSnapshot]) -> list[dict[str, str]]:
+    known = {s.thread_key for s in snapshots}
+    misses: list[dict[str, str]] = []
+    root = state_root / "runtime" / "validation" / "phase-4"
+    for filename, key in (
+        ("daily-urgent.yaml", "daily_urgent"),
+        ("pending-replies.yaml", "pending_replies"),
+        ("sla-risks.yaml", "sla_risks"),
+    ):
+        artifact = _load_yaml(root / filename)
+        for row in artifact.get(key, []):
+            if not isinstance(row, dict):
+                continue
+            raw = str(row.get("thread_key", "") or "")
+            tk = normalize_thread_key(raw)
+            if tk and tk not in known:
+                misses.append({"artifact": filename, "thread_key": raw, "normalized": tk})
+    return misses
 
 
 def _load_queue_state(state_root: Path) -> dict[str, Any]:
@@ -140,6 +176,8 @@ class ThreadSnapshot:
     fingerprint: str
     query_terms: list[str]
     score: int
+    recipient_role: str = "unknown"
+    action_hint: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -156,6 +194,8 @@ class ThreadSnapshot:
             "fingerprint": self.fingerprint,
             "query_terms": self.query_terms,
             "score": self.score,
+            "recipient_role": self.recipient_role,
+            "action_hint": self.action_hint,
         }
 
 
@@ -197,22 +237,50 @@ def build_activity_pulse(state_root: Path, *, window_hours: int = 24) -> dict[st
             score += 30
         if "sla_risk" in tags:
             score += 20
+            age_hours = (datetime.now(SHANGHAI) - latest_dt).total_seconds() / 3600
+            if age_hours >= 48:
+                score = max(0, score - 25)
+                why = f"{why}（aging）"
+        latest_body = ""
+        ctx_path = state_root / "runtime" / "context" / "phase1-context.json"
+        sampled = _load_json(ctx_path, {})
+        body_map = sampled.get("sampled_bodies", {}) if isinstance(sampled, dict) else {}
+        if isinstance(body_map, dict):
+            entry = body_map.get(ref) or body_map.get(str(latest.get("id", "")))
+            if isinstance(entry, dict):
+                latest_body = str(entry.get("body", "") or "")
+            elif isinstance(entry, str):
+                latest_body = entry
+        verbs = _load_action_verbs()
+        action_hint = ""
+        hay = f"{latest.get('subject', '')} {latest_body}"
+        for verb in verbs:
+            if verb and verb in hay:
+                score += 15
+                action_hint = verb
+                break
         unread = sum(1 for _, r in rows if "Seen" not in r.get("flags", []))
         fp = f"{ref}|{','.join(tags)}|{q.get('waiting_on', '')}"
         terms = sorted(set(_extract_tokens(tk) + _extract_tokens(latest.get("subject", ""))))
-        snapshots.append(ThreadSnapshot(
+        snap = ThreadSnapshot(
             thread_key=tk, latest_subject=str(latest.get("subject", "")),
             last_activity_at=latest_dt.isoformat(), latest_message_ref=ref,
             new_message_count=len(in_window), message_count=len(rows),
             unread_count=unread, queue_tags=tags, waiting_on=q.get("waiting_on"),
             why=why, fingerprint=fp, query_terms=terms, score=score,
-        ))
+            recipient_role=aggregate_thread_recipient_role(
+                [{"recipient_role": r.get("recipient_role")} for _, r in rows]
+            ),
+            action_hint=action_hint,
+        )
+        snapshots.append(snap)
 
     snapshots.sort(key=lambda s: (s.score, s.last_activity_at), reverse=True)
     recent = [s for s in snapshots if s.new_message_count > 0][:20]
     attention = [s for s in snapshots if s.queue_tags][:20]
+    misses = _queue_join_diagnostics(state_root, snapshots)
 
-    return {
+    payload = {
         "generated_at": _now_iso(),
         "window_hours": window_hours,
         "summary": {
@@ -223,7 +291,22 @@ def build_activity_pulse(state_root: Path, *, window_hours: int = 24) -> dict[st
         "recent_activity": [s.to_dict() for s in recent],
         "needs_attention": [s.to_dict() for s in attention],
         "thread_index": [s.to_dict() for s in snapshots],
+        "diagnostics": {"queue_join_misses": misses},
+        "score_legend": {
+            "recent_window": 10,
+            "urgent": 40,
+            "pending": 30,
+            "sla_risk": 20,
+            "sla_aging_48h": -25,
+            "action_verb": 15,
+        },
     }
+    try:
+        from .project import attach_projections
+        payload = attach_projections(payload, state_root)
+    except Exception:
+        pass
+    return payload
 
 
 def write_activity_pulse(state_root: Path, **kwargs: Any) -> tuple[dict[str, Any], Path]:
@@ -274,4 +357,43 @@ def search_threads(query: str, state_root: Path, *, limit: int = 5) -> list[dict
         m["match_score"] = score + int(item.get("score", 0))
         matches.append((m["match_score"], m))
     matches.sort(key=lambda p: p[0], reverse=True)
-    return [item for _, item in matches[:limit]]
+    try:
+        from .select import semantic_search
+        semantic = semantic_search(q, state_root, limit=limit)
+        for item in semantic:
+            matches.append((int(item.get("match_score", 0)), item))
+        matches.sort(key=lambda p: p[0], reverse=True)
+    except Exception:
+        pass
+    out = []
+    seen: set[str] = set()
+    for _, item in matches:
+        tk = str(item.get("thread_key", ""))
+        if tk in seen:
+            continue
+        seen.add(tk)
+        item = _attach_latest_message(item, state_root)
+        out.append(item)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _attach_latest_message(item: dict[str, Any], state_root: Path) -> dict[str, Any]:
+    ref = str(item.get("latest_message_ref", "") or "")
+    ctx = _load_json(state_root / "runtime" / "context" / "phase1-context.json", {})
+    bodies = ctx.get("sampled_bodies", {}) if isinstance(ctx, dict) else {}
+    entry = None
+    if isinstance(bodies, dict):
+        entry = bodies.get(ref) or bodies.get(ref.split("#")[-1])
+    if isinstance(entry, dict) and entry.get("body"):
+        item["latest_message"] = {
+            "ref": ref,
+            "body_text": str(entry.get("body", ""))[:2000],
+            "decoded_with": entry.get("decoded_with", ""),
+        }
+    elif isinstance(entry, str) and entry.strip():
+        item["latest_message"] = {"ref": ref, "body_text": entry[:2000]}
+    else:
+        item["body_unavailable"] = True
+    return item

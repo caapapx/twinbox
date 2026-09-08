@@ -12,14 +12,23 @@ Commands:
   extract      — Targeted IMAP extract by date range + keywords (isolated from sync)
   queue        — Mark thread complete / dismiss / restore
   status       — Mailbox health + setup status
+  schedule     — run-due jobs under file lock
+  onboard      — write user semantic pack from questionnaire answers
+  material-import — optional xlsx/docx pack fragment
+  actions      — dry-run proposals / review
 """
 
 from __future__ import annotations
 
 import json
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
+
+SHANGHAI = ZoneInfo("Asia/Shanghai")
+STALE_HOURS_DEFAULT = 4
 
 
 def _state_root() -> Path:
@@ -80,22 +89,52 @@ def cmd_sync(job: str = "daytime-sync") -> dict[str, Any]:
 
     # Step 2: LLM analysis (urgent / pending / sla / weekly)
     analysis = run_analysis(root)
+    degraded: list[str] = []
+    if not analysis.get("ok"):
+        degraded.append("analysis")
 
     # Step 3: Build activity pulse
     try:
         pulse_data, pulse_path = write_activity_pulse(root)
         pulse_ok = True
+        if "analysis" in degraded:
+            pulse_data["stale_analysis"] = True
+            from .imap_fetch import _write_json
+            _write_json(pulse_path, pulse_data)
     except Exception as exc:
         pulse_ok = False
         pulse_data = {"error": str(exc)}
 
+    fetch_at = fetch_result.get("generated_at") or ""
     return {
         "ok": True,
         "job": job,
+        "degraded": degraded,
         "fetch": fetch_result,
         "analysis": analysis,
         "pulse": {"ok": pulse_ok, "tracked_threads": pulse_data.get("summary", {}).get("tracked_threads", 0)},
+        "consistency": {
+            "fetch_at": fetch_at,
+            "analysis_ok": analysis.get("ok"),
+            "pulse_ok": pulse_ok,
+        },
+        "watermark_range": fetch_result.get("watermark_range"),
     }
+
+
+def _staleness(generated_at: str, *, threshold_hours: int = STALE_HOURS_DEFAULT) -> dict[str, Any]:
+    parsed = None
+    if generated_at:
+        try:
+            parsed = datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+        except ValueError:
+            parsed = None
+    if parsed is None:
+        return {"stale": True, "age_hours": None, "threshold_hours": threshold_hours}
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=SHANGHAI)
+    age = (datetime.now(SHANGHAI) - parsed.astimezone(SHANGHAI)).total_seconds() / 3600
+    return {"stale": age >= threshold_hours, "age_hours": round(age, 2), "threshold_hours": threshold_hours}
 
 
 def cmd_latest_mail(unread_only: bool = False) -> dict[str, Any]:
@@ -113,10 +152,12 @@ def cmd_latest_mail(unread_only: bool = False) -> dict[str, Any]:
     return {
         "ok": True,
         "generated_at": pulse.get("generated_at", ""),
+        "staleness": _staleness(str(pulse.get("generated_at", "") or "")),
         "summary": pulse.get("summary", {}),
         "threads": threads[:30],
         "recent_activity": pulse.get("recent_activity", []),
         "needs_attention": pulse.get("needs_attention", []),
+        "projections": pulse.get("projections", {}),
     }
 
 
@@ -132,7 +173,9 @@ def cmd_todo() -> dict[str, Any]:
     return {
         "ok": True,
         "generated_at": pulse.get("generated_at", ""),
+        "staleness": _staleness(str(pulse.get("generated_at", "") or "")),
         "needs_attention": attention,
+        "projections": pulse.get("projections", {}),
         "count": len(attention),
     }
 
@@ -147,7 +190,11 @@ def cmd_weekly() -> dict[str, Any]:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError) as exc:
         return {"ok": False, "error": str(exc)}
-    return {"ok": True, **data}
+    return {
+        "ok": True,
+        "staleness": _staleness(str(data.get("generated_at", "") or "")),
+        **data,
+    }
 
 
 def cmd_thread_inspect(query: str) -> dict[str, Any]:
@@ -206,6 +253,12 @@ def _parse_extract_args(remaining: list[str]) -> dict[str, Any]:
         elif arg == "--no-body":
             overrides["fetch_bodies"] = False
             i += 1
+        elif arg == "--from-hour" and i + 1 < len(remaining):
+            overrides["from_hour"] = remaining[i + 1]
+            i += 2
+        elif arg == "--to-hour" and i + 1 < len(remaining):
+            overrides["to_hour"] = remaining[i + 1]
+            i += 2
         else:
             i += 1
     return overrides
@@ -254,8 +307,31 @@ def cmd_status() -> dict[str, Any]:
     llm_ok, llm_err = validate_backend()
 
     # Check for artifacts
-    pulse_exists = (root / "runtime" / "validation" / "phase-4" / "activity-pulse.json").is_file()
-    context_exists = (root / "runtime" / "context" / "phase1-context.json").is_file()
+    pulse_path = root / "runtime" / "validation" / "phase-4" / "activity-pulse.json"
+    context_path = root / "runtime" / "context" / "phase1-context.json"
+    analysis_path = root / "runtime" / "validation" / "phase-4" / "pending-replies.yaml"
+    pulse_exists = pulse_path.is_file()
+    context_exists = context_path.is_file()
+
+    def _mtime_iso(path):
+        if not path.is_file():
+            return None
+        return datetime.fromtimestamp(path.stat().st_mtime, tz=SHANGHAI).isoformat(timespec="seconds")
+
+    from .schedule import missed_runs
+    misses = missed_runs(root)
+    join_misses = []
+    if pulse_exists:
+        try:
+            from .pulse import load_activity_pulse
+            join_misses = load_activity_pulse(root).get("diagnostics", {}).get("queue_join_misses", [])
+        except Exception:
+            join_misses = []
+    warnings = []
+    if misses:
+        warnings.append({"missed_runs": misses})
+    if join_misses:
+        warnings.append({"queue_join_misses": join_misses})
 
     return {
         "ok": True,
@@ -270,6 +346,14 @@ def cmd_status() -> dict[str, Any]:
             "phase1_context": context_exists,
             "activity_pulse": pulse_exists,
         },
+        "pipeline": {
+            "fetch": _mtime_iso(context_path),
+            "analysis": _mtime_iso(analysis_path),
+            "pulse": _mtime_iso(pulse_path),
+        },
+        "missed_runs": misses,
+        "diagnostics": {"queue_join_misses": join_misses},
+        "warnings": warnings,
     }
 
 
@@ -319,6 +403,40 @@ def main(argv: list[str] | None = None) -> int:
                 result = cmd_queue_action(action, thread_key, reason)
         elif cmd == "status":
             result = cmd_status()
+        elif cmd == "schedule":
+            sub = remaining[0] if remaining else ""
+            if sub == "run-due":
+                from .schedule import run_due
+                result = run_due(_state_root(), code_root=_code_root())
+            else:
+                result = {"ok": False, "error": "Usage: schedule run-due"}
+        elif cmd == "onboard":
+            answers = {}
+            for i, a in enumerate(remaining):
+                if a.startswith("--") and i + 1 < len(remaining):
+                    answers[a[2:].replace("-", "_")] = remaining[i + 1]
+            from .onboard import save_user_pack
+            result = save_user_pack(_state_root(), answers)
+        elif cmd == "material-import":
+            path = remaining[0] if remaining else ""
+            intent = "reference"
+            for i, a in enumerate(remaining):
+                if a == "--intent" and i + 1 < len(remaining):
+                    intent = remaining[i + 1]
+            if not path:
+                result = {"ok": False, "error": "Usage: material-import PATH"}
+            else:
+                from .material_import import import_material
+                result = import_material(Path(path), intent=intent)
+        elif cmd == "actions":
+            sub = remaining[0] if remaining else "list"
+            from .actions import scan_proposals, review_proposal
+            if sub == "review":
+                pid = remaining[1] if len(remaining) > 1 else ""
+                action = remaining[2] if len(remaining) > 2 else "confirm"
+                result = review_proposal(_state_root(), pid, action)
+            else:
+                result = scan_proposals(_state_root())
         else:
             print(f"Unknown command: {cmd}", file=sys.stderr)
             print(__doc__, file=sys.stderr)

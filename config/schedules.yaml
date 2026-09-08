@@ -1,14 +1,12 @@
 timezone: Asia/Shanghai
 schedules:
-  - name: daily-refresh
+  - name: daytime-sync
     cron: "30 8 * * *"
-    command: "twinbox-orchestrate run --phase 4"
-    description: "Daily pre-computation of urgent/pending/sla queues at 08:30"
-  - name: weekly-refresh
-    cron: "30 17 * * 5"
-    command: "twinbox-orchestrate run --phase 4"
-    description: "Weekly brief refresh every Friday at 17:30"
-  - name: nightly-full-refresh
+    job: daytime-sync
+    command: "python3 -m twinbox_core.cli schedule run-due --json"
+    description: "Daytime sync at 08:30 Asia/Shanghai"
+  - name: nightly-full
     cron: "0 2 * * *"
-    command: "twinbox-orchestrate run"
-    description: "Nightly full pipeline refresh at 02:00"
+    job: nightly-full
+    command: "python3 -m twinbox_core.cli schedule run-due --json"
+    description: "Nightly full rebuild at 02:00 Asia/Shanghai"

@@ -75,21 +75,24 @@ npm install
 node mcp-server.mjs
 ```
 
-The server listens on stdio and speaks MCP. It lists 9 tools and routes each call to the Python CLI.
+The server listens on stdio and speaks MCP. Core 9 tools stay stable; additive tools (`twinbox_onboard`, `twinbox_action_proposals`, `twinbox_action_review`) are optional.
 
-### Tools (9)
+### Tools (core 9 + additive)
 
 | 工具 | 功能 |
 |------|------|
 | `twinbox_sync` | 邮件同步 + LLM 分析 |
-| `twinbox_latest_mail` | 最新邮件摘要（自动同步） |
+| `twinbox_latest_mail` | 最新邮件摘要（过期/缺失时自动同步） |
 | `twinbox_todo` | 紧急/待回复队列 |
 | `twinbox_weekly` | 周报（当前 sync 产物） |
 | `twinbox_extract` | 历史/定向抽取（时间范围 + 关键词，不触发 sync） |
 | `twinbox_thread_inspect` | 查看/搜索线程 |
 | `twinbox_queue_action` | 标记完成/忽略/恢复 |
-| `twinbox_status` | 邮箱健康检查 |
+| `twinbox_status` | 邮箱健康检查 + pipeline |
 | `twinbox_setup` | 初始配置 |
+| `twinbox_onboard` | 最小问卷写入 Semantic Pack |
+| `twinbox_action_proposals` | 策略 dry-run 提案（无 SMTP） |
+| `twinbox_action_review` | 本地确认/拒绝提案 |
 
 ### Extract CLI
 
@@ -101,18 +104,30 @@ python3 -m twinbox_core.cli extract --since 2025-01-01 --folder INBOX --folder S
 
 Presets: [`config/extract-profiles.yaml`](config/extract-profiles.yaml)
 
+### Local scheduler (239 crontab)
+
+Do not start an in-process daemon. Drive due jobs from cron:
+
+```cron
+30 8 * * *  TWINBOX_STATE_ROOT=/path/to/state python3 -m twinbox_core.cli schedule run-due --json
+0 2 * * *   TWINBOX_STATE_ROOT=/path/to/state python3 -m twinbox_core.cli schedule run-due --json
+```
+
+See `config/schedules.yaml` and `specs/007-local-scheduler/`.
+
 ## Dependencies
 
 - Python >= 3.11
 - PyYAML
-- Node.js (OpenClaw gateway)
+- Node.js (MCP / QwenPaw host)
+- Optional extras: openpyxl, python-docx (material import only)
 
 ## TODO
 
 - [ ] Claw Hub manifest for one-click deploy
-- [ ] OpenClaw native cron integration
-- [ ] Profile/calibration onboarding flow
-- [ ] Extract Phase 2: optional per-message LLM summarize
+- [ ] 239 crontab 连续观察（见 `007`）
+- [ ] Embedding rerank phase 2 / zvec storage upgrade
+- [ ] `004` 周报运营
 
 ## License
 

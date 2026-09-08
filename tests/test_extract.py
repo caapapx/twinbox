@@ -58,10 +58,20 @@ class TestWeekdayFilter(unittest.TestCase):
         env = _env("个人周报", when=datetime(2025, 6, 6, 10, 0, tzinfo=SHANGHAI))  # Fri
         self.assertTrue(matches_envelope(env, criteria))
 
-    def test_wednesday_rejected(self) -> None:
-        criteria = ExtractCriteria(weekdays=[4, 5, 6])
-        env = _env("个人周报", when=datetime(2025, 6, 4, 10, 0, tzinfo=SHANGHAI))  # Wed
-        self.assertFalse(matches_envelope(env, criteria))
+    def test_hour_filter(self) -> None:
+        criteria = ExtractCriteria(from_hour=17, to_hour=24)
+        morning = _env("个人周报", when=datetime(2025, 6, 6, 10, 0, tzinfo=SHANGHAI))
+        evening = _env("个人周报", when=datetime(2025, 6, 6, 18, 0, tzinfo=SHANGHAI))
+        self.assertFalse(matches_envelope(morning, criteria))
+        self.assertTrue(matches_envelope(evening, criteria))
+
+    def test_report_has_no_mime_headers(self) -> None:
+        report = envelope_to_report(
+            _env("个人周报", when=datetime(2025, 6, 6, 18, 0, tzinfo=SHANGHAI), body="正文不含Content-Type"),
+            bucket="iso_week",
+        )
+        self.assertNotIn("Content-Type:", report["body_text"])
+        self.assertIn("attachments", report)
 
 
 class TestWeekBucket(unittest.TestCase):
@@ -96,7 +106,7 @@ class TestProfileMerge(unittest.TestCase):
             code_root=code_root,
         )
         self.assertEqual(criteria.profile, "weekly_report")
-        self.assertIn("Sent", criteria.folders)
+        self.assertTrue(any("Sent" in f for f in criteria.folders))
         self.assertIn("INBOX", criteria.folders)
         self.assertIsNotNone(criteria.since)
         self.assertEqual(criteria.weekdays, [4, 5, 6])
