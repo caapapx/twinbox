@@ -1,0 +1,41 @@
+id: sample-enterprise
+version: "1.0.0"
+entities:
+  - id: weekly-report
+    label: 周报样例（夹具，非核心实体）
+relations: []
+classification:
+  event_types:
+    - id: weekly_report
+      when:
+        subject_regex: "周报"
+    - id: approval
+      when:
+        subject_regex: "审批|验收"
+  defaults:
+    broadcast: reference
+attention_hints:
+  - id: weekly
+    utterances:
+      - 周报
+      - 本周工作
+    threshold_high: 0.8
+    threshold_low: 0.5
+  - id: approval
+    utterances:
+      - 请审批
+      - 请登记处理
+      - 验收登记
+    threshold_high: 0.82
+    threshold_low: 0.55
+routing_conditions:
+  - id: skip-noreply
+    skip_llm: true
+    hard:
+      from_addr_regex: "(noreply|no-reply)@"
+action_policy:
+  - id: notify-approval
+    enabled: true
+    action_type: notify
+    target_scope: ["owner"]
+    require_projection: action_required

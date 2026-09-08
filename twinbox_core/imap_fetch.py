@@ -12,17 +12,24 @@ import os
 import re
 from datetime import date, datetime, timedelta
 from email import message_from_bytes
+from email.header import decode_header
 from email.parser import BytesHeaderParser
 from email.policy import default as email_policy
 from email.utils import getaddresses, parsedate_to_datetime
+from html import unescape
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from .imap_utf7 import mailbox_for_wire
+from .recipient import apply_envelope_role
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 IMAP_TIMEOUT_SEC = int(os.environ.get("TWINBOX_IMAP_TIMEOUT", "90") or "90")
+HEADER_FIELDS = "SUBJECT FROM DATE MESSAGE-ID TO CC LIST-ID IN-REPLY-TO REFERENCES"
+MAX_THREAD_CANDIDATES = 45
+MAX_BODY_FETCH = 24
+BODY_FETCH_SPEC = "(BODY.PEEK[])"
 
 
 def _now_iso() -> str:
@@ -108,6 +115,119 @@ def _normalize_header_date(value: str) -> str:
         return text
 
 
+def _decode_header_value(value: object) -> str:
+    text = str(value or "")
+    if not text:
+        return ""
+    parts: list[str] = []
+    try:
+        for chunk, charset in decode_header(text):
+            if isinstance(chunk, bytes):
+                decoded, _enc = _decode_charset(chunk, charset)
+                parts.append(decoded)
+            else:
+                parts.append(str(chunk))
+    except (LookupError, UnicodeDecodeError, ValueError):
+        return text
+    return "".join(parts).strip()
+
+
+def _decode_charset(raw: bytes, charset: str | None) -> tuple[str, str]:
+    candidates: list[str] = []
+    if charset:
+        candidates.append(str(charset))
+    candidates.extend(["utf-8", "gb18030", "gb2312", "big5", "latin-1"])
+    seen: set[str] = set()
+    for enc in candidates:
+        key = enc.lower().strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        try:
+            return raw.decode(key), key
+        except (LookupError, UnicodeDecodeError):
+            continue
+    return raw.decode("utf-8", errors="replace"), "utf-8/replace"
+
+
+def _html_to_text(value: str) -> str:
+    text = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", value)
+    text = re.sub(r"(?is)<br\s*/?>", "\n", text)
+    text = re.sub(r"(?is)</p>", "\n", text)
+    text = re.sub(r"(?is)<[^>]+>", " ", text)
+    text = unescape(text)
+    text = re.sub(r"[ \t]+\n", "\n", text)
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+def decode_message_bytes(raw: bytes, *, max_chars: int = 0) -> dict[str, Any]:
+    """Decode RFC822 bytes to UTF-8 plain text + attachment metadata."""
+    if not raw:
+        return {
+            "body_text": "",
+            "charset": "",
+            "decoded_with": "",
+            "attachments": [],
+            "truncated": False,
+        }
+    msg = message_from_bytes(raw, policy=email_policy)
+    texts: list[str] = []
+    html_bits: list[str] = []
+    attachments: list[dict[str, Any]] = []
+    decoded_with = ""
+
+    def walk(part) -> None:
+        nonlocal decoded_with
+        ctype = (part.get_content_type() or "").lower()
+        disp = str(part.get_content_disposition() or "").lower()
+        filename = part.get_filename()
+        if filename:
+            filename = _decode_header_value(filename)
+        if disp == "attachment" or (filename and ctype not in {"text/plain", "text/html"}):
+            attachments.append({
+                "filename": filename or "unnamed",
+                "content_type": ctype or "application/octet-stream",
+                "size": len(part.get_payload(decode=True) or b""),
+            })
+            return
+        if ctype.startswith("image/") or ctype.startswith("application/"):
+            attachments.append({
+                "filename": filename or "inline",
+                "content_type": ctype,
+                "size": len(part.get_payload(decode=True) or b""),
+            })
+            return
+        if part.is_multipart():
+            for child in part.iter_parts():
+                walk(child)
+            return
+        if ctype not in {"text/plain", "text/html"}:
+            return
+        payload = part.get_payload(decode=True)
+        if not isinstance(payload, bytes):
+            payload = str(payload or "").encode("utf-8", errors="replace")
+        text, enc = _decode_charset(payload, part.get_content_charset())
+        decoded_with = decoded_with or enc
+        if ctype == "text/html":
+            html_bits.append(_html_to_text(text))
+        else:
+            texts.append(text)
+
+    walk(msg)
+    body = "\n".join(t for t in texts if t.strip()) or "\n".join(h for h in html_bits if h.strip())
+    truncated = False
+    if max_chars and max_chars > 0 and len(body) > max_chars:
+        body = body[:max_chars]
+        truncated = True
+    return {
+        "body_text": body,
+        "charset": decoded_with,
+        "decoded_with": decoded_with,
+        "attachments": attachments,
+        "truncated": truncated,
+    }
+
+
 def _parse_flag_list(meta_text: str) -> list[str]:
     match = re.search(r"FLAGS\s+\((.*?)\)", meta_text)
     if not match:
@@ -133,15 +253,22 @@ def _decode_fetch_rows(fetch_data: list[Any], folder: str) -> list[dict[str, Any
         addresses = getaddresses([str(msg.get("from", "") or "")])
         if addresses:
             from_name, from_addr = addresses[0]
+        to_raw = str(msg.get("to", "") or "")
+        cc_raw = str(msg.get("cc", "") or "")
         rows.append({
             "id": str(uid),
             "uid": uid,
             "folder": folder,
-            "subject": str(msg.get("subject", "") or ""),
+            "subject": _decode_header_value(msg.get("subject", "") or ""),
             "from_name": str(from_name or ""),
             "from_addr": str(from_addr or "").lower(),
             "date": _normalize_header_date(str(msg.get("date", "") or "")),
             "message_id": str(msg.get("message-id", "") or ""),
+            "to": to_raw,
+            "cc": cc_raw,
+            "list_id": str(msg.get("list-id", "") or ""),
+            "in_reply_to": str(msg.get("in-reply-to", "") or ""),
+            "references": str(msg.get("references", "") or ""),
             "has_attachment": False,
             "flags": flags,
         })
@@ -189,17 +316,19 @@ def fetch_bodies_imap(
                     continue
                 key = f"{folder}#{uid}"
                 try:
-                    status, data = client.uid("FETCH", uid, "(BODY.PEEK[TEXT])")
+                    status, data = client.uid("FETCH", uid, BODY_FETCH_SPEC)
                     if status != "OK" or not data:
                         continue
-                    body_text = ""
+                    raw = b""
                     for part in data:
-                        if isinstance(part, tuple) and len(part) >= 2:
+                        if isinstance(part, tuple) and len(part) >= 2 and isinstance(part[1], bytes):
                             raw = part[1]
-                            if isinstance(raw, bytes):
-                                body_text = raw.decode("utf-8", errors="replace")
                             break
-                    out[key] = body_text[:max_chars] if max_chars > 0 else body_text
+                    decoded = decode_message_bytes(raw, max_chars=max_chars)
+                    out[key] = decoded["body_text"]
+                    env["attachments"] = decoded.get("attachments", [])
+                    env["decoded_with"] = decoded.get("decoded_with", "")
+                    env["body_truncated"] = decoded.get("truncated", False)
                 except Exception:
                     continue
     finally:
@@ -212,26 +341,67 @@ def fetch_bodies_imap(
     return out
 
 
+def _structure_score(env: dict[str, Any]) -> int:
+    score = 0
+    flags = [str(f) for f in env.get("flags", [])]
+    if "Seen" not in flags:
+        score += 20
+    role = str(env.get("recipient_role", "") or "")
+    if role in {"to", "direct"}:
+        score += 30
+    elif role in {"cc", "cc_only"}:
+        score += 10
+    date_str = str(env.get("date", "") or "")
+    if date_str:
+        score += min(len(date_str), 20)
+    return score
+
+
+def rank_thread_candidates(
+    envelopes: list[dict[str, Any]],
+    *,
+    max_threads: int = MAX_THREAD_CANDIDATES,
+) -> list[dict[str, Any]]:
+    from .pulse import normalize_thread_key
+
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for env in envelopes:
+        tk = normalize_thread_key(env.get("subject"))
+        grouped.setdefault(tk, []).append(env)
+    ranked: list[tuple[int, str, dict[str, Any]]] = []
+    for tk, rows in grouped.items():
+        rows_sorted = sorted(rows, key=lambda r: str(r.get("date", "")), reverse=True)
+        latest = rows_sorted[0]
+        score = max(_structure_score(r) for r in rows_sorted)
+        ranked.append((score, str(latest.get("date", "")), latest))
+    ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    return [item[2] for item in ranked[:max_threads]]
+
+
 def sample_bodies_imap(
     envelopes: list[dict[str, Any]],
     imap_config: dict[str, Any],
-    sample_count: int = 30,
+    sample_count: int = MAX_BODY_FETCH,
 ) -> dict[str, dict[str, str]]:
-    """Fetch body text for top N envelopes via IMAP FETCH BODY.PEEK[TEXT]."""
+    """Two-stage sample: rank candidate threads, then fetch bodies for top N."""
     if not envelopes or sample_count <= 0:
         return {}
-
-    bodies = fetch_bodies_imap(envelopes[:sample_count], imap_config, max_chars=3000)
+    candidates = rank_thread_candidates(envelopes, max_threads=MAX_THREAD_CANDIDATES)
+    fetch_list = candidates[: min(sample_count, MAX_BODY_FETCH)]
+    bodies = fetch_bodies_imap(fetch_list, imap_config, max_chars=8000)
     out: dict[str, dict[str, str]] = {}
-    for env in envelopes[:sample_count]:
+    for env in fetch_list:
         uid = str(env.get("id", "") or "")
         folder = str(env.get("folder", "INBOX") or "INBOX")
         key = f"{folder}#{uid}"
         if key in bodies:
-            out[uid] = {
+            out[key] = {
                 "subject": str(env.get("subject", "") or ""),
                 "body": bodies[key],
+                "decoded_with": str(env.get("decoded_with", "") or ""),
+                "attachments": env.get("attachments") or [],
             }
+            out[uid] = out[key]
     return out
 
 
@@ -277,7 +447,7 @@ def _fetch_envelope_headers(
         status, fetch_data = client.uid(
             "FETCH",
             uid_set,
-            "(UID FLAGS BODY.PEEK[HEADER.FIELDS (SUBJECT FROM DATE MESSAGE-ID)])",
+            "(UID FLAGS BODY.PEEK[HEADER.FIELDS (" + HEADER_FIELDS + ")])",
         )
         if status != "OK":
             continue
@@ -286,6 +456,27 @@ def _fetch_envelope_headers(
         except Exception:
             continue
     return rows
+
+
+def _normalize_envelope_row(row: dict[str, Any], owner_addr: str = "") -> dict[str, Any]:
+    env = {
+        "id": str(row.get("id", "") or ""),
+        "folder": str(row.get("folder", "INBOX") or "INBOX"),
+        "subject": str(row.get("subject", "") or ""),
+        "from_name": str(row.get("from_name", "") or ""),
+        "from_addr": str(row.get("from_addr", "") or "").lower(),
+        "date": str(row.get("date", "") or ""),
+        "message_id": str(row.get("message_id", "") or ""),
+        "to": str(row.get("to", "") or ""),
+        "cc": str(row.get("cc", "") or ""),
+        "list_id": str(row.get("list_id", "") or ""),
+        "in_reply_to": str(row.get("in_reply_to", "") or ""),
+        "references": str(row.get("references", "") or ""),
+        "has_attachment": bool(row.get("has_attachment", False)),
+        "flags": [str(f) for f in row.get("flags", [])],
+        "body": str(row.get("body", "") or ""),
+    }
+    return apply_envelope_role(env, owner_addr)
 
 
 def fetch_by_query(
@@ -349,18 +540,10 @@ def fetch_by_query(
         if folder_errors and not envelopes:
             return [], folder_errors
 
-        normalized: list[dict[str, Any]] = []
-        for row in envelopes:
-            normalized.append({
-                "id": str(row.get("id", "") or ""),
-                "folder": str(row.get("folder", "INBOX") or "INBOX"),
-                "subject": str(row.get("subject", "") or ""),
-                "from_name": str(row.get("from_name", "") or ""),
-                "from_addr": str(row.get("from_addr", "") or "").lower(),
-                "date": str(row.get("date", "") or ""),
-                "has_attachment": bool(row.get("has_attachment", False)),
-                "flags": [str(f) for f in row.get("flags", [])],
-            })
+        from .config import owner_email
+
+        owner_addr = owner_email()
+        normalized: list[dict[str, Any]] = [_normalize_envelope_row(row, owner_addr) for row in envelopes]
 
         if fetch_bodies and normalized:
             bodies = fetch_bodies_imap(normalized, imap_config, client=client)
@@ -429,7 +612,7 @@ def fetch_incremental(
                 uid_set = ",".join(str(u) for u in uids)
                 status, fetch_data = client.uid(
                     "FETCH", uid_set,
-                    "(UID FLAGS BODY.PEEK[HEADER.FIELDS (SUBJECT FROM DATE MESSAGE-ID)])",
+                    "(UID FLAGS BODY.PEEK[HEADER.FIELDS (" + HEADER_FIELDS + ")])",
                 )
                 if status == "OK":
                     try:
@@ -453,7 +636,9 @@ def fetch_incremental(
         return {"status": "error", "folder_errors": folder_errors}
 
     # Merge with existing context
-    owner = os.environ.get("MAIL_ADDRESS", "").strip()
+    from .config import owner_email
+
+    owner = owner_email().strip()
     owner_domain = (owner.split("@", 1)[1] if "@" in owner else "").lower()
 
     existing_path = _context_path(state_root)
@@ -462,18 +647,7 @@ def fetch_incremental(
         existing = {}
 
     # Normalize new envelopes
-    normalized = []
-    for row in new_envelopes:
-        normalized.append({
-            "id": str(row.get("id", "") or ""),
-            "folder": str(row.get("folder", "INBOX") or "INBOX"),
-            "subject": str(row.get("subject", "") or ""),
-            "from_name": str(row.get("from_name", "") or ""),
-            "from_addr": str(row.get("from_addr", "") or "").lower(),
-            "date": str(row.get("date", "") or ""),
-            "has_attachment": bool(row.get("has_attachment", False)),
-            "flags": [str(f) for f in row.get("flags", [])],
-        })
+    normalized = [_normalize_envelope_row(row, owner) for row in new_envelopes]
 
     # Merge envelopes by (id, folder)
     merged: dict[tuple[str, str], dict[str, Any]] = {}
@@ -513,6 +687,13 @@ def fetch_incremental(
     body_map = {k: v for k, v in body_map.items() if k in active_ids}
     body_map.update(new_bodies)
 
+    embeddings_degraded = False
+    try:
+        from .embeddings import embed_new_messages
+        embed_new_messages(state_root, filtered, body_map)
+    except Exception:
+        embeddings_degraded = True
+
     context = {
         "generated_at": sync_time,
         "owner_domain": owner_domain,
@@ -523,6 +704,7 @@ def fetch_incremental(
             "total_envelopes": len(filtered),
             "sampled_bodies": len(body_map),
             "folders_scanned": folders,
+            "embeddings_degraded": embeddings_degraded,
         },
     }
 
@@ -536,6 +718,7 @@ def fetch_incremental(
         "new_envelope_count": len(normalized),
         "sampled_body_count": len(new_bodies),
         "total_envelopes": len(filtered),
+        "embeddings_degraded": embeddings_degraded,
     }
 
 

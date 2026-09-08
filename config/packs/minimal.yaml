@@ -1,0 +1,24 @@
+id: minimal
+version: "1.0.0"
+entities: []
+relations: []
+classification:
+  event_types:
+    - id: unclassified
+      when: {}
+  defaults:
+    broadcast: reference
+attention_hints:
+  - id: action-request
+    utterances:
+      - 请审批
+      - 请确认
+      - 请登记处理
+    threshold_high: 0.82
+    threshold_low: 0.55
+routing_conditions:
+  - id: skip-noreply
+    skip_llm: true
+    hard:
+      from_addr_regex: "(noreply|no-reply)@"
+action_policy: []

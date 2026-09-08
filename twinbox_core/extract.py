@@ -41,6 +41,8 @@ class ExtractCriteria:
     bucket: str = "iso_week"  # iso_week | none
     fetch_bodies: bool = True
     profile: str | None = None
+    from_hour: int | None = None
+    to_hour: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -55,6 +57,8 @@ class ExtractCriteria:
             "from_self": self.from_self,
             "bucket": self.bucket,
             "fetch_bodies": self.fetch_bodies,
+            "from_hour": self.from_hour,
+            "to_hour": self.to_hour,
         }
 
     def _weekday_labels(self) -> list[str] | None:
@@ -161,6 +165,10 @@ def merge_criteria(
         base.bucket = str(overrides["bucket"])
     if overrides.get("fetch_bodies") is not None:
         base.fetch_bodies = bool(overrides["fetch_bodies"])
+    if overrides.get("from_hour") is not None:
+        base.from_hour = int(overrides["from_hour"])
+    if overrides.get("to_hour") is not None:
+        base.to_hour = int(overrides["to_hour"])
 
     return base
 
@@ -251,6 +259,15 @@ def matches_envelope(env: dict[str, Any], criteria: ExtractCriteria, *, owner: s
         if dt.weekday() not in criteria.weekdays:
             return False
 
+    if criteria.from_hour is not None or criteria.to_hour is not None:
+        if dt is None:
+            return False
+        hour = dt.astimezone(SHANGHAI).hour
+        start = criteria.from_hour if criteria.from_hour is not None else 0
+        end = criteria.to_hour if criteria.to_hour is not None else 24
+        if not (start <= hour < end):
+            return False
+
     if criteria.from_self is True:
         owner_norm = owner.strip().lower()
         from_addr = str(env.get("from_addr", "") or "").lower()
@@ -284,6 +301,10 @@ def envelope_to_report(env: dict[str, Any], *, bucket: str) -> dict[str, Any]:
         "folder": folder,
         "message_ref": f"{folder}#{uid}",
         "body_text": str(env.get("body", "") or ""),
+        "body_truncated": bool(env.get("body_truncated", False)),
+        "decoded_with": str(env.get("decoded_with", "") or ""),
+        "attachments": env.get("attachments") or [],
+        "recipient_role": str(env.get("recipient_role", "") or ""),
     }
     if bucket == "iso_week" and dt:
         report["week_of"] = _iso_week_label(dt)

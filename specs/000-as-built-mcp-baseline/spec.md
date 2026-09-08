@@ -33,7 +33,7 @@
 
 | Capability | 现状 |
 | --- | --- |
-| 调度汇总 | `config/schedules.yaml` 存在；无 cron/daemon 执行器；README 标 TODO |
+| 调度汇总 | 合同在 [`specs/007-local-scheduler`](../007-local-scheduler/spec.md)；as-built 仅有 `config/schedules.yaml`，无执行器 |
 | 「特别关注」 | 仅有带 queue_tags 的 `needs_attention`，无独立 watch/reference 投影 |
 | Onboarding | env/配置导入，非语义包问卷 |
 | 周报 | `twinbox_weekly` = 当前 sync 产物；extract profile 可搜历史周报主题；**无**组织级准时/缺交统计 |

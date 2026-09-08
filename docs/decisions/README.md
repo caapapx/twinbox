@@ -14,5 +14,6 @@
 | --- | --- | --- |
 | [ADR-001](./ADR-001-product-boundary-and-semantic-decoupling.md) | Product boundary and semantic decoupling | Accepted |
 | [ADR-002](./ADR-002-read-only-to-policy-governed-execution.md) | Read-only default vs policy-governed execution | Accepted |
+| [ADR-003](./ADR-003-retrieval-spine-and-external-services.md) | Retrieval spine and external services | Accepted |
 
 Constitution 变更必须引用对应 ADR。废弃方案保留为 Superseded，不删 Git 历史。

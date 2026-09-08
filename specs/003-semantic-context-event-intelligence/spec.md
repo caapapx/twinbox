@@ -50,11 +50,28 @@
 1. **Given** 未装载任何企业样例包，**When** 使用最小个人偏好包，**Then** 事件理解仍可运行（范围由包定义）。
 2. **Given** 企业样例包，**When** 对照夹具验收，**Then** 行为由包声明解释，而非硬编码分支表。
 
+### User Story 4 - 入库检索主干 (Priority: P1)
+
+fetch 后对新邮件做自托管 embedding。分析用结构信号 + pack `attention_hints` 相似度选 30–40 线程。`thread_inspect` 可走同一语义索引。embedding 失败则回退 `002` 结构采样。
+
+**Why this priority**: 加长预览后必须先选线程，否则 LLM 仍盲猜。
+
+**Independent Test**: mock embedding HTTP；hints 命中线程进入候选；失败路径 `embeddings_degraded`。
+
+**Acceptance Scenarios**:
+
+1. **Given** 新邮件已解码，**When** ingest embed，**Then** sidecar 写入向量且不含平台 ingest 字段。
+2. **Given** pack `attention_hints` 与某线程相似，**When** 选候选，**Then** 该线程进入 30–40 集合。
+3. **Given** embedding 端点不可用，**When** 分析，**Then** 回退结构采样并标记 `embeddings_degraded`。
+
+---
+
 ## Edge Cases
 
 - 包版本升级导致事件类型重命名：旧游标/事件 ID 规则须文档化（兼容或显式迁移）。
 - 邮件无法匹配任何事件规则：产出 `unclassified` 或等价显式结果，不静默丢弃证据引用。
 - 多包同时装载冲突：按声明的优先级/命名空间解决，冲突进入 diagnostics。
+- embedding 端点超时：分析继续，diagnostics.embeddings_degraded=true。
 
 ## Requirements *(mandatory)*
 
@@ -66,12 +83,18 @@
 - **FR-004**: Core engine MUST NOT hard-code organization trees, performance scores, or named enterprise roles as first-class entities.
 - **FR-005**: Pack validation MUST reject non-declarative executable content.
 - **FR-006**: New tools or additive `data` fields MUST preserve MCP envelope shape (`ok`/`data`/`error`/`recovery_tool`).
+- **FR-007**: After fetch, each new message MUST be embedded (subject + bounded decoded body) against a self-hosted endpoint only ([ADR-003](../../docs/decisions/ADR-003-retrieval-spine-and-external-services.md)); vectors persist under the state root, never in platform ingest.
+- **FR-008**: Analysis candidate selection MUST combine structural signals with pack `attention_hints` similarity (default 30–40 threads). Embedding failure MUST degrade to `002` structural sampling and set `embeddings_degraded`.
+- **FR-009**: Semantic routing conditions MUST use three-band cosine (high hit / low miss / middle → one LLM call). Thresholds live in the pack.
+- **FR-010**: `thread_inspect` / `search_threads` MUST offer a semantic path over the same index. Rerank is reserved (phase 2).
+- **FR-011**: A material importer MAY ingest spreadsheets/docs into pack fragments via optional extras (`openpyxl` / `python-docx`); core MUST run without those packages.
 
 ### Key Entities
 
 - **SemanticPack**: 版本化声明式领域上下文。
 - **EventRecord**: 类型 + 引用 + 抽取字段 + 去重键。
 - **MailReference**: 账号/消息/线程稳定引用与有界元数据。
+- **EmbeddingSidecar**: 消息级向量 + 模型名 + 文本指纹，存于 `runtime/context/embeddings/`。
 
 ## Success Criteria *(mandatory)*
 
@@ -80,7 +103,7 @@
 - **SC-001**: 同一引擎在不改核心实体代码的前提下，可切换至少两个不同语义包并产出合法事件。
 - **SC-002**: 平台向输出全文扫描命中数为 0。
 - **SC-003**: 含可执行载荷的包 100% 被校验拒绝。
-- **SC-004**: 样例企业夹具事件召回与人工标注对照 ≥ 约定阈值（实现阶段在 plan 中量化；默认目标 80%）。
+- **SC-004**: 样例企业夹具事件召回与人工标注对照 ≥ 80%（本 plan 量化；夹具不足时以构造包切换 SC-001 为准）。
 
 ## Assumptions
 

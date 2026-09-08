@@ -54,8 +54,8 @@
 - **已实现（as-built）**：[`specs/000-as-built-mcp-baseline`](specs/000-as-built-mcp-baseline/spec.md) — 9 个 `twinbox_*` MCP 工具等。
 - **当前实施焦点**：[`specs/002-analysis-correctness`](specs/002-analysis-correctness/spec.md)（`.specify/feature.json`）；[`twinbox-evolution-prompt.md`](twinbox-evolution-prompt.md) 只是历史输入。
 - **Planned 数据平面**：[`specs/001-everything-mail-adapter`](specs/001-everything-mail-adapter/spec.md)。
-- **Planned 产品合同**：`003` 语义/事件、`004` 周报运营、`005` 注意力 onboarding、`006` 策略约束自动化。
-- **决策**：[`docs/decisions/`](docs/decisions/README.md)（ADR-001 语义解耦；ADR-002 策略执行）。
+- **Planned 产品合同**：`003` 语义/事件（含 ADR-003 检索主干）、`004` 周报运营（v1.1）、`005` 注意力 onboarding、`006` 策略约束自动化（本轮 dry-run）、`007` 本地调度。
+- **决策**：[`docs/decisions/`](docs/decisions/README.md)（ADR-001 语义解耦；ADR-002 策略执行；ADR-003 检索主干与外部服务）。
 
 ## 关键路径
 

@@ -5,7 +5,7 @@
  * Verifies:
  *   1. The server starts over stdio.
  *   2. It responds to MCP initialize.
- *   3. It lists exactly the 9 expected tools.
+ *   3. It lists the original 9 tools (additive tools allowed).
  *
  * No IMAP credentials are required because this test does not invoke tools.
  */
@@ -18,7 +18,7 @@ const __dirname = dirname(__filename);
 const repoRoot = join(__dirname, "..");
 const serverPath = join(repoRoot, "mcp-server.mjs");
 
-const EXPECTED_TOOLS = [
+const REQUIRED_TOOLS = [
   "twinbox_sync",
   "twinbox_latest_mail",
   "twinbox_todo",
@@ -117,21 +117,17 @@ async function main() {
 
     const tools = listed.result?.tools || [];
     const names = tools.map((t) => t.name).sort();
-    const expected = [...EXPECTED_TOOLS].sort();
+    const expected = [...REQUIRED_TOOLS].sort();
 
     console.log(`✓ tools/list returned ${tools.length} tools`);
 
     const missing = expected.filter((n) => !names.includes(n));
-    const extra = names.filter((n) => !expected.includes(n));
 
     if (missing.length) {
       throw new Error(`Missing tools: ${missing.join(", ")}`);
     }
-    if (extra.length) {
-      throw new Error(`Unexpected extra tools: ${extra.join(", ")}`);
-    }
 
-    console.log("✓ all 9 expected tools present");
+    console.log("✓ required 9 tools present (extras allowed)");
     console.log("  " + names.join(", "));
     console.log("\nSmoke test passed.");
   } finally {

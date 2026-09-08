@@ -61,6 +61,8 @@ state.json
 !/docs/governance/**
 !/docs/decisions/
 !/docs/decisions/**
+!/docs/reviews/
+!/docs/reviews/**
 /scripts/
 
 # Local scratch notes (may contain machine paths, links, or secrets)

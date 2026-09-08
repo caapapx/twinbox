@@ -111,7 +111,8 @@ LLM 标出的 urgent / pending / sla 必须全部投影到 pulse 的 `queue_tags
 - 无 text/plain 只有 HTML：转为纯文本后再截断。
 - charset 未知：best-guess 并记录 `decoded_with`，不得用 utf-8/replace 吞掉 GB 邮件。
 - 同一 UID 出现在 INBOX 与 Sent：正文映射按 folder#uid，互不覆盖。
-- 一次增量超过采样上限：采最新 N 封，不是最旧 N 封。
+- 一次增量超过采样上限：先按结构信号粗排候选线程（默认 45），再对候选补拉正文（默认 24）；不是最旧 N 封。
+- 信封 FETCH 不含 To/Cc 时 `recipient_role` 为 `unknown`，不得假装 `direct`。
 - 真实 IMAP / 真实 LLM 在单元测试中不可用：用构造邮件与 mock。
 
 ## Requirements *(mandatory)*
@@ -126,12 +127,14 @@ LLM 标出的 urgent / pending / sla 必须全部投影到 pulse 的 `queue_tags
 - **FR-006**: `latest_mail` / `todo` / `weekly` MUST expose `staleness` and auto-sync when stale; failed auto-sync MUST NOT return a stale snapshot as success.
 - **FR-007**: Sync MUST report analysis failure as degraded (not silent full success) and expose fetch/analysis/pulse consistency timestamps.
 - **FR-008**: Extract MUST return decoded `body_text` (bounded) plus attachment metadata, and accept optional local-hour filters.
-- **FR-009**: Body sample keys MUST be folder-qualified; sampling MUST prefer newest envelopes.
+- **FR-009**: Body sample keys MUST be folder-qualified. Sampling MUST two-stage: rank candidate threads (default 45) then fetch bodies for top candidates (default 24); ranking MUST NOT hard-code org-specific keywords (those live in a Semantic Pack, see `003`).
 - **FR-010**: Pulse scoring MUST age stale sla_risk items and boost explicit action verbs from a tracked config file.
 - **FR-011**: Thread inspect MUST include latest decoded body or an explicit unavailable flag.
-- **FR-012**: Status MUST expose pipeline stage timestamps and missed scheduled runs.
+- **FR-012**: Status MUST expose pipeline stage timestamps and missed scheduled runs (executor lives in `007`; this feature exposes the fields).
 - **FR-013**: Existing MCP tool names and existing JSON field names MUST remain; new fields are additive only.
 - **FR-014**: Real mailbox MUST remain read-only.
+- **FR-015**: Envelope FETCH MUST include `TO`, `CC`, `LIST-ID`, `IN-REPLY-TO`, `REFERENCES` in the same IMAP round-trip as existing headers. Each envelope MUST carry `recipient_role` (`direct` / `cc_only` / `group_only` / `indirect` / `unknown`); thread aggregation follows archive `context_builder` semantics (any `to` → `direct`).
+- **FR-016**: A replay eval script MUST record baseline vs post-fix metrics without mutating the real mailbox.
 
 ### Key Entities
 
@@ -140,6 +143,7 @@ LLM 标出的 urgent / pending / sla 必须全部投影到 pulse 的 `queue_tags
 - **Staleness**: `{stale, age_hours, threshold_hours}` 相对 pulse `generated_at`。
 - **PipelineHealth**: fetch / analysis / pulse 最近成功时间与 missed_runs。
 - **QueueJoinMiss**: 无法投影到 pulse 线程的分析 thread_key。
+- **RecipientRole**: 信封/线程级收件身份（direct / cc_only / group_only / indirect / unknown）。
 
 ## Success Criteria *(mandatory)*
 

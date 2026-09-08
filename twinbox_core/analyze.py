@@ -70,30 +70,61 @@ Analyze the thread data below and produce a JSON object with this structure:
 5. Human context (profile_notes, calibration_notes) OVERRIDE email-only inference when they conflict.
 6. calibration_notes are hard relevance constraints for what the owner cares about this week.
 7. Do NOT invent threads not in the input. Every thread_key must come from the data.
-8. Output ONLY the JSON object. No markdown, no explanation."""
+8. waiting_on_me MUST be decided from the LATEST message in the thread (is_latest=true). If the latest message is an approval/同意/已处理 reply, do NOT list it as pending; set resolved_by_reply instead.
+9. why must quote evidence from the provided body; do not speculate.
+10. Output ONLY the JSON object. No markdown, no explanation.
+Additional optional field on pending_replies: "resolved_by_reply": true when the latest mail clears the wait.
+"""
+
+
+def _body_for(env: dict[str, Any], body_map: dict[str, Any], *, latest: bool) -> str:
+    mid = str(env.get("id", ""))
+    folder = str(env.get("folder", "INBOX") or "INBOX")
+    entry = body_map.get(f"{folder}#{mid}") or body_map.get(mid, {})
+    body = ""
+    if isinstance(entry, dict):
+        body = str(entry.get("body", "") or "")
+    elif isinstance(entry, str):
+        body = entry
+    if not body:
+        body = str(env.get("body", "") or "")
+    limit = 2000 if latest else 800
+    return body[:limit]
 
 
 def _build_prompt(context: dict[str, Any], human_context: dict[str, Any] | None = None) -> str:
     """Build the user prompt from Phase 1 context + optional human context."""
-    envelopes = context.get("envelopes", [])
+    from .pulse import normalize_thread_key
+
+    envelopes = [e for e in context.get("envelopes", []) if isinstance(e, dict)]
     body_map = context.get("sampled_bodies", {})
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for env in envelopes:
+        grouped.setdefault(normalize_thread_key(env.get("subject")), []).append(env)
 
     lines = [f"## Mailbox data (lookback={context.get('lookback_days', 7)} days, "
              f"owner_domain={context.get('owner_domain', 'unknown')}):\n"]
 
-    for i, env in enumerate(envelopes[:100]):  # cap at 100 threads
-        mid = str(env.get("id", ""))
-        body_entry = body_map.get(mid, {})
-        body_preview = str(body_entry.get("body", ""))[:300] if isinstance(body_entry, dict) else ""
-        flags_str = ", ".join(env.get("flags", []))
-        lines.append(
-            f"[{i}] subject={env.get('subject', '')} | "
-            f"from={env.get('from_name', '')} <{env.get('from_addr', '')}> | "
-            f"date={env.get('date', '')} | folder={env.get('folder', 'INBOX')} | "
-            f"flags=[{flags_str}]"
-        )
-        if body_preview:
-            lines.append(f"  body_preview: {body_preview}")
+    idx = 0
+    for tk, rows in grouped.items():
+        rows_sorted = sorted(rows, key=lambda r: str(r.get("date", "")), reverse=True)
+        lines.append(f"### thread_key={tk} messages={len(rows_sorted)}")
+        for i, env in enumerate(rows_sorted):
+            latest = i == 0
+            body_preview = _body_for(env, body_map, latest=latest)
+            flags_str = ", ".join(env.get("flags", []))
+            lines.append(
+                f"[{idx}] thread_key={tk} is_latest={str(latest).lower()} "
+                f"recipient_role={env.get('recipient_role', 'unknown')} "
+                f"subject={env.get('subject', '')} | "
+                f"from={env.get('from_name', '')} <{env.get('from_addr', '')}> | "
+                f"to={env.get('to', '')} | cc={env.get('cc', '')} | "
+                f"date={env.get('date', '')} | folder={env.get('folder', 'INBOX')} | "
+                f"flags=[{flags_str}]"
+            )
+            if body_preview:
+                lines.append(f"  body_preview: {body_preview}")
+            idx += 1
 
     if human_context:
         lines.append("\n## Human context:")
@@ -132,6 +163,27 @@ def run_analysis(state_root: Path) -> dict[str, Any]:
         return {"ok": False, "error": "Empty mail context. Run sync first."}
 
     human_context = _load_human_context(state_root)
+    try:
+        from .select import choose_candidates
+        from .rules import skip_llm_envelopes
+        from .pack import load_active_pack
+        from .events import extract_events
+        pack = load_active_pack(state_root)
+        candidates, select_diag = choose_candidates(context, state_root)
+        skipped = skip_llm_envelopes(pack, context.get("envelopes", []))
+        skip_ids = {(str(e.get("folder")), str(e.get("id"))) for e in skipped}
+        if candidates:
+            context = dict(context)
+            context["envelopes"] = [
+                e for e in candidates
+                if (str(e.get("folder")), str(e.get("id"))) not in skip_ids
+            ]
+        extract_events(context, state_root)
+        context.setdefault("stats", {})
+        if isinstance(context["stats"], dict):
+            context["stats"].update(select_diag)
+    except Exception:
+        pass
     prompt = _build_prompt(context, human_context)
 
     try:
@@ -149,33 +201,39 @@ def run_analysis(state_root: Path) -> dict[str, Any]:
     phase4_dir.mkdir(parents=True, exist_ok=True)
 
     from .imap_fetch import _write_json, _now_iso
+    from .pulse import normalize_thread_key
 
-    # daily-urgent.yaml
-    urgent = result.get("daily_urgent", [])
-    if isinstance(urgent, list):
-        import yaml
-        urgent_out = {"generated_at": _now_iso(), "daily_urgent": urgent}
-        (phase4_dir / "daily-urgent.yaml").write_text(
-            yaml.safe_dump(urgent_out, allow_unicode=True, sort_keys=False), encoding="utf-8"
-        )
+    def _norm_rows(rows: object) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        if not isinstance(rows, list):
+            return out
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            item = dict(row)
+            item["thread_key"] = normalize_thread_key(item.get("thread_key", ""))
+            out.append(item)
+        return out
 
-    # pending-replies.yaml
-    pending = result.get("pending_replies", [])
-    if isinstance(pending, list):
-        import yaml
-        pending_out = {"generated_at": _now_iso(), "pending_replies": pending}
-        (phase4_dir / "pending-replies.yaml").write_text(
-            yaml.safe_dump(pending_out, allow_unicode=True, sort_keys=False), encoding="utf-8"
-        )
-
-    # sla-risks.yaml
-    sla = result.get("sla_risks", [])
-    if isinstance(sla, list):
-        import yaml
-        sla_out = {"generated_at": _now_iso(), "sla_risks": sla}
-        (phase4_dir / "sla-risks.yaml").write_text(
-            yaml.safe_dump(sla_out, allow_unicode=True, sort_keys=False), encoding="utf-8"
-        )
+    urgent = _norm_rows(result.get("daily_urgent", []))
+    pending = [
+        p for p in _norm_rows(result.get("pending_replies", []))
+        if not p.get("resolved_by_reply")
+    ]
+    sla = _norm_rows(result.get("sla_risks", []))
+    import yaml
+    urgent_out = {"generated_at": _now_iso(), "daily_urgent": urgent}
+    (phase4_dir / "daily-urgent.yaml").write_text(
+        yaml.safe_dump(urgent_out, allow_unicode=True, sort_keys=False), encoding="utf-8"
+    )
+    pending_out = {"generated_at": _now_iso(), "pending_replies": pending}
+    (phase4_dir / "pending-replies.yaml").write_text(
+        yaml.safe_dump(pending_out, allow_unicode=True, sort_keys=False), encoding="utf-8"
+    )
+    sla_out = {"generated_at": _now_iso(), "sla_risks": sla}
+    (phase4_dir / "sla-risks.yaml").write_text(
+        yaml.safe_dump(sla_out, allow_unicode=True, sort_keys=False), encoding="utf-8"
+    )
 
     # weekly-brief-raw.json
     weekly = result.get("weekly_brief", {})
