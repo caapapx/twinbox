@@ -44,6 +44,11 @@ class TestEmbeddings(unittest.TestCase):
         self.assertNotIn("import numpy", source)
         self.assertNotIn("import torch", source)
 
+    def test_rerank_identity_without_url(self) -> None:
+        from twinbox_core.embeddings import rerank
+        rows = [{"latest_subject": "a"}, {"latest_subject": "b"}]
+        self.assertEqual(rerank(rows, query="hello"), rows)
+
 
 class TestRules(unittest.TestCase):
     def test_hard_skip(self) -> None:
@@ -164,6 +169,18 @@ class TestAnalyzeResolved(unittest.TestCase):
         })
         self.assertIn("is_latest=true", prompt)
         self.assertIn("同意", prompt)
+
+
+class TestLlmJson(unittest.TestCase):
+    def test_null_content_uses_reasoning(self) -> None:
+        from twinbox_core.llm import _message_text, clean_json_text, LLMError
+        body = {"choices": [{"message": {"content": None, "reasoning_content": '{"ok": true}'}}]}
+        self.assertEqual(_message_text(body), '{"ok": true}')
+        self.assertEqual(_message_text({"choices": [{"message": {"content": None}}]}), "")
+        cleaned = json.loads(clean_json_text('<think>x</think>\n{"a": 1}'))
+        self.assertEqual(cleaned, {"a": 1})
+        with self.assertRaises(LLMError):
+            clean_json_text("None")
 
 
 if __name__ == "__main__":

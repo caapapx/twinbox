@@ -85,4 +85,4 @@ def semantic_search(query: str, state_root: Path, *, limit: int = 5) -> list[dic
         row["thread_key"] = normalize_thread_key(row.get("thread_key", ""))
         out.append(row)
     out.sort(key=lambda r: int(r.get("match_score", 0)), reverse=True)
-    return rerank(out)[:limit]
+    return rerank(out, query=query)[:limit]

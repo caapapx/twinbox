@@ -186,11 +186,21 @@ def run_analysis(state_root: Path) -> dict[str, Any]:
         pass
     prompt = _build_prompt(context, human_context)
 
+    raw = ""
     try:
         raw = call_llm(prompt, max_tokens=4096, system_prompt=SYSTEM_PROMPT)
         cleaned = clean_json_text(raw)
         result = json.loads(cleaned)
     except (LLMError, json.JSONDecodeError) as exc:
+        err_dir = state_root / "runtime" / "validation" / "phase-4"
+        err_dir.mkdir(parents=True, exist_ok=True)
+        (err_dir / "last-analysis-error.json").write_text(
+            json.dumps({
+                "error": str(exc),
+                "raw_preview": str(raw)[:800],
+            }, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
         return {"ok": False, "error": f"LLM analysis failed: {exc}"}
 
     if not isinstance(result, dict):

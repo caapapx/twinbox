@@ -145,7 +145,16 @@ def run_due(state_root: Path, *, now: datetime | None = None, sync_fn=None, code
                     "ok": ok,
                     "degraded": result.get("degraded") or [],
                 }
-            ran.append({"name": job["name"], "ok": ok, "result": {"ok": result.get("ok"), "degraded": result.get("degraded")}})
+            analysis = result.get("analysis") if isinstance(result.get("analysis"), dict) else {}
+            ran.append({
+                "name": job["name"],
+                "ok": ok,
+                "result": {
+                    "ok": result.get("ok"),
+                    "degraded": result.get("degraded"),
+                    "analysis_error": analysis.get("error"),
+                },
+            })
             if not result.get("ok") and not result.get("degraded"):
                 continue
         _last_run_path(state_root).write_text(json.dumps(last, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

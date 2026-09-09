@@ -77,6 +77,36 @@ def _normalize_url(url: str) -> str:
     return u.rstrip("/") + "/chat/completions"
 
 
+def _as_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, list):
+        parts: list[str] = []
+        for item in value:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                parts.append(str(item.get("text") or item.get("content") or ""))
+        return "".join(parts).strip()
+    return str(value).strip()
+
+
+def _message_text(body: dict[str, Any]) -> str:
+    """Never str(None) → 'None'. Qwen3 thinking leaves content null."""
+    choices = body.get("choices") or []
+    first = choices[0] if choices and isinstance(choices[0], dict) else {}
+    message = first.get("message") if isinstance(first, dict) else None
+    if not isinstance(message, dict):
+        message = {}
+    for key in ("content", "reasoning_content", "reasoning"):
+        text = _as_text(message.get(key))
+        if text:
+            return text
+    return ""
+
+
 def _request_once(prompt: str, max_tokens: int, system_prompt: str | None, config: BackendConfig) -> str:
     if config.backend == "openai":
         payload: dict[str, Any] = {
@@ -84,6 +114,7 @@ def _request_once(prompt: str, max_tokens: int, system_prompt: str | None, confi
             "messages": [],
             "temperature": 0.15,
             "max_tokens": max_tokens,
+            "chat_template_kwargs": {"enable_thinking": False},
         }
         if system_prompt:
             payload["messages"].append({"role": "system", "content": system_prompt})
@@ -116,7 +147,7 @@ def _request_once(prompt: str, max_tokens: int, system_prompt: str | None, confi
         raise LLMError(f"API error: {json.dumps(body['error'], ensure_ascii=False)}")
 
     if config.backend == "openai":
-        return str(body.get("choices", [{}])[0].get("message", {}).get("content", "{}"))
+        return _message_text(body) or "{}"
 
     content = body.get("content", [])
     return "".join(str(item.get("text", "")) for item in content if isinstance(item, dict)) or "{}"
@@ -146,8 +177,15 @@ def validate_backend() -> tuple[bool, str]:
 
 # --- JSON repair helpers ---
 
+_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+
+
+def strip_think(text: str) -> str:
+    return _THINK_RE.sub("", text).strip()
+
+
 def strip_fences(text: str) -> str:
-    stripped = text.strip()
+    stripped = strip_think(text.strip())
     if stripped.startswith("```"):
         lines = stripped.splitlines()
         lines = lines[1:]
@@ -192,7 +230,9 @@ def extract_balanced_prefix(text: str) -> str:
 
 
 def clean_json_text(raw: str) -> str:
-    base = raw.lstrip("\ufeff").strip()
+    if raw is None or str(raw).strip() in {"", "None", "null"}:
+        raise LLMError("JSON parse failed: empty LLM content")
+    base = strip_think(raw.lstrip("\ufeff").strip())
     fenced = strip_fences(base)
     extracted = extract_balanced_prefix(fenced)
     # Try parsing with progressive repair
