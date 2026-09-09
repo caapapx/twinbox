@@ -125,7 +125,7 @@ See `config/schedules.yaml` and `specs/007-local-scheduler/`.
 ## TODO
 
 - [ ] Claw Hub manifest for one-click deploy
-- [ ] site crontab 连续观察（见 `007`）
+- [ ] site crontab 连续 3 天观察 `stale=0`（见 `007` T010；条目已挂）
 - [ ] Embedding rerank phase 2 / zvec storage upgrade
 - [ ] `004` 周报运营
 

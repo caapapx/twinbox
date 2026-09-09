@@ -28,7 +28,7 @@ description: "Task list for local scheduler"
 
 ## Phase 5: Polish
 
-- [ ] T010 site crontab 挂 08:30 / 02:00 后连续 3 天观察 `stale` 事件为 0（热更后人工）
+- [x] T010 site crontab 已挂 08:30 / 02:00（2026-09-08）；连续 3 天观察 `stale=0` 仍为人工验收
 
 ## Dependencies
 

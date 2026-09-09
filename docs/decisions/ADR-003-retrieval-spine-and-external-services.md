@@ -23,8 +23,9 @@ fetch 后对每封**新**邮件（主题 + 解码正文前 N 字）做一次 emb
 
 embedding / LLM **只允许自托管端点**：
 
-- LLM：直连 vLLM OpenAI-compatible `:8000/v1`（部署在 251）。不引入网关、不自写 fallback 链。
-- Embedding：local Ollama 或 vLLM 上的 `bge-m3` / `Qwen3-Embedding`。
+- LLM：直连 vLLM OpenAI-compatible `:8000/v1`（251，`qwen3.8-27b`）。不引入网关、不自写 fallback 链。不占用 `:8000` 给 embedding。
+- Embedding（现网 2026-09-08）：self-hosted vLLM the embedding HTTP endpoint，模型 `Qwen3-Embedding-8B`，维度 **4096**，`CUDA_VISIBLE_DEVICES=N`。脚本 `<site-install>`。未做 systemd，主机重启会掉。
+- 不再把 local Ollama 当默认；该机仍可作备选，但检索主干以 the embedding endpoint 为准。
 
 公有云 embedding 属 constitution II 边界，禁止。向量是派生数据，留在 state root；平台 ingest（`001`）不携带向量与正文。
 
@@ -40,7 +41,7 @@ embedding / LLM **只允许自托管端点**：
 
 ### 5. Rerank 二期
 
-一期看召回。`thread_inspect` top-30→top-5 与 `004` 名单归属若精度不足，optional rerank bge-reranker。接口预留，一期不接。
+一期看召回。接口预留在 `embeddings.rerank()`。现网 rerank（2026-09-08）：self-hosted vLLM the rerank HTTP endpoint，模型 `Qwen3-Reranker-8B`（权重 `Qwen3-Reranker-8B-seq-cls`），与 embedding shared GPU。原 optional rerank bge-reranker 不再作为默认目标。配置了 `rerank.api_url` 才调用；默认 identity。
 
 ### 6. 通道委托
 

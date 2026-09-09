@@ -15,5 +15,10 @@
     "api_key": "YOUR_LLM_API_KEY",
     "model": "YOUR_MODEL_ID",
     "api_url": "https://api.example.com/v1"
+  },
+  "embeddings": {
+    "api_url": "http://127.0.0.1:8080/v1/embeddings",
+    "model": "Qwen3-Embedding-8B",
+    "timeout": 60
   }
 }
