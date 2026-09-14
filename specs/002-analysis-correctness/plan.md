@@ -6,7 +6,7 @@
 
 ## Summary
 
-在现有 `twinbox_core` 抓取 → 单次 LLM 分析 → pulse 投影链路上：解码 MIME 为 UTF-8 纯文本；同一 FETCH 带上 To/Cc/List-Id 并计算 `recipient_role`；两阶段采样（候选 45 / 正文 24）；按线程最新邮件判定 pending；同一套 `normalize_thread_key` join 标签。MCP 对过期 pulse 自动同步。extract / inspect / status 暴露可读正文。`tests/eval_replay.py` 记录回放基线。工具名与既有 JSON 字段保持兼容。关键词打分不进核心（属 `003` pack `attention_hints`）。
+在现有 `twinbox_core` 抓取 → 单次 LLM 分析 → pulse 投影链路上：解码 MIME 为 UTF-8 纯文本；同一 FETCH 带上 To/Cc/List-Id 并计算 `recipient_role`；两阶段采样（候选 45 / 正文 24）；按线程最新邮件判定 pending；同一套 `normalize_thread_key` join 标签。MCP 仅对缺失 pulse 自动同步；过期 pulse 返回带 staleness 的现有快照。extract / inspect / status 暴露可读正文。`tests/eval_replay.py` 记录回放基线。工具名与既有 JSON 字段保持兼容。关键词打分不进核心（属 `003` pack `attention_hints`）。
 
 ## Technical Context
 
@@ -61,7 +61,7 @@ twinbox_core/
 ├── extract.py         # body_text / attachments / hour filter
 ├── cli.py             # sync degraded、status pipeline、inspect
 └── config.py          # 可选 staleness 阈值
-mcp-server.mjs         # stale auto-sync
+mcp-server.mjs         # missing-pulse auto-sync; stale read-through
 config/action-verbs.yaml
 tests/
 ├── test_mime_decode.py

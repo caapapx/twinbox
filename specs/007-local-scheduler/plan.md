@@ -59,5 +59,5 @@ Sprint 0 探查（2026-09-08，ssh iflytek239，凭据未记录）：
 - LLM：`http://172.30.210.251:8000/v1` 模型 `qwen3.8-27b`（勿占 8000）
 - Embedding：`http://172.30.210.251:18010/v1/embeddings` 模型 `Qwen3-Embedding-8B`（4096；进程无 systemd）
 - Rerank（二期，默认不配）：`http://172.30.210.251:18011/v1/rerank`
-- crontab 已挂（2026-09-08）：`30 8 * * *` 与 `0 2 * * *`，`TWINBOX_STATE_ROOT=/iflytek/server/qwenpaw/qwenpaw-data/twinbox-state`，解释器 `/iflytek/server/twinbox-server/.venv/bin/python`，日志 `/var/log/twinbox-schedule.log`
+- crontab 已挂（2026-09-08）：`0 12 * * *` 与 `0 2 * * *`，`TWINBOX_STATE_ROOT=/iflytek/server/qwenpaw/qwenpaw-data/twinbox-state`，解释器 `/iflytek/server/twinbox-server/.venv/bin/python`，日志 `/var/log/twinbox-schedule.log`
 - 热更：因 checkout 不是 git repo，用 rsync/scp 同步 `twinbox_core/` 与 `mcp-server.mjs` 后重启 QwenPaw 容器内 MCP 进程

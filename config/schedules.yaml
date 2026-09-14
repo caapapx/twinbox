@@ -1,10 +1,10 @@
 timezone: Asia/Shanghai
 schedules:
   - name: daytime-sync
-    cron: "30 8 * * *"
+    cron: "0 12 * * *"
     job: daytime-sync
     command: "python3 -m twinbox_core.cli schedule run-due --json"
-    description: "Daytime sync at 08:30 Asia/Shanghai"
+    description: "Daytime sync at 12:00 Asia/Shanghai"
   - name: nightly-full
     cron: "0 2 * * *"
     job: nightly-full

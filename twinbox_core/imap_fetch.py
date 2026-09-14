@@ -10,6 +10,7 @@ import imaplib
 import json
 import os
 import re
+import time
 from datetime import date, datetime, timedelta
 from email import message_from_bytes
 from email.header import decode_header
@@ -30,6 +31,7 @@ HEADER_FIELDS = "SUBJECT FROM DATE MESSAGE-ID TO CC LIST-ID IN-REPLY-TO REFERENC
 MAX_THREAD_CANDIDATES = 45
 MAX_BODY_FETCH = 24
 BODY_FETCH_SPEC = "(BODY.PEEK[])"
+BODY_FETCH_CHUNK_SIZE = 20
 
 
 def _now_iso() -> str:
@@ -303,32 +305,39 @@ def fetch_bodies_imap(
         by_folder: dict[str, list[dict[str, Any]]] = {}
         for env in envelopes:
             folder = str(env.get("folder", "INBOX") or "INBOX")
-            by_folder.setdefault(folder, []).append(env)
+            if str(env.get("id", "") or ""):
+                by_folder.setdefault(folder, []).append(env)
 
         for folder, folder_envs in by_folder.items():
             wire = mailbox_for_wire(folder)
             status, _ = client.select(wire, readonly=True)
             if status != "OK":
                 continue
-            for env in folder_envs:
-                uid = str(env.get("id", "") or "")
-                if not uid:
-                    continue
-                key = f"{folder}#{uid}"
+            by_uid = {str(env["id"]): env for env in folder_envs}
+            uids = list(by_uid)
+            for i in range(0, len(uids), BODY_FETCH_CHUNK_SIZE):
+                uid_set = ",".join(uids[i : i + BODY_FETCH_CHUNK_SIZE])
                 try:
-                    status, data = client.uid("FETCH", uid, BODY_FETCH_SPEC)
+                    status, data = client.uid("FETCH", uid_set, BODY_FETCH_SPEC)
                     if status != "OK" or not data:
                         continue
-                    raw = b""
                     for part in data:
-                        if isinstance(part, tuple) and len(part) >= 2 and isinstance(part[1], bytes):
-                            raw = part[1]
-                            break
-                    decoded = decode_message_bytes(raw, max_chars=max_chars)
-                    out[key] = decoded["body_text"]
-                    env["attachments"] = decoded.get("attachments", [])
-                    env["decoded_with"] = decoded.get("decoded_with", "")
-                    env["body_truncated"] = decoded.get("truncated", False)
+                        if not (isinstance(part, tuple) and len(part) >= 2 and isinstance(part[1], bytes)):
+                            continue
+                        meta_raw, raw = part[0], part[1]
+                        meta_text = meta_raw.decode(errors="ignore") if isinstance(meta_raw, bytes) else str(meta_raw)
+                        uid_match = re.search(r"UID\s+(\d+)", meta_text)
+                        if uid_match is None:
+                            continue
+                        uid = uid_match.group(1)
+                        env = by_uid.get(uid)
+                        if env is None:
+                            continue
+                        decoded = decode_message_bytes(raw, max_chars=max_chars)
+                        out[f"{folder}#{uid}"] = decoded["body_text"]
+                        env["attachments"] = decoded.get("attachments", [])
+                        env["decoded_with"] = decoded.get("decoded_with", "")
+                        env["body_truncated"] = decoded.get("truncated", False)
                 except Exception:
                     continue
     finally:
@@ -382,13 +391,15 @@ def sample_bodies_imap(
     envelopes: list[dict[str, Any]],
     imap_config: dict[str, Any],
     sample_count: int = MAX_BODY_FETCH,
+    *,
+    client: imaplib.IMAP4 | imaplib.IMAP4_SSL | None = None,
 ) -> dict[str, dict[str, str]]:
     """Two-stage sample: rank candidate threads, then fetch bodies for top N."""
     if not envelopes or sample_count <= 0:
         return {}
     candidates = rank_thread_candidates(envelopes, max_threads=MAX_THREAD_CANDIDATES)
     fetch_list = candidates[: min(sample_count, MAX_BODY_FETCH)]
-    bodies = fetch_bodies_imap(fetch_list, imap_config, max_chars=8000)
+    bodies = fetch_bodies_imap(fetch_list, imap_config, max_chars=8000, client=client)
     out: dict[str, dict[str, str]] = {}
     for env in fetch_list:
         uid = str(env.get("id", "") or "")
@@ -576,6 +587,7 @@ def fetch_incremental(
     if not isinstance(watermarks, dict):
         watermarks = {}
 
+    started = time.monotonic()
     client = _build_client(imap_config)
     client.login(str(imap_config["login"]), str(imap_config["password"]))
 
@@ -626,14 +638,21 @@ def fetch_incremental(
                 "last_uid": max(uids) if uids else prev_uid,
                 "last_sync_at": sync_time,
             }
-    finally:
+    except Exception:
         try:
             client.logout()
         except Exception:
             pass
+        raise
 
     if folder_errors:
+        try:
+            client.logout()
+        except Exception:
+            pass
         return {"status": "error", "folder_errors": folder_errors}
+
+    imap_envelope_ms = round((time.monotonic() - started) * 1000)
 
     # Merge with existing context
     from .config import owner_email
@@ -674,12 +693,18 @@ def fetch_incremental(
     filtered.sort(key=lambda r: str(r.get("date", "")), reverse=True)
 
     # Sample bodies for new envelopes
+    body_started = time.monotonic()
     new_bodies: dict[str, dict[str, str]] = {}
     if normalized:
         try:
-            new_bodies = sample_bodies_imap(normalized, imap_config, sample_body_count)
+            new_bodies = sample_bodies_imap(normalized, imap_config, sample_body_count, client=client)
         except Exception:
             pass  # non-fatal
+    try:
+        client.logout()
+    except Exception:
+        pass
+    imap_body_ms = round((time.monotonic() - body_started) * 1000)
 
     # Merge body map
     body_map = existing.get("sampled_bodies", {}) if isinstance(existing.get("sampled_bodies"), dict) else {}
@@ -687,12 +712,14 @@ def fetch_incremental(
     body_map = {k: v for k, v in body_map.items() if k in active_ids}
     body_map.update(new_bodies)
 
+    embedding_started = time.monotonic()
     embeddings_degraded = False
     try:
         from .embeddings import embed_new_messages
         embed_new_messages(state_root, filtered, body_map)
     except Exception:
         embeddings_degraded = True
+    embed_ms = round((time.monotonic() - embedding_started) * 1000)
 
     context = {
         "generated_at": sync_time,
@@ -709,9 +736,11 @@ def fetch_incremental(
     }
 
     # Write outputs
+    pulse_started = time.monotonic()
     _write_json(_context_path(state_root), context)
     _write_json(_raw_dir(state_root) / "envelopes-merged.json", filtered)
     _write_json(watermarks_path, updated_watermarks)
+    pulse_ms = round((time.monotonic() - pulse_started) * 1000)
 
     return {
         "status": "ok" if normalized else "noop",
@@ -719,6 +748,12 @@ def fetch_incremental(
         "sampled_body_count": len(new_bodies),
         "total_envelopes": len(filtered),
         "embeddings_degraded": embeddings_degraded,
+        "timings_ms": {
+            "imap_envelope_ms": imap_envelope_ms,
+            "imap_body_ms": imap_body_ms,
+            "embed_ms": embed_ms,
+            "pulse_ms": pulse_ms,
+        },
     }
 
 

@@ -13,7 +13,7 @@ import yaml
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 DEFAULT_JOBS = [
-    {"name": "daytime-sync", "cron_hour": 8, "cron_minute": 30, "job": "daytime-sync"},
+    {"name": "daytime-sync", "cron_hour": 12, "cron_minute": 0, "job": "daytime-sync"},
     {"name": "nightly-full", "cron_hour": 2, "cron_minute": 0, "job": "nightly-full"},
 ]
 

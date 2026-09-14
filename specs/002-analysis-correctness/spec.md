@@ -57,18 +57,18 @@ LLM 标出的 urgent / pending / sla 必须全部投影到 pulse 的 `queue_tags
 
 ---
 
-### User Story 4 - 过期快照会刷新或失败 (Priority: P2)
+### User Story 4 - 过期快照可见且读取不阻塞 (Priority: P2)
 
-邮箱主人问「今天的邮件」。若本地 pulse 超过新鲜度阈值，工具先同步再回答；同步失败则明确失败，不得把两天前的数据当成功结果。
+邮箱主人问「今天的邮件」。若本地 pulse 缺失，工具先完整同步再回答；若仅超过新鲜度阈值，工具做轻量刷新（抓取 + 重建 pulse，不重跑 LLM 分析）并标明分析生成时间；刷新失败则明确失败，不得把两天前的数据当成功结果。
 
-**Why this priority**: 「auto-sync if missing」不等于「过期也当新鲜」。
+**Why this priority**: 「auto-sync if missing」不等于「过期也当新鲜」；过期快照必须显式标出，但读路径不能为每次询问阻塞等待 IMAP。
 
-**Independent Test**: 把 pulse 的 `generated_at` 回拨超过阈值后调用 latest_mail；IMAP 可达则自动同步，不可达则 ok=false。
+**Independent Test**: 把 pulse 的 `generated_at` 回拨超过阈值后调用 latest_mail；直接返回带 `staleness.stale=true` 的旧快照，不触发 IMAP。pulse 缺失时仍自动 full sync。
 
 **Acceptance Scenarios**:
 
-1. **Given** pulse 存在但超过阈值（默认 4 小时），**When** 调用 `twinbox_latest_mail`，**Then** 先同步，输出含 staleness 且带自动同步说明。
-2. **Given** pulse 过期且同步失败，**When** 调用 latest_mail，**Then** 返回失败与 recovery_tool，不返回旧快照装作成功。
+1. **Given** pulse 存在但超过阈值（默认 4 小时），**When** 调用 `twinbox_latest_mail`，**Then** 先轻量刷新（不调 LLM），输出 `generated_at` 更新、`analysis_generated_at` 指向上次分析、并带刷新说明；缺失 pulse 才完整同步。
+2. **Given** pulse 过期，**When** 调用 latest_mail，**Then** 返回成功且 `staleness.stale=true`；同步只由 cron 或显式 `twinbox_sync` 发起。
 3. **Given** 新鲜 pulse，**When** 调用 latest_mail / todo / weekly，**Then** `staleness.stale` 为 false。
 
 ---
@@ -124,7 +124,7 @@ LLM 标出的 urgent / pending / sla 必须全部投影到 pulse 的 `queue_tags
 - **FR-003**: Analysis prompt MUST group envelopes by thread, mark the latest message, and size body previews on decoded text (latest message preview longer than siblings).
 - **FR-004**: Pending / waiting_on_me MUST be decided from the latest message in the thread; approval-style replies MUST clear waiting_on_me.
 - **FR-005**: Queue tags from analysis artifacts MUST join pulse threads via one shared thread-key normalizer; misses MUST be visible in diagnostics and status.
-- **FR-006**: `latest_mail` / `todo` / `weekly` MUST expose `staleness` and auto-sync when stale; failed auto-sync MUST NOT return a stale snapshot as success.
+- **FR-006**: `latest_mail` / `todo` / `weekly` MUST expose `staleness`; when the pulse is missing they MUST run a full sync; when merely stale they MUST return the existing snapshot without IMAP refresh. Explicit `twinbox_sync --job quick-refresh` may fetch + rebuild pulse without LLM analysis and exposes `analysis_generated_at`.
 - **FR-007**: Sync MUST report analysis failure as degraded (not silent full success) and expose fetch/analysis/pulse consistency timestamps.
 - **FR-008**: Extract MUST return decoded `body_text` (bounded) plus attachment metadata, and accept optional local-hour filters.
 - **FR-009**: Body sample keys MUST be folder-qualified. Sampling MUST two-stage: rank candidate threads (default 45) then fetch bodies for top candidates (default 24); ranking MUST NOT hard-code org-specific keywords (those live in a Semantic Pack, see `003`).
@@ -152,7 +152,7 @@ LLM 标出的 urgent / pending / sla 必须全部投影到 pulse 的 `queue_tags
 - **SC-001**: 对构造的 GB2312 multipart 夹具，解码结果人工可读且 grep 不到 MIME `Content-Type` 残留。
 - **SC-002**: 回放 2026-09-03 事故状态：辽宁白名单不在 pending；验收登记进入 pending 或 daily_urgent。
 - **SC-003**: 同一回放中分析产出的 pending 条目 100% join 到 pulse，或进入 resolved；`queue_join_misses` 为空。
-- **SC-004**: pulse 回拨 2 天后调用 latest_mail 会自动同步或明确失败，不出现「ok 且 generated_at 仍为两天前」。
+- **SC-004**: pulse 回拨 2 天后调用 latest_mail 在不触发 IMAP 的情况下返回 `ok=true` 与 `staleness.stale=true`；pulse 缺失时仍自动同步或明确失败。
 - **SC-005**: 每个 P0/P1 需求至少 1 个不连真实 IMAP/LLM 的回归测试；`tests/mcp-smoke.mjs` 通过。
 
 ## Assumptions
