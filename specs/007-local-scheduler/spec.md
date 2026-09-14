@@ -20,7 +20,7 @@
 
 **Acceptance Scenarios**:
 
-1. **Given** 08:30 daytime 已到期且无其他 run-due，**When** 执行 `schedule run-due`，**Then** 触发对应 job 并更新 last-run。
+1. **Given** 12:00 daytime 已到期且无其他 run-due，**When** 执行 `schedule run-due`，**Then** 触发对应 job 并更新 last-run。
 2. **Given** 另一 run-due 持锁，**When** 第二进程启动，**Then** 立即退出且不启动第二轮 IMAP。
 3. **Given** 无到期项，**When** run-due，**Then** `ok: true`、`ran: []`。
 
@@ -39,7 +39,7 @@
 
 ### User Story 3 - 替换死调度名 (Priority: P2)
 
-`config/schedules.yaml` 不再引用 `twinbox-orchestrate`。文档写明 site crontab 示例（08:30 / 02:00）。
+`config/schedules.yaml` 不再引用 `twinbox-orchestrate`。文档写明 site crontab 示例（12:00 / 02:00）。
 
 **Independent Test**: grep 追踪配置无 `twinbox-orchestrate`。
 
@@ -47,7 +47,7 @@
 
 - sync 失败：run-due `ok: false` 或 degraded，不得把 last-run 标成功。
 - 时钟回拨：last-run 在未来则跳过并 warning。
-- 无 schedules.yaml：使用内置 08:30 daytime / 02:00 nightly。
+- 无 schedules.yaml：使用内置 12:00 daytime / 02:00 nightly。
 
 ## Requirements *(mandatory)*
 

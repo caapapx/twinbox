@@ -13,7 +13,9 @@
 5. [As-built baseline](../../specs/000-as-built-mcp-baseline/spec.md)（retroactive 事实回填，不是历史 SpecKit provenance）；
 6. 研究假设 / 会议纪要 / 进化 prompt：只作输入，不得冒充已实现。
 
-低优先级文档应链接并解释差异，不得静默覆盖高优先级来源。
+低优先级文档应链接并解释差异，不得静默覆盖高优先级来源。计划、待办和历史 prompt 不是已实现或已部署的证据。
+
+按问题选入口（检索）与冲突权重不同：见仓库 [CLAUDE.md](../../CLAUDE.md)。
 
 ## 分类器与必做动作
 

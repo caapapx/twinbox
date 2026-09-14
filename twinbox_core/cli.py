@@ -4,7 +4,7 @@ Usage: python3 -m twinbox_core.cli <command> [--json]
 
 Commands:
   setup        — Validate IMAP + import LLM from OpenClaw
-  sync         — Fetch mail + run LLM analysis
+  sync         — Fetch mail + run LLM analysis (--job daytime-sync | nightly-full | quick-refresh)
   latest-mail  — Latest mail / activity pulse snapshot
   todo         — Urgent / pending queue
   weekly       — Weekly brief
@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -77,34 +78,52 @@ def cmd_sync(job: str = "daytime-sync") -> dict[str, Any]:
         return {"ok": False, "error": "IMAP not configured. Run setup first."}
 
     folders = ["INBOX"]
-    lookback = 7 if job == "daytime-sync" else 30
+    lookback = 30 if job == "nightly-full" else 7
+    # quick-refresh: fetch + embed + rebuild pulse, keep the last scheduled LLM analysis.
+    # Kept for explicit lightweight refreshes; scheduled full analysis stays with cron
+    # or an explicit daytime-sync request.
+    quick = job == "quick-refresh"
 
     # Step 1: Fetch envelopes + bodies
+    fetch_started = time.monotonic()
     fetch_result = fetch_incremental(
         root, folders, imap_cfg,
         sample_body_count=30, lookback_days=lookback,
     )
     if fetch_result.get("status") == "error":
         return {"ok": False, "step": "fetch", **fetch_result}
+    fetch_ms = round((time.monotonic() - fetch_started) * 1000)
 
     # Step 2: LLM analysis (urgent / pending / sla / weekly)
-    analysis = run_analysis(root)
     degraded: list[str] = []
-    if not analysis.get("ok"):
-        degraded.append("analysis")
+    analysis_started = time.monotonic()
+    if quick:
+        analysis: dict[str, Any] = {"ok": True, "skipped": True, "reason": "quick-refresh"}
+    else:
+        analysis = run_analysis(root)
+        if not analysis.get("ok"):
+            degraded.append("analysis")
+    analysis_ms = round((time.monotonic() - analysis_started) * 1000)
 
     # Step 3: Build activity pulse
+    pulse_started = time.monotonic()
     try:
         pulse_data, pulse_path = write_activity_pulse(root)
         pulse_ok = True
+        from .pulse import _load_yaml
+        urgent_yaml = root / "runtime" / "validation" / "phase-4" / "daily-urgent.yaml"
+        pulse_data["analysis_generated_at"] = _load_yaml(urgent_yaml).get("generated_at") or None
+        if quick:
+            pulse_data["analysis_skipped"] = True
         if "analysis" in degraded:
             pulse_data["stale_analysis"] = True
-            from .imap_fetch import _write_json
-            _write_json(pulse_path, pulse_data)
+        from .imap_fetch import _write_json
+        _write_json(pulse_path, pulse_data)
     except Exception as exc:
         pulse_ok = False
         pulse_data = {"error": str(exc)}
 
+    pulse_ms = round((time.monotonic() - pulse_started) * 1000)
     fetch_at = fetch_result.get("generated_at") or ""
     return {
         "ok": True,
@@ -116,9 +135,17 @@ def cmd_sync(job: str = "daytime-sync") -> dict[str, Any]:
         "consistency": {
             "fetch_at": fetch_at,
             "analysis_ok": analysis.get("ok"),
+            "analysis_skipped": quick,
+            "analysis_generated_at": pulse_data.get("analysis_generated_at"),
             "pulse_ok": pulse_ok,
         },
         "watermark_range": fetch_result.get("watermark_range"),
+        "timings_ms": {
+            "fetch_ms": fetch_ms,
+            "analysis_ms": analysis_ms,
+            "pulse_ms": pulse_ms,
+            **(fetch_result.get("timings_ms") if isinstance(fetch_result.get("timings_ms"), dict) else {}),
+        },
     }
 
 

@@ -94,41 +94,37 @@ function needsSync(stdout) {
   }
 }
 
-function needsRefresh(stdout) {
-  try {
-    const parsed = JSON.parse(stdout.trim());
-    if (parsed?.ok === false && parsed?.recovery_tool === "twinbox_sync") return true;
-    if (parsed?.staleness?.stale) return true;
-    return false;
-  } catch {
-    return false;
-  }
-}
-
 async function withAutoSync(cliArgs, label) {
   const r1 = await runCli(cliArgs);
-  if (!needsRefresh(r1.stdout)) return makeResult(r1);
+  // A stale pulse is still useful. Do not turn a read request into a blocking
+  // IMAP sync; cron or an explicit twinbox_sync owns freshness recovery.
+  if (!needsSync(r1.stdout)) return makeResult(r1);
+
   const rSync = await runCli(["sync", "--json"]);
   if (isError(rSync)) {
     return {
       content: [
         {
           type: "text",
-          text: `=== auto sync failed ===\n${formatResult(rSync).content[0].text}`,
+          text: `=== auto sync failed (${label}) ===\n${formatResult(rSync).content[0].text}`,
         },
       ],
       isError: true,
     };
   }
   const r2 = await runCli(cliArgs);
-  const parts = [
-    `=== auto sync (${label}) ===`,
-    formatResult(rSync).content[0].text,
-    `=== ${cliArgs[0]} (after sync) ===`,
-    formatResult(r2).content[0].text,
-  ];
   return {
-    content: [{ type: "text", text: parts.join("\n\n") }],
+    content: [
+      {
+        type: "text",
+        text: [
+          `=== auto sync (${label}) ===`,
+          formatResult(rSync).content[0].text,
+          `=== ${cliArgs[0]} (after sync) ===`,
+          formatResult(r2).content[0].text,
+        ].join("\n\n"),
+      },
+    ],
     isError: isError(r2),
   };
 }
@@ -138,15 +134,17 @@ const TOOLS = [
     name: "twinbox_sync",
     description:
       "Fetch mail and run LLM analysis (daytime-sync or nightly-full). " +
-      "Call this when data is stale or missing. Chinese: 同步邮件、刷新数据.",
+      "ONLY call when the user explicitly asks to refresh/re-analyze urgent, pending, or priority results. " +
+      "NEVER call for latest-mail requests; call twinbox_latest_mail instead. Chinese: 同步邮件、重新分析待办/紧急度.",
     inputSchema: {
       type: "object",
       properties: {
         job: {
           type: "string",
-          enum: ["daytime-sync", "nightly-full"],
+          enum: ["daytime-sync", "nightly-full", "quick-refresh"],
           default: "daytime-sync",
-          description: "daytime-sync (fast) or nightly-full (complete rebuild)",
+          description:
+            "daytime-sync (fetch + analysis), nightly-full (complete rebuild), quick-refresh (fetch + pulse only, no LLM analysis)",
         },
       },
     },
@@ -154,8 +152,10 @@ const TOOLS = [
   {
     name: "twinbox_latest_mail",
     description:
-      "Latest mail / activity-pulse snapshot. Auto-syncs if data is missing. " +
-      "Chinese: 最新邮件、帮我看下最新的邮件. After return, MUST write a visible summary.",
+      "Use this ONE tool for requests such as 最新一封邮件, 看下最新邮件, or 有无新邮件. " +
+      "It refreshes safely itself: missing data gets a full sync; merely stale data gets a quick refresh without LLM re-analysis. " +
+      "Do NOT call twinbox_sync, twinbox_extract, or twinbox_thread_inspect before or after it unless the user explicitly requests re-analysis, a named thread, history, or full body. " +
+      "Return only the newest thread's sender, subject, time, and a brief summary.",
     inputSchema: {
       type: "object",
       properties: {
@@ -341,15 +341,15 @@ async function handleToolCall(request) {
     case "twinbox_latest_mail": {
       const cliArgs = ["latest-mail", "--json"];
       if (args?.unread_only) cliArgs.push("--unread-only");
-      return withAutoSync(cliArgs, "stale or missing pulse");
+      return withAutoSync(cliArgs, "missing pulse");
     }
 
     case "twinbox_todo": {
-      return withAutoSync(["todo", "--json"], "stale or missing pulse");
+      return withAutoSync(["todo", "--json"], "missing pulse");
     }
 
     case "twinbox_weekly": {
-      return withAutoSync(["weekly", "--json"], "stale or missing weekly");
+      return withAutoSync(["weekly", "--json"], "missing weekly");
     }
 
     case "twinbox_thread_inspect": {

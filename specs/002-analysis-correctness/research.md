@@ -7,7 +7,7 @@
 | MIME 解析 | stdlib `email.message_from_bytes`，优先 text/plain | 零新依赖；与 constitution / ponytail 一致 |
 | 正文给谁 | 本地 MCP 可返回解码正文；Agent OS ingest 仍禁全文 | constitution 1.1.0 |
 | thread_key | 单一 `normalize_thread_key()`，分析写出前与 pulse join 时都用 | 消灭大小写/Re: 丢标签 |
-| stale 阈值 | 默认 4h，可配置 | 工作时段可接受；避免每次 latest_mail 都打 IMAP |
+| stale 阈值 | 默认 4h，可配置 | 只标记快照是否过期；读路径不自动打 IMAP，刷新交 cron 或显式 sync |
 | 采样 key | `folder#uid` | 避免 INBOX/Sent UID 碰撞 |
 | 采样顺序 | 两阶段：候选 45 / 正文 24；结构信号粗排 | 大批量时给关键线程足够正文；关键词属 003 pack |
 | recipient_role | 同一 FETCH 加 To/Cc/List-Id；聚合语义迁自 archive context_builder | master 当前不抓 To/Cc |
