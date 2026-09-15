@@ -580,6 +580,7 @@ def fetch_incremental(
     *,
     sample_body_count: int = 30,
     lookback_days: int = 7,
+    account_id: str | None = None,
 ) -> dict[str, Any]:
     """Fetch new envelopes + bodies incrementally, merge with existing context."""
     watermarks_path = _watermarks_path(state_root)
@@ -721,10 +722,12 @@ def fetch_incremental(
         embeddings_degraded = True
     embed_ms = round((time.monotonic() - embedding_started) * 1000)
 
+    aid = (account_id or imap_config.get("account_id") or "default")
     context = {
         "generated_at": sync_time,
         "owner_domain": owner_domain,
         "lookback_days": lookback_days,
+        "source_account": aid,
         "envelopes": filtered,
         "sampled_bodies": body_map,
         "stats": {

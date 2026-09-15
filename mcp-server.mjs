@@ -2,7 +2,7 @@
 /**
  * Twinbox MCP stdio server.
  *
- * Exposes the same 9 tools as the OpenClaw plugin by wrapping
+ * Exposes twinbox_* MCP tools wrapping by wrapping
  * `python3 -m twinbox_core.cli <cmd> --json`.
  *
  * No Go binary, no daemon, no himalaya.
@@ -326,7 +326,62 @@ const TOOLS = [
       required: ["proposal_id", "action"],
     },
   },
+  {
+    name: "twinbox_accounts",
+    description:
+      "List/add/remove mailbox accounts. Credentials stay in local vault; outputs only password_set booleans. Chinese: 邮箱账号管理.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: {
+          type: "string",
+          enum: ["list", "get", "add", "remove"],
+          default: "list",
+        },
+        account_id: { type: "string" },
+        email: { type: "string" },
+        type: { type: "string", enum: ["personal", "shared", "robot"] },
+        host: { type: "string" },
+        port: { type: "number" },
+        login: { type: "string" },
+        password: { type: "string", description: "Write-only; never returned" },
+        encryption: { type: "string", enum: ["tls", "starttls", "plain"] },
+        default: { type: "boolean" },
+      },
+    },
+  },
+  {
+    name: "twinbox_ingest",
+    description:
+      "Reference-only ingest envelopes (no full bodies). Chinese: 引用式邮件摄取.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        account_id: { type: "string" },
+        since: { type: "string", description: "Opaque cursor from prior ingest" },
+        limit: { type: "number" },
+      },
+    },
+  },
+  {
+    name: "twinbox_events",
+    description:
+      "Structured event records derived from local analysis (references only). Chinese: 事件抽取.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        account_id: { type: "string" },
+        limit: { type: "number" },
+      },
+    },
+  },
+
 ];
+
+function pushAccountId(cliArgs, args) {
+  if (args?.account_id) cliArgs.push("--account-id", String(args.account_id));
+  return cliArgs;
+}
 
 async function handleToolCall(request) {
   const { name, arguments: args = {} } = request.params;
@@ -334,32 +389,34 @@ async function handleToolCall(request) {
   switch (name) {
     case "twinbox_sync": {
       const job = args?.job ?? "daytime-sync";
-      const r = await runCli(["sync", "--job", job, "--json"]);
+      const cliArgs = pushAccountId(["sync", "--job", job, "--json"], args);
+      const r = await runCli(cliArgs);
       return makeResult(r);
     }
 
     case "twinbox_latest_mail": {
-      const cliArgs = ["latest-mail", "--json"];
+      const cliArgs = pushAccountId(["latest-mail", "--json"], args);
       if (args?.unread_only) cliArgs.push("--unread-only");
       return withAutoSync(cliArgs, "missing pulse");
     }
 
     case "twinbox_todo": {
-      return withAutoSync(["todo", "--json"], "missing pulse");
+      return withAutoSync(pushAccountId(["todo", "--json"], args), "missing pulse");
     }
 
     case "twinbox_weekly": {
-      return withAutoSync(["weekly", "--json"], "missing weekly");
+      return withAutoSync(pushAccountId(["weekly", "--json"], args), "missing weekly");
     }
 
     case "twinbox_thread_inspect": {
       const query = args?.query ?? "";
-      const r = await runCli(["thread", query, "--json"]);
+      const cliArgs = pushAccountId(["thread", query, "--json"], args);
+      const r = await runCli(cliArgs);
       return makeResult(r);
     }
 
     case "twinbox_queue_action": {
-      const cliArgs = ["queue", args.action, args.thread_key, "--json"];
+      const cliArgs = pushAccountId(["queue", args.action, args.thread_key, "--json"], args);
       if (args.reason) cliArgs.push("--reason", args.reason);
       const r = await runCli(cliArgs);
       return makeResult(r);
@@ -384,12 +441,13 @@ async function handleToolCall(request) {
       if (args?.bucket) cliArgs.push("--bucket", args.bucket);
       if (args?.from_hour !== undefined) cliArgs.push("--from-hour", String(args.from_hour));
       if (args?.to_hour !== undefined) cliArgs.push("--to-hour", String(args.to_hour));
+      pushAccountId(cliArgs, args);
       const r = await runCli(cliArgs);
       return makeResult(r);
     }
 
     case "twinbox_status": {
-      const r = await runCli(["status", "--json"]);
+      const r = await runCli(pushAccountId(["status", "--json"], args));
       return makeResult(r);
     }
 
@@ -421,6 +479,45 @@ async function handleToolCall(request) {
         "--json",
       ];
       if (args.reason) cliArgs.push("--reason", args.reason);
+      const r = await runCli(cliArgs);
+      return makeResult(r);
+    }
+
+    case "twinbox_accounts": {
+      const action = args?.action ?? "list";
+      const cliArgs = ["accounts", action, "--json"];
+      if (args?.account_id) cliArgs.push("--account-id", String(args.account_id));
+      if (action === "add") {
+        for (const [flag, key] of [
+          ["--email", "email"],
+          ["--type", "type"],
+          ["--host", "host"],
+          ["--port", "port"],
+          ["--login", "login"],
+          ["--password", "password"],
+          ["--encryption", "encryption"],
+        ]) {
+          if (args?.[key] !== undefined && args?.[key] !== null && args?.[key] !== "") {
+            cliArgs.push(flag, String(args[key]));
+          }
+        }
+        if (args?.default) cliArgs.push("--default", "true");
+      }
+      const r = await runCli(cliArgs);
+      return makeResult(r);
+    }
+
+    case "twinbox_ingest": {
+      const cliArgs = pushAccountId(["ingest", "--json"], args);
+      if (args?.since) cliArgs.push("--since", String(args.since));
+      if (args?.limit !== undefined) cliArgs.push("--limit", String(args.limit));
+      const r = await runCli(cliArgs);
+      return makeResult(r);
+    }
+
+    case "twinbox_events": {
+      const cliArgs = pushAccountId(["events", "--json"], args);
+      if (args?.limit !== undefined) cliArgs.push("--limit", String(args.limit));
       const r = await runCli(cliArgs);
       return makeResult(r);
     }

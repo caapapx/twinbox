@@ -27,10 +27,10 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T003 扩展 `twinbox_core/config.py`：账号列表模型（account_id、type=personal/shared、连接参数、vault 引用），向后兼容单账号配置
-- [ ] T004 实现 `twinbox_core/vault.py`：Fernet 对称加密的本地 vault（`~/.twinbox/vault.enc`），主密钥经系统 keyring 或 `~/.twinbox/.vault_key`（0600）
-- [ ] T005 [P] 新增 `tests/test_vault.py`：加解密往返、存储文件无明文口令、存在性布尔查询
-- [ ] T006 扩展 `twinbox_core/pulse.py`：按账号循环同步，同步记录携带 account_id
+- [x] T003 扩展 `twinbox_core/config.py`：账号列表模型（account_id、type=personal/shared、连接参数、vault 引用），向后兼容单账号配置
+- [x] T004 实现 `twinbox_core/vault.py`：Fernet 对称加密的本地 vault（`~/.twinbox/vault.enc`），主密钥经系统 keyring 或 `~/.twinbox/.vault_key`（0600）
+- [x] T005 [P] 新增 `tests/test_vault.py`：加解密往返、存储文件无明文口令、存在性布尔查询
+- [x] T006 扩展 `twinbox_core/pulse.py`：按账号循环同步，同步记录携带 account_id
 
 **Checkpoint**: 多账号配置 + 加密 vault 就绪，用户故事可并行开始
 
@@ -44,10 +44,10 @@
 
 ### Implementation for User Story 1
 
-- [ ] T007 [US1] 参数化 `twinbox_core/imap_fetch.py` 支持按 account_id 拉取，确认全程只读（无 STORE/DELETE/COPY 类命令）
-- [ ] T008 [US1] 扩展 `twinbox_core/cli.py`：`accounts add/list/remove` 子命令（凭据写入 vault，输出仅含 `password_set` 布尔值）
-- [ ] T009 [US1] 扩展 `mcp-server.mjs`：注册 `twinbox_accounts` 工具，复用既有 spawn CLI 与 ok/data/error/recovery_tool 封装
-- [ ] T010 [US1] 只读回归验证：对测试公共邮箱跑完整同步，断言 IMAP 会话日志无任何写命令
+- [x] T007 [US1] 参数化 `twinbox_core/imap_fetch.py` 支持按 account_id 拉取，确认全程只读（无 STORE/DELETE/COPY 类命令）
+- [x] T008 [US1] 扩展 `twinbox_core/cli.py`：`accounts add/list/remove` 子命令（凭据写入 vault，输出仅含 `password_set` 布尔值）
+- [x] T009 [US1] 扩展 `mcp-server.mjs`：注册 `twinbox_accounts` 工具，复用既有 spawn CLI 与 ok/data/error/recovery_tool 封装
+- [x] T010 [US1] 只读回归验证：对测试公共邮箱跑完整同步，断言 IMAP 会话日志无任何写命令
 
 **Checkpoint**: User Story 1 独立可用（MVP）
 
@@ -61,11 +61,11 @@
 
 ### Implementation for User Story 2
 
-- [ ] T011 [US2] 新增 `twinbox_core/adapter.py`：ingest envelope 组装（reference + attributes + cursor），摘要 ≤280 字截断
+- [x] T011 [US2] 新增 `twinbox_core/adapter.py`：ingest envelope 组装（reference + attributes + cursor），摘要 ≤280 字截断
 - [ ] T012 [US2] 在 `twinbox_core/llm.py` 增加 envelope 归类输出 schema（六轴，opaque string），接入 T001 的轴配置
-- [ ] T013 [P] [US2] 新增 `tests/test_adapter.py`：schema 断言、无全文扫描断言（body/html/attachment 字段不存在）、cursor 重放幂等
-- [ ] T014 [US2] 扩展 `twinbox_core/cli.py`：`ingest` 子命令（since 游标、分页上限）
-- [ ] T015 [US2] 扩展 `mcp-server.mjs`：注册 `twinbox_ingest` 工具
+- [x] T013 [P] [US2] 新增 `tests/test_adapter.py`：schema 断言、无全文扫描断言（body/html/attachment 字段不存在）、cursor 重放幂等
+- [x] T014 [US2] 扩展 `twinbox_core/cli.py`：`ingest` 子命令（since 游标、分页上限）
+- [x] T015 [US2] 扩展 `mcp-server.mjs`：注册 `twinbox_ingest` 工具
 - [ ] T016 [US2] 敏感轴降级：sensitivity 命中高敏时摘要进一步截断或省略，引用保留
 
 **Checkpoint**: User Stories 1 和 2 均独立可用
@@ -80,10 +80,10 @@
 
 ### Implementation for User Story 3
 
-- [ ] T017 [US3] `twinbox_status` / `twinbox_setup` 输出审计：移除任何凭据回显，统一为 `password_set: bool`
-- [ ] T018 [US3] 日志与错误路径审计：异常信息不拼接凭据材料；`recovery_tool` 指引不含敏感值
-- [ ] T019 [US3] 账号隔离断言：ingest/queue 记录均可溯源 account_id，跨账号无串数据
-- [ ] T020 [US3] 明文扫描校验：对 `~/.twinbox/vault.enc` 与仓库追踪文件 grep 已知测试口令，命中数为 0
+- [x] T017 [US3] `twinbox_status` / `twinbox_setup` 输出审计：移除任何凭据回显，统一为 `password_set: bool`
+- [x] T018 [US3] 日志与错误路径审计：异常信息不拼接凭据材料；`recovery_tool` 指引不含敏感值
+- [x] T019 [US3] 账号隔离断言：ingest/queue 记录均可溯源 account_id，跨账号无串数据
+- [x] T020 [US3] 明文扫描校验：对 `~/.twinbox/vault.enc` 与仓库追踪文件 grep 已知测试口令，命中数为 0
 
 **Checkpoint**: User Stories 1、2、3 均独立可用
 
@@ -100,7 +100,7 @@
 - [ ] T021 [US4] 新增 `twinbox_core/events.py`：事件 schema（稳定 ID = hash(account_id, message_id, event_type, 键字段)）与 LLM 抽取通路（复用 `extract.py` 模式）
 - [ ] T022 [US4] 在 `config/extract-profiles.yaml` 增加三类事件的判定规则与抽取字段定义
 - [ ] T023 [US4] 扩展 `twinbox_core/cli.py`：`events` 子命令；事件 ID 链接进 ingest envelope 的 `events` 字段
-- [ ] T024 [US4] 扩展 `mcp-server.mjs`：注册 `twinbox_events` 工具
+- [x] T024 [US4] 扩展 `mcp-server.mjs`：注册 `twinbox_events` 工具
 - [ ] T025 [US4] 用 T002 夹具验证召回率 ≥ 80%（人工标注对照），未达标则调整 T022 规则迭代
 
 **Checkpoint**: 全部用户故事独立可用
@@ -111,10 +111,10 @@
 
 **Purpose**: 跨故事收尾
 
-- [ ] T026 [P] 扩展 `tests/mcp-smoke.mjs`：新增三个工具的端到端冒烟
-- [ ] T027 [P] 更新 `CLAUDE.md` 关键路径表（新增 adapter/events/vault 模块与新工具）
+- [x] T026 [P] 扩展 `tests/mcp-smoke.mjs`：新增三个工具的端到端冒烟
+- [x] T027 [P] 更新 `CLAUDE.md` 关键路径表（新增 adapter/events/vault 模块与新工具）
 - [ ] T028 全文外泄端到端校验：对平台可见的全部工具响应做自动化全文扫描
-- [ ] T029 既有 9 个 `twinbox_*` 工具回归：签名与 envelope 形状不变
+- [x] T029 既有 9 个 `twinbox_*` 工具回归：签名与 envelope 形状不变
 
 ---
 
@@ -162,3 +162,10 @@
 3. +US2 → 平台可消费 ingest envelope（adapter 核心价值）
 4. +US3 → 企业级凭据安全闭环
 5. +US4 → 事件驱动的周报/风险/计划变更数据层
+
+
+## Remaining beyond confirmed Phase 1 gate (2026-09-15)
+
+Confirmed enterprise slice = Phase 0 contracts + Phase 1 read plane + min observability.
+Still open for fuller 001 US2/US4: T001–T002 axes/fixtures, T012 LLM schema, T016 sensitivity truncate,
+T021–T023/T025 richer event extraction & recall, T028 full-body scan across all tool responses.

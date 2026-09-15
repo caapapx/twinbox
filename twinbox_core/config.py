@@ -77,15 +77,6 @@ def imap_config_from_config() -> dict[str, Any]:
     }
 
 
-def resolve_imap_config() -> dict[str, Any]:
-    """Resolve IMAP config: env vars take precedence over twinbox.json."""
-    env_cfg = imap_config_from_env()
-    if env_cfg.get("host") and env_cfg.get("login"):
-        return env_cfg
-    file_cfg = imap_config_from_config()
-    if file_cfg.get("host") and file_cfg.get("login"):
-        return file_cfg
-    return env_cfg  # return partial env for error reporting
 
 
 def owner_email() -> str:
@@ -159,17 +150,17 @@ def setup_from_env() -> dict[str, Any]:
     # Write mailbox config
     if imap_cfg.get("host") and imap_cfg.get("login") and imap_cfg.get("password"):
         cfg = load_config()
-        cfg["mailbox"] = {
-            "email": email,
-            "imap": {
-                "host": imap_cfg["host"],
-                "port": imap_cfg["port"],
-                "encryption": imap_cfg.get("encryption", "tls"),
-                "login": imap_cfg["login"],
-                "password": imap_cfg["password"],
-            },
-        }
-        save_config(cfg)
+        upsert_account(
+            account_id=DEFAULT_ACCOUNT_ID,
+            email=email,
+            account_type="personal",
+            host=str(imap_cfg["host"]),
+            port=int(imap_cfg["port"]),
+            login=str(imap_cfg["login"]),
+            password=str(imap_cfg["password"]),
+            encryption=str(imap_cfg.get("encryption") or "tls"),
+            make_default=True,
+        )
         result["steps"].append("mailbox_configured")
     else:
         result["steps"].append("mailbox_skipped_incomplete")
@@ -183,3 +174,272 @@ def setup_from_env() -> dict[str, Any]:
         result["steps"].append(f"llm_skip: {llm_result.get('error', 'unknown')}")
 
     return result
+
+
+# --- Multi-account registry (legacy mailbox remains default) ---
+
+DEFAULT_ACCOUNT_ID = "default"
+_ACCOUNT_ID_RE = __import__("re").compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$")
+
+
+def _safe_account_id(account_id: str) -> str:
+    aid = (account_id or "").strip()
+    if not aid or not _ACCOUNT_ID_RE.match(aid):
+        raise ValueError("account_id must be 1-64 chars: letters, digits, . _ -")
+    return aid
+
+
+def default_account_id() -> str:
+    cfg = load_config()
+    raw = str(cfg.get("default_account_id") or DEFAULT_ACCOUNT_ID).strip()
+    return raw or DEFAULT_ACCOUNT_ID
+
+
+def account_state_root(account_id: str | None = None) -> Path:
+    """Per-account state namespace. Legacy default keeps files at state_root()."""
+    aid = (account_id or default_account_id()).strip() or DEFAULT_ACCOUNT_ID
+    if aid == DEFAULT_ACCOUNT_ID:
+        return state_root()
+    return state_root() / "accounts" / _safe_account_id(aid)
+
+
+def _legacy_account_from_mailbox(cfg: dict[str, Any]) -> dict[str, Any] | None:
+    mailbox = cfg.get("mailbox")
+    if not isinstance(mailbox, dict):
+        return None
+    imap = mailbox.get("imap") if isinstance(mailbox.get("imap"), dict) else {}
+    host = str(imap.get("host") or "")
+    login = str(imap.get("login") or "")
+    if not host and not login and not mailbox.get("email"):
+        return None
+    password = str(imap.get("password") or "")
+    return {
+        "account_id": DEFAULT_ACCOUNT_ID,
+        "type": "personal",
+        "email": str(mailbox.get("email") or login or ""),
+        "provider": "imap",
+        "imap": {
+            "host": host,
+            "port": int(imap.get("port") or 993),
+            "encryption": str(imap.get("encryption") or "tls"),
+            "login": login,
+        },
+        "password_set": bool(password),
+        "_legacy_password": password,
+    }
+
+
+def list_accounts(*, include_secrets_flags: bool = True) -> list[dict[str, Any]]:
+    """Public account metadata only (password_set boolean, never password)."""
+    from . import vault
+
+    cfg = load_config()
+    rows: list[dict[str, Any]] = []
+    accounts = cfg.get("accounts")
+    if isinstance(accounts, list) and accounts:
+        for raw in accounts:
+            if not isinstance(raw, dict):
+                continue
+            aid = str(raw.get("account_id") or "").strip()
+            if not aid:
+                continue
+            imap = raw.get("imap") if isinstance(raw.get("imap"), dict) else {}
+            item = {
+                "account_id": aid,
+                "type": str(raw.get("type") or "personal"),
+                "email": str(raw.get("email") or ""),
+                "provider": str(raw.get("provider") or "imap"),
+                "imap": {
+                    "host": str(imap.get("host") or ""),
+                    "port": int(imap.get("port") or 993),
+                    "encryption": str(imap.get("encryption") or "tls"),
+                    "login": str(imap.get("login") or ""),
+                },
+            }
+            if include_secrets_flags:
+                item["password_set"] = vault.has_secret(aid, "password") or bool(imap.get("password"))
+            rows.append(item)
+        return rows
+
+    legacy = _legacy_account_from_mailbox(cfg)
+    if legacy:
+        public = {k: v for k, v in legacy.items() if not k.startswith("_")}
+        if include_secrets_flags:
+            public["password_set"] = bool(legacy.get("_legacy_password")) or vault.has_secret(
+                DEFAULT_ACCOUNT_ID, "password"
+            )
+        return [public]
+    return []
+
+
+def get_account(account_id: str | None = None) -> dict[str, Any] | None:
+    aid = (account_id or default_account_id()).strip() or DEFAULT_ACCOUNT_ID
+    for row in list_accounts():
+        if row.get("account_id") == aid:
+            return row
+    return None
+
+
+def upsert_account(
+    *,
+    account_id: str,
+    email: str = "",
+    account_type: str = "personal",
+    host: str = "",
+    port: int = 993,
+    login: str = "",
+    password: str = "",
+    encryption: str = "tls",
+    provider: str = "imap",
+    make_default: bool = False,
+) -> dict[str, Any]:
+    """Register/update an account; password goes to vault, never returned."""
+    from . import vault
+
+    aid = _safe_account_id(account_id)
+    if account_type not in {"personal", "shared", "robot"}:
+        raise ValueError("type must be personal|shared|robot")
+    cfg = load_config()
+    accounts = cfg.get("accounts")
+    if not isinstance(accounts, list):
+        accounts = []
+        # Promote legacy mailbox into accounts[] once when creating the registry.
+        legacy = _legacy_account_from_mailbox(cfg)
+        if legacy:
+            accounts.append(
+                {
+                    "account_id": DEFAULT_ACCOUNT_ID,
+                    "type": "personal",
+                    "email": legacy.get("email") or "",
+                    "provider": "imap",
+                    "imap": legacy.get("imap") or {},
+                }
+            )
+            legacy_pw = str(legacy.get("_legacy_password") or "")
+            if legacy_pw:
+                vault.set_secret(DEFAULT_ACCOUNT_ID, "password", legacy_pw)
+                mailbox = cfg.get("mailbox")
+                if isinstance(mailbox, dict) and isinstance(mailbox.get("imap"), dict):
+                    mailbox["imap"].pop("password", None)
+
+    found = False
+    for row in accounts:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("account_id") or "") != aid:
+            continue
+        row["type"] = account_type
+        row["email"] = email or row.get("email") or login
+        row["provider"] = provider
+        imap = row.get("imap") if isinstance(row.get("imap"), dict) else {}
+        if host:
+            imap["host"] = host
+        if port:
+            imap["port"] = int(port)
+        if login:
+            imap["login"] = login
+        if encryption:
+            imap["encryption"] = encryption
+        imap.pop("password", None)
+        row["imap"] = imap
+        found = True
+        break
+    if not found:
+        accounts.append(
+            {
+                "account_id": aid,
+                "type": account_type,
+                "email": email or login,
+                "provider": provider,
+                "imap": {
+                    "host": host,
+                    "port": int(port or 993),
+                    "encryption": encryption or "tls",
+                    "login": login,
+                },
+            }
+        )
+    if password:
+        vault.set_secret(aid, "password", password)
+    cfg["accounts"] = accounts
+    if make_default or not cfg.get("default_account_id"):
+        cfg["default_account_id"] = aid if make_default else cfg.get("default_account_id") or aid
+    # Keep legacy mailbox mirror for default account (password-less).
+    if aid == (cfg.get("default_account_id") or DEFAULT_ACCOUNT_ID):
+        row = next(r for r in accounts if isinstance(r, dict) and r.get("account_id") == aid)
+        imap = row.get("imap") if isinstance(row.get("imap"), dict) else {}
+        cfg["mailbox"] = {
+            "email": row.get("email") or "",
+            "imap": {
+                "host": imap.get("host") or "",
+                "port": int(imap.get("port") or 993),
+                "encryption": imap.get("encryption") or "tls",
+                "login": imap.get("login") or "",
+            },
+        }
+    save_config(cfg)
+    public = get_account(aid) or {"account_id": aid}
+    return {"ok": True, "account": public}
+
+
+def remove_account(account_id: str) -> dict[str, Any]:
+    from . import vault
+
+    aid = _safe_account_id(account_id)
+    if aid == DEFAULT_ACCOUNT_ID:
+        return {"ok": False, "error": "refusing to remove default account; clear credentials instead"}
+    cfg = load_config()
+    accounts = cfg.get("accounts")
+    if not isinstance(accounts, list):
+        return {"ok": False, "error": "account not found"}
+    new_rows = [r for r in accounts if not (isinstance(r, dict) and r.get("account_id") == aid)]
+    if len(new_rows) == len(accounts):
+        return {"ok": False, "error": "account not found"}
+    cfg["accounts"] = new_rows
+    if cfg.get("default_account_id") == aid:
+        cfg["default_account_id"] = DEFAULT_ACCOUNT_ID
+    save_config(cfg)
+    vault.delete_account_secrets(aid)
+    return {"ok": True, "removed": aid}
+
+
+def resolve_imap_config(account_id: str | None = None) -> dict[str, Any]:
+    """Resolve IMAP config for an account. Env still wins for the default account."""
+    from . import vault
+
+    aid = (account_id or default_account_id()).strip() or DEFAULT_ACCOUNT_ID
+    if aid == default_account_id() or account_id is None:
+        env_cfg = imap_config_from_env()
+        if env_cfg.get("host") and env_cfg.get("login"):
+            return env_cfg
+
+    cfg = load_config()
+    accounts = cfg.get("accounts")
+    if isinstance(accounts, list):
+        for row in accounts:
+            if not isinstance(row, dict) or str(row.get("account_id") or "") != aid:
+                continue
+            imap = row.get("imap") if isinstance(row.get("imap"), dict) else {}
+            password = vault.get_secret(aid, "password") or str(imap.get("password") or "")
+            return {
+                "host": str(imap.get("host") or ""),
+                "port": int(imap.get("port") or 993),
+                "login": str(imap.get("login") or ""),
+                "password": password,
+                "encryption": str(imap.get("encryption") or "tls"),
+                "account_id": aid,
+            }
+
+    if aid == DEFAULT_ACCOUNT_ID:
+        file_cfg = imap_config_from_config()
+        if file_cfg.get("host") and file_cfg.get("login"):
+            if not file_cfg.get("password"):
+                file_cfg["password"] = vault.get_secret(DEFAULT_ACCOUNT_ID, "password") or ""
+            file_cfg["account_id"] = DEFAULT_ACCOUNT_ID
+            return file_cfg
+        env_cfg = imap_config_from_env()
+        env_cfg["account_id"] = DEFAULT_ACCOUNT_ID
+        return env_cfg
+
+    return {"host": "", "port": 993, "login": "", "password": "", "encryption": "tls", "account_id": aid}
+

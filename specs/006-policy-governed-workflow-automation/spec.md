@@ -8,6 +8,8 @@
 
 **This increment (v0.3 dry-run)**: 提案引擎 + 审计 jsonl + 确认卡片 payload。**无 SMTP、无写邮箱**。FR-007 保持只读默认。通道由 agent-os 8090 承担。完整自动执行仍是后续增量。
 
+**Next increment (Draft / HITL confirmation token — Planned, Phase 4)**: Reuse existing proposal JSON; issue short-lived confirmation tokens (ctk-style); stop the agent turn after presenting the token; payload hash change invalidates the token; state machine `draft → awaiting_confirmation → confirmed/rejected/expired → executing → …`. Confirmed without policy still MUST NOT SMTP. Implementation tasks live in tasks.md Phase 6+.
+
 **Input**: 管理员预授权范围内的全自动流转（转发/推进）；未命中策略转人工；审计与幂等。
 
 ## User Scenarios & Testing *(mandatory)*

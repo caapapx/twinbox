@@ -34,8 +34,11 @@ commands.
 | 查看/搜索线程 | `twinbox_thread_inspect`（必填 `query`） |
 | 标记完成/忽略/恢复 | `twinbox_queue_action`（`action`、`thread_key`，可选 `reason`） |
 | 历史/关键词抽取 | `twinbox_extract`（日期、文件夹、关键词、profile 等过滤器） |
-| 邮箱健康检查 | `twinbox_status` |
+| 邮箱健康检查 | `twinbox_status`（可选 `account_id`；含 freshness / recent runs） |
 | 初始配置 | `twinbox_setup` |
+| 账号管理 | `twinbox_accounts`（vault 凭据；仅 `password_set`） |
+| 引用式 ingest | `twinbox_ingest` |
+| 事件记录 | `twinbox_events` |
 
 ## 规则
 

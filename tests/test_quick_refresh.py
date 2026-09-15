@@ -22,11 +22,19 @@ class TestQuickRefresh(unittest.TestCase):
             root = Path(tmp)
             urgent = root / "runtime" / "validation" / "phase-4" / "daily-urgent.yaml"
             urgent.parent.mkdir(parents=True, exist_ok=True)
-            urgent.write_text("generated_at: '2026-09-10T08:31:00+08:00'\ndaily_urgent: []\n", encoding="utf-8")
+            urgent.write_text(
+                "generated_at: '2026-09-10T08:31:00+08:00'\ndaily_urgent: []\n",
+                encoding="utf-8",
+            )
             run_analysis = mock.Mock(return_value={"ok": True})
-            with mock.patch.object(cli, "_state_root", return_value=root), \
+            with mock.patch.object(cli, "_account_root", return_value=root), \
                  mock.patch("twinbox_core.config.resolve_imap_config", return_value={"host": "h", "login": "u"}), \
-                 mock.patch("twinbox_core.imap_fetch.fetch_incremental", return_value={"status": "ok", "generated_at": "now"}) as fetch, \
+                 mock.patch("twinbox_core.config.default_account_id", return_value="default"), \
+                 mock.patch("twinbox_core.runs.append_run", return_value={}), \
+                 mock.patch(
+                     "twinbox_core.imap_fetch.fetch_incremental",
+                     return_value={"status": "ok", "generated_at": "now"},
+                 ) as fetch, \
                  mock.patch("twinbox_core.analyze.run_analysis", run_analysis), \
                  mock.patch("twinbox_core.pulse.write_activity_pulse", side_effect=lambda r: _fake_pulse(r)):
                 result = cli.cmd_sync(job)
@@ -41,6 +49,7 @@ class TestQuickRefresh(unittest.TestCase):
         self.assertEqual(result["degraded"], [])
         self.assertTrue(result["consistency"]["analysis_skipped"])
         self.assertEqual(result["consistency"]["analysis_generated_at"], "2026-09-10T08:31:00+08:00")
+        self.assertIn("run_id", result)
 
     def test_daytime_sync_runs_analysis(self) -> None:
         result, run_analysis = self._run("daytime-sync")

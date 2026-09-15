@@ -4,9 +4,9 @@
 
 **Created**: 2026-08-26
 
-**Status**: Planned / 未收敛
+**Status**: Partial — multi-account vault + accounts/ingest/events tools landed; full ingest axes / pack event types still open
 
-> 代码事实：当前 `master` 只实现 9 个本地 MCP 工具；本 feature 的 ingest / 多账号 vault / 事件抽取尚未落地。不要把它描述为已实现能力。权威顺序：代码 > constitution > 本契约。As-built 见 [`specs/000-as-built-mcp-baseline`](../000-as-built-mcp-baseline/spec.md)。本契约是**数据平面**（账号接入、引用式 ingest、事件记录输出），不承担周报运营 UI（`004`）、注意力 onboarding（`005`）或邮箱写操作/流程执行（`006`）。事件类型与归类轴的领域含义由 [`003`](../003-semantic-context-event-intelligence/spec.md) 语义包声明；此处只约束 envelope 与隔离。
+> 代码事实：当前 `master` 已落地多账号 vault、`twinbox_accounts` / `twinbox_ingest` / `twinbox_events` 与最小可观测性；六轴归类与完整事件类型仍未收敛。不要把它描述为已实现能力。权威顺序：代码 > constitution > 本契约。As-built 见 [`specs/000-as-built-mcp-baseline`](../000-as-built-mcp-baseline/spec.md)。本契约是**数据平面**（账号接入、引用式 ingest、事件记录输出），不承担周报运营 UI（`004`）、注意力 onboarding（`005`）或邮箱写操作/流程执行（`006`）。事件类型与归类轴的领域含义由 [`003`](../003-semantic-context-event-intelligence/spec.md) 语义包声明；此处只约束 envelope 与隔离。
 
 **Input**: User description: "twinbox 作为 Agent OS Everything 过程数据层的邮件 adapter：公共邮箱接入、多用户集中管理与凭据加密、邮件数据以 ingest.attributes（版本化 opaque 归类轴）形式输出给平台、OS 侧只收引用不收全文、按可配置事件类型抽取（样例：周报/风险/计划变更）。"
 

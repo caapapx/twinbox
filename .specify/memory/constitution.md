@@ -37,7 +37,7 @@ Sync Impact Report
 
 - The MCP tool entry points (`twinbox_*` in `mcp-server.mjs`) keep stable names and a stable request/response envelope shape (`ok` / `data` / `error` / `recovery_tool`).
 - New capabilities are added as new tools or new fields inside `data`; existing fields are never removed or re-typed without a versioned deprecation path documented in the feature spec.
-- Current implemented surface is the nine tools: `twinbox_sync`, `twinbox_latest_mail`, `twinbox_todo`, `twinbox_weekly`, `twinbox_thread_inspect`, `twinbox_queue_action`, `twinbox_extract`, `twinbox_status`, `twinbox_setup`.
+- Current implemented surface is the twelve baseline tools plus additive multi-account tools: `twinbox_sync`, `twinbox_latest_mail`, `twinbox_todo`, `twinbox_weekly`, `twinbox_thread_inspect`, `twinbox_queue_action`, `twinbox_extract`, `twinbox_status`, `twinbox_setup`, `twinbox_onboard`, `twinbox_action_proposals`, `twinbox_action_review`, and additive `twinbox_accounts` / `twinbox_ingest` / `twinbox_events`. The historical nine-tool as-built note in `000` remains a dated snapshot, not current inventory.
 
 ### V. Credentials Never Leak
 

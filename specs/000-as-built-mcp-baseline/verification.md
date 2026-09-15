@@ -24,3 +24,10 @@
 - **Implemented**: single-mailbox read-only MCP/CLI + local queue + extract.
 - **Not implemented**: anything under `specs/001` beyond documentation; all `002` tasks unchecked.
 - **Do not claim**: org-tree weekly compliance, auto-forward, chat webhook confirmation, encrypted vault as current behavior.
+
+
+## Post-baseline additive tools (dated note, not provenance rewrite)
+
+As of 2026-09-15 the live `mcp-server.mjs` registers more than the original nine tools
+(onboard, action proposals/review, accounts, ingest, events). This baseline remains the
+SpecKit-insertion snapshot; current inventory is the MCP registry + constitution §IV.

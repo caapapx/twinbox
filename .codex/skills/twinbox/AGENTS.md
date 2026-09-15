@@ -1,9 +1,9 @@
 # AGENTS.md — twinbox MCP skill
 
 Twinbox is a thread-centric email copilot exposed through the local MCP stdio
-server. The `master` branch has nine MCP tools. Use those
-registered tools directly; do not use the obsolete CLI command families from
-older Twinbox versions.
+server. The `master` branch registers the baseline twinbox_* tools plus additive
+accounts/ingest/events tools. Use those registered tools directly; do not use
+the obsolete CLI command families from older Twinbox versions.
 
 ## Critical rule
 
@@ -22,8 +22,11 @@ claim that an action happened unless the tool returned a successful result.
 | Inspect/search thread | `twinbox_thread_inspect` | `query` is required |
 | Complete/dismiss/restore local queue item | `twinbox_queue_action` | `action`, `thread_key`, optional `reason` |
 | Historical/targeted extraction | `twinbox_extract` | Date, folder, keyword, profile, weekday, sender, and bucket filters |
-| Mailbox health | `twinbox_status` | No inputs |
+| Mailbox health | `twinbox_status` | Optional `account_id`; includes per-account freshness / recent runs |
 | Initial setup | `twinbox_setup` | No inputs |
+| List/add/remove accounts | `twinbox_accounts` | Credentials stay in vault; outputs only `password_set` |
+| Reference-only ingest | `twinbox_ingest` | Optional `account_id`, `since` cursor, `limit` |
+| Event records | `twinbox_events` | Optional `account_id`, `limit` |
 
 ## Operating rules
 
@@ -39,9 +42,10 @@ claim that an action happened unless the tool returned a successful result.
 - Default to read-only behavior. Queue actions modify only Twinbox's local
   queue visibility/state; they do not send, delete, archive, mark-read, or
   otherwise modify the real mailbox.
-- Do not invent tools for sending, drafting, scheduling, onboarding, daemon
-  control, or mailbox mutation; they are not exposed on `master`.
-- Never reveal IMAP/LLM credentials. Preserve masked setup/status output.
+- Do not invent tools for sending, drafting, scheduling, daemon control, or
+  mailbox mutation beyond the registered dry-run action review tools.
+- Never reveal IMAP/LLM credentials. Preserve masked setup/status output;
+  prefer `password_set` booleans.
 
 The MCP server entrypoint is the repository-root `mcp-server.mjs`; see
 `README.md` for stdio registration and environment variables.

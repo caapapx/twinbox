@@ -128,7 +128,8 @@
 
 - **已实现（as-built）**：[`specs/000-as-built-mcp-baseline`](specs/000-as-built-mcp-baseline/spec.md) 是插入 SpecKit 前的回填；其后合并进主干的工具以 MCP 入口为准（含 onboard / action 提案等，不必在本文件逐条同步）。
 - **活跃功能**：[`.specify/feature.json`](.specify/feature.json)。
-- **Planned 合同**：`specs/001`–`007` 等目录；未在代码落地前不要写成当前交付面。
+- **Planned 合同**：`specs/001`（部分落地）、`003`–`007`、`008`/`010`（触发后）、`009`（IDLE）；未在代码落地前不要写成当前交付面。
+- **企业路线已确认实施**：Phase 0 合同 + Phase 1 多账号只读 + 最小可观测性；Phase 2/6 触发后做；Phase 3+ 按路线顺序。
 - **决策**：[`docs/decisions/`](docs/decisions/README.md)。
 - [`twinbox-evolution-prompt.md`](twinbox-evolution-prompt.md) 只是历史输入。
 
@@ -138,6 +139,7 @@
 |------|------|
 | Skill 定义 | `SKILL.md` |
 | Python 核心 | `twinbox_core/` |
+| Vault / runs / ingest | `twinbox_core/vault.py` · `runs.py` · `adapter.py` |
 | CLI 入口 | `twinbox_core/cli.py` |
 | MCP 入口 | `mcp-server.mjs` |
 | 本地配置 | `~/.twinbox/twinbox.json` |
