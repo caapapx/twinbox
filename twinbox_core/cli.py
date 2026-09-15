@@ -274,6 +274,44 @@ def _staleness(generated_at: str, *, threshold_hours: int = STALE_HOURS_DEFAULT)
     return {"stale": age >= threshold_hours, "age_hours": round(age, 2), "threshold_hours": threshold_hours}
 
 
+_CARD_KEYS = (
+    "thread_key",
+    "latest_subject",
+    "last_activity_at",
+    "latest_message_ref",
+    "unread_count",
+    "new_message_count",
+    "message_count",
+    "queue_tags",
+    "why",
+    "score",
+    "projection",
+    "action_hint",
+    "waiting_on",
+    "recipient_role",
+)
+
+
+def _compact_thread(row: object) -> dict[str, Any] | None:
+    if not isinstance(row, dict):
+        return None
+    card = {key: row[key] for key in _CARD_KEYS if key in row and row[key] not in (None, "", [])}
+    return card or None
+
+
+def _compact_rows(rows: object, *, limit: int) -> list[dict[str, Any]]:
+    if not isinstance(rows, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        card = _compact_thread(row)
+        if card:
+            out.append(card)
+        if len(out) >= limit:
+            break
+    return out
+
+
 def cmd_latest_mail(unread_only: bool = False, account_id: str | None = None) -> dict[str, Any]:
     from .pulse import load_activity_pulse
     root = _account_root(account_id)
@@ -282,9 +320,11 @@ def cmd_latest_mail(unread_only: bool = False, account_id: str | None = None) ->
     except RuntimeError:
         return _recovery_hint("twinbox_sync", "Missing activity-pulse.json")
 
-    threads = pulse.get("thread_index", [])
+    threads = [t for t in pulse.get("thread_index", []) if isinstance(t, dict)]
     if unread_only:
-        threads = [t for t in threads if isinstance(t, dict) and t.get("unread_count", 0) > 0]
+        threads = [t for t in threads if t.get("unread_count", 0) > 0]
+    threads.sort(key=lambda t: str(t.get("last_activity_at") or ""), reverse=True)
+    cards = _compact_rows(threads, limit=5)
 
     return {
         "ok": True,
@@ -292,10 +332,8 @@ def cmd_latest_mail(unread_only: bool = False, account_id: str | None = None) ->
         "generated_at": pulse.get("generated_at", ""),
         "staleness": _staleness(str(pulse.get("generated_at", "") or "")),
         "summary": pulse.get("summary", {}),
-        "threads": threads[:30],
-        "recent_activity": pulse.get("recent_activity", []),
-        "needs_attention": pulse.get("needs_attention", []),
-        "projections": pulse.get("projections", {}),
+        "latest": cards[0] if cards else None,
+        "threads": cards,
     }
 
 
@@ -307,13 +345,18 @@ def cmd_todo(account_id: str | None = None) -> dict[str, Any]:
     except RuntimeError:
         return _recovery_hint("twinbox_sync", "Missing activity-pulse.json")
 
-    attention = pulse.get("needs_attention", [])
+    attention = _compact_rows(pulse.get("needs_attention", []), limit=20)
+    raw_proj = pulse.get("projections")
+    projections: dict[str, Any] = {}
+    if isinstance(raw_proj, dict):
+        for key, rows in raw_proj.items():
+            projections[key] = _compact_rows(rows, limit=8)
     return {
         "ok": True,
         "generated_at": pulse.get("generated_at", ""),
         "staleness": _staleness(str(pulse.get("generated_at", "") or "")),
         "needs_attention": attention,
-        "projections": pulse.get("projections", {}),
+        "projections": projections,
         "count": len(attention),
     }
 

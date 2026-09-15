@@ -86,6 +86,7 @@ description: "Task list for analysis correctness"
 **Goal**: stale ≠ missing；失败不装成功
 
 - [x] T016 [US4] CLI `latest-mail` / `todo` / `weekly` 输出 `staleness`（`twinbox_core/cli.py`）
+- [x] T016b [US4] `latest-mail` compact 卡片（`latest` + 最多 5 threads）；`todo` 去掉 fingerprint/query_terms
 - [x] T017 [US4] `mcp-server.mjs`：`latest_mail` / `todo` / `weekly` 在 pulse 缺失时自动 `sync --json`；仅 stale 时直接返回快照与 `staleness`，不阻塞 IMAP。
 - [x] T017a [US4] 2026-09-11：加入显式 `sync --job quick-refresh`（跳过 `run_analysis`，pulse 加 `analysis_generated_at` / `analysis_skipped`）；后续为消除 86s 读路径阻塞，stale 不再自动调用它，缺失仍完整同步。
 - [x] T018 [US4] 测试或脚本：generated_at 回拨后必须走同步路径

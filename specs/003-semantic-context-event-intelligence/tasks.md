@@ -29,7 +29,7 @@ description: "Task list for semantic context and event intelligence"
 - [x] T007 [US1] [US4] `twinbox_core/select.py`：结构信号 + attention_hints 相似度选 30–40 线程；无向量时回退 `002` 两阶段
 - [x] T008 [US1] `analyze.py` 消费 `choose_candidates()`，去掉盲切 `envelopes[:100]`
 - [x] T009 [US1] 事件记录：稳定 ID、类型、引用、抽取字段；平台向输出无正文（`twinbox_core/events.py` 或 analyze 旁路）
-- [x] T010 [P] [US1] [US4] `tests/test_select.py`：hints 命中线程进入候选；embedding 失败仍能选出最新结构候选
+- [x] T010 [P] [US1] [US4] `tests/test_select.py`：hints 命中线程进入候选；embedding 失败仍能选出最新结构候选；select 失败写入 `embeddings_degraded`；分析 prompt 含同一线程多封信封
 
 ## Phase 4: User Story 2 - 声明式规则 (P1)
 

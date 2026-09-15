@@ -59,7 +59,7 @@ LLM 标出的 urgent / pending / sla 必须全部投影到 pulse 的 `queue_tags
 
 ### User Story 4 - 过期快照可见且读取不阻塞 (Priority: P2)
 
-邮箱主人问「今天的邮件」。若本地 pulse 缺失，工具先完整同步再回答；若仅超过新鲜度阈值，工具做轻量刷新（抓取 + 重建 pulse，不重跑 LLM 分析）并标明分析生成时间；刷新失败则明确失败，不得把两天前的数据当成功结果。
+邮箱主人问「今天的邮件」。若本地 pulse 缺失，工具先完整同步再回答；若仅超过新鲜度阈值，工具直接返回现有快照并标 `staleness.stale=true`，不触发 IMAP、不跑 LLM。显式 `twinbox_sync --job quick-refresh` 才轻量刷新。不得把过期快照装成新鲜。
 
 **Why this priority**: 「auto-sync if missing」不等于「过期也当新鲜」；过期快照必须显式标出，但读路径不能为每次询问阻塞等待 IMAP。
 
@@ -67,9 +67,10 @@ LLM 标出的 urgent / pending / sla 必须全部投影到 pulse 的 `queue_tags
 
 **Acceptance Scenarios**:
 
-1. **Given** pulse 存在但超过阈值（默认 4 小时），**When** 调用 `twinbox_latest_mail`，**Then** 先轻量刷新（不调 LLM），输出 `generated_at` 更新、`analysis_generated_at` 指向上次分析、并带刷新说明；缺失 pulse 才完整同步。
+1. **Given** pulse 存在但超过阈值（默认 4 小时），**When** 调用 `twinbox_latest_mail`，**Then** 返回成功且 `staleness.stale=true`，不触发 IMAP；缺失 pulse 才完整同步。
 2. **Given** pulse 过期，**When** 调用 latest_mail，**Then** 返回成功且 `staleness.stale=true`；同步只由 cron 或显式 `twinbox_sync` 发起。
 3. **Given** 新鲜 pulse，**When** 调用 latest_mail / todo / weekly，**Then** `staleness.stale` 为 false。
+4. **Given** 一份含多线程的 pulse，**When** 调用 `latest_mail`，**Then** 含 `latest` 与最多 5 条 compact `threads`，不含 `needs_attention` / `recent_activity` / `projections` / `query_terms`。
 
 ---
 
@@ -124,14 +125,14 @@ LLM 标出的 urgent / pending / sla 必须全部投影到 pulse 的 `queue_tags
 - **FR-003**: Analysis prompt MUST group envelopes by thread, mark the latest message, and size body previews on decoded text (latest message preview longer than siblings).
 - **FR-004**: Pending / waiting_on_me MUST be decided from the latest message in the thread; approval-style replies MUST clear waiting_on_me.
 - **FR-005**: Queue tags from analysis artifacts MUST join pulse threads via one shared thread-key normalizer; misses MUST be visible in diagnostics and status.
-- **FR-006**: `latest_mail` / `todo` / `weekly` MUST expose `staleness`; when the pulse is missing they MUST run a full sync; when merely stale they MUST return the existing snapshot without IMAP refresh. Explicit `twinbox_sync --job quick-refresh` may fetch + rebuild pulse without LLM analysis and exposes `analysis_generated_at`.
+- **FR-006**: `latest_mail` / `todo` / `weekly` MUST expose `staleness`; when the pulse is missing they MUST run a full sync; when merely stale they MUST return the existing snapshot without IMAP refresh. Explicit `twinbox_sync --job quick-refresh` may fetch + rebuild pulse without LLM analysis and exposes `analysis_generated_at`. `latest_mail` MUST return a compact card: `latest` plus at most 5 `threads` rows (no `fingerprint` / `query_terms` / `needs_attention` / `recent_activity` / `projections`). `todo` MUST return compact `needs_attention` rows without `fingerprint` / `query_terms`.
 - **FR-007**: Sync MUST report analysis failure as degraded (not silent full success) and expose fetch/analysis/pulse consistency timestamps.
 - **FR-008**: Extract MUST return decoded `body_text` (bounded) plus attachment metadata, and accept optional local-hour filters.
 - **FR-009**: Body sample keys MUST be folder-qualified. Sampling MUST two-stage: rank candidate threads (default 45) then fetch bodies for top candidates (default 24); ranking MUST NOT hard-code org-specific keywords (those live in a Semantic Pack, see `003`).
 - **FR-010**: Pulse scoring MUST age stale sla_risk items and boost explicit action verbs from a tracked config file.
 - **FR-011**: Thread inspect MUST include latest decoded body or an explicit unavailable flag.
 - **FR-012**: Status MUST expose pipeline stage timestamps and missed scheduled runs (executor lives in `007`; this feature exposes the fields).
-- **FR-013**: Existing MCP tool names and existing JSON field names MUST remain; new fields are additive only.
+- **FR-013**: Existing MCP tool names MUST remain. `latest_mail` / `todo` MAY drop bulky duplicate pulse lists in favor of the compact card in FR-006; other tools keep additive field names.
 - **FR-014**: Real mailbox MUST remain read-only.
 - **FR-015**: Envelope FETCH MUST include `TO`, `CC`, `LIST-ID`, `IN-REPLY-TO`, `REFERENCES` in the same IMAP round-trip as existing headers. Each envelope MUST carry `recipient_role` (`direct` / `cc_only` / `group_only` / `indirect` / `unknown`); thread aggregation follows archive `context_builder` semantics (any `to` → `direct`).
 - **FR-016**: A replay eval script MUST record baseline vs post-fix metrics without mutating the real mailbox.

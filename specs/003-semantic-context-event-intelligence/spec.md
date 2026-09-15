@@ -52,7 +52,7 @@
 
 ### User Story 4 - 入库检索主干 (Priority: P1)
 
-fetch 后对新邮件做自托管 embedding。分析用结构信号 + pack `attention_hints` 相似度选 30–40 线程。`thread_inspect` 可走同一语义索引。embedding 失败则回退 `002` 结构采样。
+fetch 后对新邮件做自托管 embedding。分析用结构信号 + pack `attention_hints` 相似度选 30–40 线程，prompt 保留这些线程的全部信封。`thread_inspect` 可走同一语义索引。embedding 或选择失败则回退 `002` 结构采样并标记 `embeddings_degraded`，不得静默丢弃候选。
 
 **Why this priority**: 加长预览后必须先选线程，否则 LLM 仍盲猜。
 
@@ -63,6 +63,7 @@ fetch 后对新邮件做自托管 embedding。分析用结构信号 + pack `atte
 1. **Given** 新邮件已解码，**When** ingest embed，**Then** sidecar 写入向量且不含平台 ingest 字段。
 2. **Given** pack `attention_hints` 与某线程相似，**When** 选候选，**Then** 该线程进入 30–40 集合。
 3. **Given** embedding 端点不可用，**When** 分析，**Then** 回退结构采样并标记 `embeddings_degraded`。
+4. **Given** 候选线程含多封信封，**When** 构建分析 prompt，**Then** 该 `thread_key` 下全部消息均在，而不仅是最新一封。
 
 ---
 
@@ -84,7 +85,7 @@ fetch 后对新邮件做自托管 embedding。分析用结构信号 + pack `atte
 - **FR-005**: Pack validation MUST reject non-declarative executable content.
 - **FR-006**: New tools or additive `data` fields MUST preserve MCP envelope shape (`ok`/`data`/`error`/`recovery_tool`).
 - **FR-007**: After fetch, each new message MUST be embedded (subject + bounded decoded body) against a self-hosted endpoint only ([ADR-003](../../docs/decisions/ADR-003-retrieval-spine-and-external-services.md)); vectors persist under the state root, never in platform ingest.
-- **FR-008**: Analysis candidate selection MUST combine structural signals with pack `attention_hints` similarity (default 30–40 threads). Embedding failure MUST degrade to `002` structural sampling and set `embeddings_degraded`.
+- **FR-008**: Analysis candidate selection MUST combine structural signals with pack `attention_hints` similarity (default 30–40 threads). The analysis prompt MUST include every envelope in those threads, not only the latest message per thread. Embedding or selection failure MUST degrade to `002` structural sampling, set `embeddings_degraded`, and MUST NOT silently discard the candidate set.
 - **FR-009**: Semantic routing conditions MUST use three-band cosine (high hit / low miss / middle → one LLM call). Thresholds live in the pack.
 - **FR-010**: `thread_inspect` / `search_threads` MUST offer a semantic path over the same index. Rerank is reserved (phase 2).
 - **FR-011**: A material importer MAY ingest spreadsheets/docs into pack fragments via optional extras (`openpyxl` / `python-docx`); core MUST run without those packages.

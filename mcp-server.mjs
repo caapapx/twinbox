@@ -153,7 +153,7 @@ const TOOLS = [
     name: "twinbox_latest_mail",
     description:
       "Use this ONE tool for requests such as 最新一封邮件, 看下最新邮件, or 有无新邮件. " +
-      "It refreshes safely itself: missing data gets a full sync; merely stale data gets a quick refresh without LLM re-analysis. " +
+      "Missing pulse triggers a full sync; a merely stale pulse is returned as-is with staleness.stale=true (no IMAP, no LLM). " +
       "Do NOT call twinbox_sync, twinbox_extract, or twinbox_thread_inspect before or after it unless the user explicitly requests re-analysis, a named thread, history, or full body. " +
       "Return only the newest thread's sender, subject, time, and a brief summary.",
     inputSchema: {

@@ -148,6 +148,39 @@ def _load_human_context(state_root: Path) -> dict[str, Any] | None:
         return None
 
 
+def _envelopes_for_threads(
+    context: dict[str, Any],
+    candidates: list[dict[str, Any]],
+    skip_ids: set[tuple[str, str]],
+) -> dict[str, Any]:
+    """Keep every envelope whose thread is in `candidates`, not just the latest."""
+    from .pulse import normalize_thread_key
+
+    picked = {
+        normalize_thread_key(env.get("subject"))
+        for env in candidates
+        if isinstance(env, dict)
+    }
+    original = [env for env in context.get("envelopes", []) if isinstance(env, dict)]
+    out = dict(context)
+    out["envelopes"] = [
+        env
+        for env in original
+        if normalize_thread_key(env.get("subject")) in picked
+        and (
+            str(env.get("folder", "INBOX") or "INBOX"),
+            str(env.get("id", "") or ""),
+        ) not in skip_ids
+    ]
+    return out
+
+
+def _merge_stats(context: dict[str, Any], extra: dict[str, Any]) -> None:
+    context.setdefault("stats", {})
+    if isinstance(context["stats"], dict):
+        context["stats"].update(extra)
+
+
 def run_analysis(state_root: Path) -> dict[str, Any]:
     """Run single-pass LLM analysis on the fetched mail context."""
     context_path = state_root / "runtime" / "context" / "phase1-context.json"
@@ -163,27 +196,31 @@ def run_analysis(state_root: Path) -> dict[str, Any]:
         return {"ok": False, "error": "Empty mail context. Run sync first."}
 
     human_context = _load_human_context(state_root)
+    select_diag: dict[str, Any] = {"embeddings_degraded": False}
     try:
         from .select import choose_candidates
         from .rules import skip_llm_envelopes
         from .pack import load_active_pack
-        from .events import extract_events
         pack = load_active_pack(state_root)
         candidates, select_diag = choose_candidates(context, state_root)
         skipped = skip_llm_envelopes(pack, context.get("envelopes", []))
-        skip_ids = {(str(e.get("folder")), str(e.get("id"))) for e in skipped}
+        skip_ids = {
+            (str(env.get("folder", "INBOX") or "INBOX"), str(env.get("id", "") or ""))
+            for env in skipped
+        }
         if candidates:
-            context = dict(context)
-            context["envelopes"] = [
-                e for e in candidates
-                if (str(e.get("folder")), str(e.get("id"))) not in skip_ids
-            ]
+            context = _envelopes_for_threads(context, candidates, skip_ids)
+    except Exception as exc:
+        select_diag = {
+            "embeddings_degraded": True,
+            "select_error": type(exc).__name__,
+        }
+    _merge_stats(context, select_diag)
+    try:
+        from .events import extract_events
         extract_events(context, state_root)
-        context.setdefault("stats", {})
-        if isinstance(context["stats"], dict):
-            context["stats"].update(select_diag)
-    except Exception:
-        pass
+    except Exception as exc:
+        _merge_stats(context, {"events_error": type(exc).__name__})
     prompt = _build_prompt(context, human_context)
 
     raw = ""
