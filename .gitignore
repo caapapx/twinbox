@@ -107,3 +107,11 @@ dist/
 
 # Host-specific OpenClaw JSON fragment (copy from openclaw.fragment.example.json)
 integrations/openclaw/openclaw.fragment.json
+
+# Local indexes, eval prompts, and internal ops hops — never publish
+.zvec-grep/
+**/.zvec-grep/
+/prompts.md
+.agents/skills/*-ops
+.cursor/skills/*-ops
+.codex/skills/*-ops

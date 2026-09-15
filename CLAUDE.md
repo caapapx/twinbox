@@ -2,13 +2,13 @@
 
 > 本文件是进入仓库后的**决策与工作流入口**，不是完整设计或运行手册。实施前先判定变更类型；细节回到其权威来源。
 >
-> **入口约定**：根目录 [AGENTS.md](AGENTS.md) 只作指针。产品 MCP 用法在仓内 `twinbox` skill；热更/主机在 `twinbox-release-remote`。不要另建 `AGENT.md`，不要在 `.claude` / `.agents` / `.cursor` 堆 skill 正文副本。
+> **入口约定**：根目录 [AGENTS.md](AGENTS.md) 只作指针。产品 MCP 用法在仓内 `twinbox` skill。不要另建 `AGENT.md`，不要在 `.claude` / `.agents` / `.cursor` 堆 skill 正文副本。
 
 ## 权威与证据顺序
 
 **冲突才比权重**（两处写反时用来裁决，不是检索顺序）：
 
-1. **代码、测试、运行事实**：当前行为、可复现验证与local/site 状态。易变数值（采样条数、截断长度、TTL）以代码与当前 feature plan 为准，不在本文件硬编码。
+1. **代码、测试、运行事实**：当前行为、可复现验证与部署运行态。易变数值（采样条数、截断长度、TTL）以代码与当前 feature plan 为准，不在本文件硬编码。
 2. [**constitution**](.specify/memory/constitution.md)：邮箱变更边界、全文边界、工具契约与凭据不变量。
 3. **SpecKit feature contract**：当前功能目录中的 `spec.md`、`plan.md`、`tasks.md`，定义已批准功能的范围与验收。
 4. [**ADR**](docs/decisions/README.md)：长期取舍；修宪须引用。
@@ -25,8 +25,8 @@
 | --- | --- | --- |
 | 范围 / 验收 / 做到哪了 | SpecKit `spec` / `plan` / `tasks`；活跃目录 [`.specify/feature.json`](.specify/feature.json) | 通读实现或扫全仓 |
 | 接口现在什么样 / bug 在哪 | 代码、测试、当时那条 CLI / MCP 运行态 | 用本文件「交付面」表或历史 prompt 猜 |
-| 热更 / 哪台机器 / 哪个口 | skill `twinbox-release-remote` | 把主机表抄进本文件 |
-| WeKnora HTTP | skill `weknora-ops`（凭据 gitignore） | 用记忆里的 URL 另起平行栈 |
+| 热更 / 哪台机器 / 哪个口 | 仓外 release skill | 把主机表抄进本文件 |
+| 检索 HTTP 对接 | 现场配置与 overlays（凭据 gitignore） | 用记忆里的 URL 另起平行栈 |
 | 当时为什么选 A 不选 B | ADR / constitution | 当场重推一遍 |
 | 代码在哪 / 怎么串起来 | 下一节「代码搜索」 | 通读全仓；同概念双轨对扫 |
 
@@ -51,12 +51,12 @@
 | --- | --- | --- |
 | 仓库怎么协作、选哪扇门 | 本文件 | skill 全文、主机/端口表 |
 | 功能范围、验收、任务状态 | `specs/<id>/` | 本文件堆需求；历史 `twinbox-evolution-prompt.md` |
-| 发版、热更、site hosts、停启 | `twinbox-release-remote` | 本文件复述 SOP |
-| WeKnora HTTP 对接 | `weknora-ops` | Twinbox 核心 recipes；把邮件规则写进 WeKnora skill 正文 |
+| 发版、热更、停启 | 现场 release skill（仓外） | 本文件复述 SOP |
+| 检索 HTTP 对接 | 仓外 ops skill | Twinbox 核心 recipes；不要把邮件规则写进检索 skill 正文 |
 | 产品 MCP 用法 | 仓内 `twinbox` skill | 发明未注册工具 |
-| 真凭据 | `~/.twinbox/`、skill `scripts/.credentials`（gitignore） | git、日志、本文件 |
+| 真凭据 | `~/.twinbox/`（gitignore） | git、日志、本文件 |
 
-项目 skill 正文只在 `~/fun/skill-manager/private/`；本仓 hop 目录只软链。本机 `*-release-remote`；`*-local` 只留现场，勿拷到 Mac。
+项目 skill 正文不进本仓；hop 目录只软链。现场专属 skill 不要拷进公开树。
 
 ## 不可绕过的护栏
 
@@ -68,10 +68,10 @@
 
 | ID | 误判 | 先拆 |
 | --- | --- | --- |
-| T01 | 源码已合 / pytest 绿 = the site is that version | 点名 commit、是否跑过 `twinbox-release-remote`、现场 probe |
+| T01 | 源码已合 / pytest 绿 = 部署主机已是该版本 | 点名 commit、是否跑过现场热更、运行态 probe |
 | T02 | SpecKit / ADR / 本文件交付表写了 = 已在跑 | 看代码与运行态；计划不是证据 |
-| T03 | 本机 MCP 工具可用 = the host agent 同一套 | 注册表 vs 现场 bind 目录 |
-| T04 | WeKnora / embedding 失败 = pulse 整条挂 | 检索降级不得挡 `run_analysis`；IMAP 权威仍在 |
+| T03 | 本机 MCP 工具可用 = 宿主 Agent 同一套 | 注册表 vs 现场 bind 目录 |
+| T04 | 检索 / embedding 失败 = pulse 整条挂 | 检索降级不得挡 `run_analysis`；IMAP 权威仍在 |
 | T05 | 记忆里的 URL/端口 = 当前栈 | 读 env / `.credentials` / `twinbox.json`，不要平行发明 |
 
 ## 主干
@@ -92,21 +92,21 @@
 | MCP 工具层 | constitution IV | `mcp-server.mjs` | `tests/mcp-smoke.mjs` |
 | 抽取 / 小时过滤 | constitution II、IV | `twinbox_core/extract.py`、`cli.py` | `tests/test_extract.py` |
 | SpecKit · 薄契约（`temporary` / 局部 `feature`，一次 PR 收口） | 本文件分类器 + `specs/<id>/` | `spec.md` + `tasks.md`（`plan.md` 可省） | 实现对齐 `tasks.md`；不跑 clarify / analyze 仪式 |
-| SpecKit · 完整档（持久能力 / 跨模块 / 含 `decision`） | 分类器 + constitution + `specs/<id>/` | `specify →（歧义则 clarify）→ plan → tasks`；checklist 按风险；spec 不写技术栈，进 plan | 过 `analyze` 才实现；`converge` 后才标 `implemented`；对话改范围先回写 spec / tasks（工作区 `../CLAUDE.md` §6.6、M06/M07） |
-| 热更到 the host agent | skill `twinbox-release-remote` | 只同步源码，不改凭据 | `./scripts/hot-reload-site.sh`；`probe-site.sh` |
-| WeKnora 探活 / 灌库 / 检索 | skill `weknora-ops`；Twinbox 约束 `overlays/twinbox.md` | 现场 KB 与映射表（产品代码走独立 SpecKit） | `wk.sh probe`；禁止把全文当 file 上传 |
+| SpecKit · 完整档（持久能力 / 跨模块 / 含 `decision`） | 分类器 + constitution + `specs/<id>/` | `specify →（歧义则 clarify）→ plan → tasks`；checklist 按风险；spec 不写技术栈，进 plan | 过 `analyze` 才实现；`converge` 后才标 `implemented`；对话改范围先回写 spec / tasks |
+| 热更到宿主 Agent | 仓外 release skill | 只同步源码，不改凭据 | 现场 probe；pytest 全绿 ≠ 运行态已更新 |
+| 检索探活 / 灌库 | 仓外 ops skill；Twinbox 约束 overlays | 现场 KB 与映射表（产品代码走独立 SpecKit） | 禁止把全文当 file 上传 |
 | 配置 | constitution V | 追踪默认值在 `config/`；真凭据只在 `~/.twinbox/` | `twinbox_status` 输出须脱敏 |
 
-调试：修改 `twinbox_core` 后直接跑 CLI，无需重启 daemon。pytest 全绿 ≠ site runtime已更新。
+调试：修改 `twinbox_core` 后直接跑 CLI，无需重启 daemon。pytest 全绿 ≠ 宿主运行态已更新。
 
 ## 代码搜索（zg 与 claude-context 双轨）
 
-两条轨职责不同，**不要合并成一条默认路径**。权威以活进程 / HTTP 探活为准（当前 the embedding endpoint 是 `Qwen3-Embedding-4B` / **2560** 维；旧 8B/4096 已下线）。换维须清库重嵌。Cursor 启动器：`~/.cursor/claude-context-mcp.sh`（勿用 `npx -y @latest`）。
+两条轨职责不同，**不要合并成一条默认路径**。权威以活进程 / HTTP 探活为准。embedding 模型与维数以当前部署配置为准，换维须清库重嵌。Cursor 启动器若用本地脚本，勿用 `npx -y @latest`。
 
 | 轨 | 工具 | embedding | 何时用 |
 | --- | --- | --- | --- |
-| 快轨 | **zg**（zvec-grep） | 本地 `potion-code-16m-v2`（256 维） | 日常语义、离线、<0.3s |
-| 重轨 | MCP `claude-context` → `search_code` | OpenAI 兼容 → the embedding endpoint | 难语义、跨文件 |
+| 快轨 | **zg**（zvec-grep） | 本地代码 embedding | 日常语义、离线、<0.3s |
+| 重轨 | MCP `claude-context` → `search_code` | 自托管 OpenAI 兼容 embedding | 难语义、跨文件 |
 
 | 场景 | 工具与操作 |
 | --- | --- |
@@ -115,12 +115,7 @@
 | 集群语义发现 | `search_code`（仅当该绝对 path 已索引） |
 | 重轨不可用 | **明示降级**到 zg / Grep；禁止假装还能向量搜 |
 
-| 宿主 | 核心 path | 测试/契约 path |
-| --- | --- | --- |
-| Mac | `/path/to/twinbox/twinbox_core` | `/path/to/twinbox/tests` |
-| 239 | `<site-install>` | `<site-install>` |
-
-禁止工作区根、空 path、`archive/openclaw-monolith`、未跟踪残留、`~/.twinbox/` 当第三种代码根。核心与测试 **各搜一次**。禁止同概念同轮 Grep + `search_code` / `zg` 对扫。两轮仍找不到则停并问。`query` 用自然语言；以 `Read` 源码为准绳。不要把 CodeGraph 当前置。邮件正文、凭据、pulse JSON 不当索引语料。**勿**把 zg 默认改成远程 Embedding（会拖垮快轨并抢 GPU）。
+核心与测试 **各搜一次**。禁止工作区根、空 path、`archive/openclaw-monolith`、未跟踪残留、`~/.twinbox/` 当第三种代码根。禁止同概念同轮 Grep + `search_code` / `zg` 对扫。两轮仍找不到则停并问。`query` 用自然语言；以 `Read` 源码为准绳。邮件正文、凭据、pulse JSON 不当索引语料。**勿**把 zg 默认改成远程 Embedding（会拖垮快轨）。
 
 ## 当前交付面 vs Planned
 

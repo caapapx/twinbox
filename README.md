@@ -8,7 +8,7 @@
 
 ```bash
 # 1. Clone
-git clone https://github.com/user/twinbox ~/.openclaw/skills/twinbox
+git clone https://github.com/caapapx/twinbox ~/.openclaw/skills/twinbox
 cd ~/.openclaw/skills/twinbox
 
 # 2. Install
@@ -114,7 +114,7 @@ python3 -m twinbox_core.cli extract --since 2025-01-01 --folder INBOX --folder S
 
 Presets: `[config/extract-profiles.yaml](config/extract-profiles.yaml)`
 
-### Local scheduler (site crontab)
+### Local scheduler (host crontab)
 
 Do not start an in-process daemon. Drive due jobs from cron:
 
@@ -129,7 +129,7 @@ See `config/schedules.yaml` and `specs/007-local-scheduler/`.
 
 - Python >= 3.11
 - PyYAML
-- Node.js (MCP / host agent host)
+- Node.js (MCP host)
 - Optional extras: openpyxl, python-docx (material import only)
 
 
@@ -137,7 +137,7 @@ See `config/schedules.yaml` and `specs/007-local-scheduler/`.
 ## TODO
 
 - [ ] Claw Hub manifest for one-click deploy
-- [ ] site crontab 连续 3 天观察 `stale=0`（见 `007` T010；条目已挂）
+- [ ] crontab 连续 3 天观察 `stale=0`（见 `007` T010）
 - [ ] Embedding rerank phase 2 / zvec storage upgrade
 - [ ] `004` 周报运营
 
@@ -145,4 +145,4 @@ See `config/schedules.yaml` and `specs/007-local-scheduler/`.
 
 ## License
 
-MIT
+Apache-2.0

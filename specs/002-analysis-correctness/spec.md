@@ -32,7 +32,7 @@
 
 **Why this priority**: 错误的 waiting_on 会让 agent 催办已结束的事、漏掉真动作。
 
-**Independent Test**: 回放复制的本地状态（不写真实邮箱）：辽宁白名单最新邮件为「同意」时不得出现在 pending；验收登记「请登记处理」必须进入 pending 或 daily_urgent。
+**Independent Test**: 回放复制的本地状态（不写真实邮箱）：已同意的白名单/审批线程不得出现在 pending；验收登记「请登记处理」必须进入 pending 或 daily_urgent。
 
 **Acceptance Scenarios**:
 
@@ -150,7 +150,7 @@ LLM 标出的 urgent / pending / sla 必须全部投影到 pulse 的 `queue_tags
 ### Measurable Outcomes
 
 - **SC-001**: 对构造的 GB2312 multipart 夹具，解码结果人工可读且 grep 不到 MIME `Content-Type` 残留。
-- **SC-002**: 回放 2026-09-03 事故状态：辽宁白名单不在 pending；验收登记进入 pending 或 daily_urgent。
+- **SC-002**: 回放事故状态：已同意的审批线程不在 pending；验收登记进入 pending 或 daily_urgent。
 - **SC-003**: 同一回放中分析产出的 pending 条目 100% join 到 pulse，或进入 resolved；`queue_join_misses` 为空。
 - **SC-004**: pulse 回拨 2 天后调用 latest_mail 在不触发 IMAP 的情况下返回 `ok=true` 与 `staleness.stale=true`；pulse 缺失时仍自动同步或明确失败。
 - **SC-005**: 每个 P0/P1 需求至少 1 个不连真实 IMAP/LLM 的回归测试；`tests/mcp-smoke.mjs` 通过。

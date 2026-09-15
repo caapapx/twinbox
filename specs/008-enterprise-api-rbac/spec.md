@@ -16,7 +16,7 @@ Optional FastAPI control plane wrapping the **same** Python functions used by CL
 
 ## Non-Goals (until trigger)
 
-- Do not ship FastAPI/uvicorn in the default Mac/Linux MCP path.
+- Do not ship FastAPI/uvicorn in the default local MCP path.
 - Do not duplicate `cmd_sync` / pulse logic in an API layer.
 - Do not allow gateway-style “any mailboxId” scanning across tenants.
 

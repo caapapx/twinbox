@@ -6,7 +6,7 @@
 
 **Status**: Draft / Planned（依赖 [ADR-002](../../docs/decisions/ADR-002-read-only-to-policy-governed-execution.md)、[ADR-003](../../docs/decisions/ADR-003-retrieval-spine-and-external-services.md) 与 constitution I 1.2.0）
 
-**This increment (v0.3 dry-run)**: 提案引擎 + 审计 jsonl + 确认卡片 payload。**无 SMTP、无写邮箱**。FR-007 保持只读默认。通道由 agent-os 8090 承担。完整自动执行仍是后续增量。
+**This increment (v0.3 dry-run)**: 提案引擎 + 审计 jsonl + 确认卡片 payload。**无 SMTP、无写邮箱**。FR-007 保持只读默认。通道由宿主 webhook 承担。完整自动执行仍是后续增量。
 
 **Next increment (Draft / HITL confirmation token — Planned, Phase 4)**: Reuse existing proposal JSON; issue short-lived confirmation tokens (ctk-style); stop the agent turn after presenting the token; payload hash change invalidates the token; state machine `draft → awaiting_confirmation → confirmed/rejected/expired → executing → …`. Confirmed without policy still MUST NOT SMTP. Implementation tasks live in tasks.md Phase 6+.
 

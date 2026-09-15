@@ -18,7 +18,7 @@
 
 **Testing**: pytest + 构造邮件 + mock HTTP embedding/LLM；禁止真实 IMAP。
 
-**Target Platform**: macOS / Linux 本机 MCP；site hot-reload验证。
+**Target Platform**: macOS / Linux 本机 MCP；部署主机热更验证。
 
 **Project Type**: library + MCP tool server
 
@@ -64,6 +64,6 @@ Pack schema = archive `routing_rules.py` 超集：`entities` / `relations` / `cl
 
 ## Phase 1: Design
 
-`analyze.py` 改为消费 `select.choose_candidates()` 结果，不再盲切 `envelopes[:100]`。`search_threads` 增加语义路径（同一 sidecar）。Rerank 未配 `rerank.api_url` 时 identity；现网可选 251 `:8081`（默认不接）。
+`analyze.py` 改为消费 `select.choose_candidates()` 结果，不再盲切 `envelopes[:100]`。`search_threads` 增加语义路径（同一 sidecar）。Rerank 未配 `rerank.api_url` 时 identity（默认不接）。
 
 校验拒绝：`script` / `python` / `exec` / `!include` 可执行键、内嵌代码块。

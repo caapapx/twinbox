@@ -18,7 +18,7 @@
   },
   "embeddings": {
     "api_url": "http://127.0.0.1:8080/v1/embeddings",
-    "model": "Qwen3-Embedding-8B",
+    "model": "YOUR_EMBEDDING_MODEL",
     "timeout": 60
   }
 }

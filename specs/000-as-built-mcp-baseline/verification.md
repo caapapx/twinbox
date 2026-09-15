@@ -23,7 +23,7 @@
 
 - **Implemented**: single-mailbox read-only MCP/CLI + local queue + extract.
 - **Not implemented**: anything under `specs/001` beyond documentation; all `002` tasks unchecked.
-- **Do not claim**: org-tree weekly compliance, auto-forward, chat webhook confirmation, encrypted vault as current behavior.
+- **Do not claim**: org-tree weekly compliance, auto-forward, chat-webhook confirmation, encrypted vault as current behavior.
 
 
 ## Post-baseline additive tools (dated note, not provenance rewrite)

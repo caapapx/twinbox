@@ -9,7 +9,7 @@ description: "Task list for local scheduler"
 ## Phase 1: Setup
 
 - [x] T001 重写 `config/schedules.yaml`：job 指向 `python3 -m twinbox_core.cli`；删除 `twinbox-orchestrate`
-- [x] T002 Sprint 0 探查后回填 `plan.md`「site access」
+- [x] T002 Sprint 0 探查后回填 `plan.md`「部署接入」（现场路径不进仓）
 
 ## Phase 2: User Story 1 - run-due (P1)
 
@@ -28,7 +28,7 @@ description: "Task list for local scheduler"
 
 ## Phase 5: Polish
 
-- [x] T010 site crontab 已挂 12:00 / 02:00（2026-09-08）；连续 3 天观察 `stale=0` 仍为人工验收
+- [x] T010 宿主 crontab 示例 12:00 / 02:00；连续 3 天观察 `stale=0` 仍为人工验收
 
 ## Dependencies
 

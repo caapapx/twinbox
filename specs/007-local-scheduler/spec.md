@@ -39,7 +39,7 @@
 
 ### User Story 3 - 替换死调度名 (Priority: P2)
 
-`config/schedules.yaml` 不再引用 `twinbox-orchestrate`。文档写明 site crontab 示例（12:00 / 02:00）。
+`config/schedules.yaml` 不再引用 `twinbox-orchestrate`。文档写明宿主 crontab 示例（12:00 / 02:00）。
 
 **Independent Test**: grep 追踪配置无 `twinbox-orchestrate`。
 
@@ -57,7 +57,7 @@
 - **FR-002**: System MUST persist last successful run per job without writing the mailbox.
 - **FR-003**: `twinbox_status` MUST expose `pipeline` and `missed_runs`.
 - **FR-004**: Tracked schedule config MUST call the current CLI, not `twinbox-orchestrate`.
-- **FR-005**: Cron is external (site crontab). Twinbox MUST NOT start an in-process timer or Unix-socket daemon.
+- **FR-005**: Cron is external (host crontab). Twinbox MUST NOT start an in-process timer or Unix-socket daemon.
 - **FR-006**: Existing MCP tool names remain; schedule may be CLI-only or additive status fields.
 
 ### Key Entities
@@ -74,10 +74,10 @@
 
 ## Assumptions
 
-- on site Twinbox checkout 路径在 Sprint 0 探查后写入本目录 plan。
+- 部署主机上 Twinbox checkout 路径写在现场配置，不进本目录 plan。
 - 不实现 OpenClaw deploy/bridge。
 
 ## Out of Scope
 
-- systemd 用户单元（site has no systemd 用户会话假设）。
+- systemd 用户单元（默认不假设用户会话）。
 - 邮件写回与 SMTP。

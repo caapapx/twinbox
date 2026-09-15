@@ -6,7 +6,7 @@
 
 ## Summary
 
-**本增量 dry-run**：策略声明在 pack；提案引擎（源自 archive ActionCard）；审计 `runtime/audit/actions.jsonl`；确认卡片 payload 按 agent-os 卡片回调形状输出。Twinbox 不接飞书 SDK、不接 SMTP、不写真实邮箱。FR-007 只读默认保持。完整自动执行是后续增量。
+**本增量 dry-run**：策略声明在 pack；提案引擎（源自 archive ActionCard）；审计 `runtime/audit/actions.jsonl`；确认卡片 payload 按宿主 webhook 回调形状输出。Twinbox 不接飞书 SDK、不接 SMTP、不写真实邮箱。FR-007 只读默认保持。完整自动执行是后续增量。
 
 ## Technical Context
 
@@ -18,7 +18,7 @@
 
 **Testing**: pytest；策略外 0 提案；幂等键重放不写第二行成功副作用（dry-run 下「副作用」= 提案记录）
 
-**Target Platform**: 本机 MCP；卡片由 agent-os 8090 投递（本增量只产 payload）
+**Target Platform**: 本机 MCP；卡片由宿主 webhook 投递（本增量只产 payload）
 
 **Project Type**: library + MCP tool server
 
@@ -33,7 +33,7 @@
 - **I**: 本增量无邮箱副作用；提案/审计/本地 review 是 local-only。✅
 - **II**: 卡片 payload 用引用 + 有界摘要，无全文。✅
 - **IV**: 新工具 additive；九工具保留。✅
-- **ADR-002 / ADR-003**: 策略未命中不执行；通道委托 agent-os。✅
+- **ADR-002 / ADR-003**: 策略未命中不执行；通道委托宿主 webhook。✅
 
 ## Project Structure
 

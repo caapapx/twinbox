@@ -44,7 +44,7 @@
 - Agent OS ingest envelope / `twinbox_ingest`
 - 结构化事件工具 / `twinbox_events`
 - 组织树、邮箱组、roster
-- chat webhook / 外部确认通道
+- 外部确认通道（chat webhook）
 - SMTP 或邮箱转发/发送
 - `specs/002-analysis-correctness` 中的 MIME 解码、staleness、queue_join_misses 等（合同 Draft，任务未勾选）
 

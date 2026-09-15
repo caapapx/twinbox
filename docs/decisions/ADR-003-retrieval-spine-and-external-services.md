@@ -23,9 +23,9 @@ fetch 后对每封**新**邮件（主题 + 解码正文前 N 字）做一次 emb
 
 embedding / LLM **只允许自托管端点**：
 
-- LLM：直连 vLLM OpenAI-compatible `:8000/v1`（251，`qwen3.8-27b`）。不引入网关、不自写 fallback 链。不占用 `:8000` 给 embedding。
-- Embedding（现网 2026-09-08）：self-hosted vLLM the embedding HTTP endpoint，模型 `Qwen3-Embedding-8B`，维度 **4096**，`CUDA_VISIBLE_DEVICES=N`。脚本 `<site-install>`。未做 systemd，主机重启会掉。
-- 不再把 local Ollama 当默认；该机仍可作备选，但检索主干以 the embedding endpoint 为准。
+- LLM：直连自托管 OpenAI-compatible `/v1`。不引入网关、不自写 fallback 链。不要把 embedding 和 chat 绑在同一占用紧张的端口上。
+- Embedding：自托管 OpenAI-compatible `/v1/embeddings`。模型名与维度写在 `~/.twinbox/`，不进 git。换维须清库重嵌。
+- 本地 Ollama 可以当备选，但检索主干以配置里的 embedding 端点为准。
 
 公有云 embedding 属 constitution II 边界，禁止。向量是派生数据，留在 state root；平台 ingest（`001`）不携带向量与正文。
 
@@ -37,19 +37,19 @@ embedding / LLM **只允许自托管端点**：
 
 ### 4. 语义规则三段判定
 
-余弦 ≥ high 命中、≤ low 不中、中间带才调一次 LLM。阈值在 pack 声明。思路借 agent-os `semantic_router.py`，代码自写（约 80 行），不引入 numpy / torch / sentence-transformers。
+余弦 ≥ high 命中、≤ low 不中、中间带才调一次 LLM。阈值在 pack 声明。语义路由思路自写（约 80 行），不引入 numpy / torch / sentence-transformers。
 
 ### 5. Rerank 二期
 
-一期看召回。接口预留在 `embeddings.rerank()`。现网 rerank（2026-09-08）：self-hosted vLLM the rerank HTTP endpoint，模型 `Qwen3-Reranker-8B`（权重 `Qwen3-Reranker-8B-seq-cls`），与 embedding shared GPU。原 optional rerank bge-reranker 不再作为默认目标。配置了 `rerank.api_url` 才调用；默认 identity。
+一期看召回。接口预留在 `embeddings.rerank()`。配置了 `rerank.api_url` 才调用；默认 identity。
 
 ### 6. 通道委托
 
-`006` 确认/通知走 agent-os 8090（chat webhook webhook + 卡片回调）。Twinbox 只产 card payload，不接飞书 SDK。
+`006` 确认/通知走宿主 webhook / 卡片回调。Twinbox 只产 card payload，不接飞书 SDK。
 
 ### 7. 调度委托
 
-本机不跑 in-process 定时器 / Unix-socket daemon。`007` 提供 `schedule run-due` + 文件锁；由 site crontab 驱动。
+本机不跑 in-process 定时器 / Unix-socket daemon。`007` 提供 `schedule run-due` + 文件锁；由宿主 crontab 驱动。
 
 ## Consequences
 

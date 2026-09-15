@@ -22,7 +22,7 @@ description: "Task list for analysis correctness"
 
 **Purpose**: 回放目录与共享测试夹具
 
-- [x] T001 复制 `~/.twinbox`（或 `TWINBOX_STATE_ROOT`）到一次性回放目录，只读真实状态；记录辽宁白名单 / 验收登记 / pending 丢标签的复现结果到后续 `EVOLUTION.md` 草稿
+- [x] T001 复制 `~/.twinbox`（或 `TWINBOX_STATE_ROOT`）到一次性回放目录，只读真实状态；记录已同意审批误标 / 验收登记 / pending 丢标签的复现结果到后续 `EVOLUTION.md` 草稿
 - [x] T002 [P] 在 `tests/fixtures/` 加入 GB2312 + quoted-printable + base64 附件的 multipart 样例 `.eml`
 
 ---
@@ -124,7 +124,7 @@ description: "Task list for analysis correctness"
 - [x] T026 写 `EVOLUTION.md`（SYSTEM_PROMPT diff、回放前后对比）；`twinbox-evolution-prompt.md` 顶部指向本 spec
 - [x] T027 确认未改真实邮箱、未提交凭据
 - [x] T028 [P] 审计 `mcp-server.mjs` 与 CLI JSON：既有字段不删不改类型；仅 additive（FR-013）
-- [x] T029 在回放副本上重跑分析：验证 SC-002（辽宁不在 pending；验收登记进入 pending 或 daily_urgent）
+- [x] T029 在回放副本上重跑分析：验证 SC-002（已同意审批不在 pending；验收登记进入 pending 或 daily_urgent）
 - [x] T030 新增 `tests/eval_replay.py`：读取回放目录，输出 waiting_on_me 误报、join miss、attention 计数 JSON（不连真实 IMAP；源自 archive `evaluation.py`）
 
 ## Dependencies

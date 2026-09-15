@@ -26,7 +26,7 @@ description: "Task list for policy-governed workflow automation (dry-run)"
 
 ## Phase 4: User Story 2 - 确认卡片 payload (P2)
 
-- [x] T008 [US2] 输出 agent-os 形状的 `card_payload`（引用 + 有界摘要）；不接飞书 SDK
+- [x] T008 [US2] 输出宿主 webhook 形状的 `card_payload`（引用 + 有界摘要）；不接飞书 SDK
 - [x] T009 [US2] 通道超时/失败不得把提案标为 confirmed（本地 review 才改状态）
 - [x] T010 [P] [US2] CLI/MCP：`twinbox_action_proposals`（读）+ `twinbox_action_review`（本地状态）
 
