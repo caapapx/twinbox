@@ -2,6 +2,8 @@
 
 **Branch**: `001-everything-mail-adapter` | **Date**: 2026-08-26 | **Spec**: [spec.md](./spec.md)
 
+> **2026-09-15 Phase 0/1 gate**: multi-account vault + accounts/ingest/events + min observability landed on `master@e2c4eaf`. Remaining open tasks are axes/LLM schema/event recall (see tasks.md footer). Review HTML: `docs/reviews/twinbox-enterprise-phase01-review-2026-09-15.html`.
+
 **Input**: Feature specification from `/specs/001-everything-mail-adapter/spec.md`
 
 ## Summary
