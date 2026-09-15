@@ -91,7 +91,8 @@
 | 分析 / 队列标签 / pulse | constitution II–IV | `twinbox_core/analyze.py`、`pulse.py`、`queue.py` | 构造邮件 + mock LLM；不要依赖真实 IMAP |
 | MCP 工具层 | constitution IV | `mcp-server.mjs` | `tests/mcp-smoke.mjs` |
 | 抽取 / 小时过滤 | constitution II、IV | `twinbox_core/extract.py`、`cli.py` | `tests/test_extract.py` |
-| SpecKit 新功能或范围变更 | 本文件分类器 + 对应 `specs/<id>/` | `spec.md` / `plan.md` / `tasks.md` | analyze；实现与验收对齐 tasks |
+| SpecKit · 薄契约（`temporary` / 局部 `feature`，一次 PR 收口） | 本文件分类器 + `specs/<id>/` | `spec.md` + `tasks.md`（`plan.md` 可省） | 实现对齐 `tasks.md`；不跑 clarify / analyze 仪式 |
+| SpecKit · 完整档（持久能力 / 跨模块 / 含 `decision`） | 分类器 + constitution + `specs/<id>/` | `specify →（歧义则 clarify）→ plan → tasks`；checklist 按风险；spec 不写技术栈，进 plan | 过 `analyze` 才实现；`converge` 后才标 `implemented`；对话改范围先回写 spec / tasks（工作区 `../CLAUDE.md` §6.6、M06/M07） |
 | 热更到 the host agent | skill `twinbox-release-remote` | 只同步源码，不改凭据 | `./scripts/hot-reload-site.sh`；`probe-site.sh` |
 | WeKnora 探活 / 灌库 / 检索 | skill `weknora-ops`；Twinbox 约束 `overlays/twinbox.md` | 现场 KB 与映射表（产品代码走独立 SpecKit） | `wk.sh probe`；禁止把全文当 file 上传 |
 | 配置 | constitution V | 追踪默认值在 `config/`；真凭据只在 `~/.twinbox/` | `twinbox_status` 输出须脱敏 |
