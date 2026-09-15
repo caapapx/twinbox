@@ -52,26 +52,30 @@ tmp/
 activity-pulse.json
 state.json
 
-# Local leftover stack / machine-specific paths (not part of MCP trunk)
+# Leftover OpenClaw monolith (on disk only; not the MCP trunk)
 /bin/
 /packages/
 /src/
+/scripts/
+
+# Docs: public tree is governance + ADRs only.
+# Reviews, benchmarks, research, validation stay local.
 /docs/*
 !/docs/governance/
 !/docs/governance/**
 !/docs/decisions/
 !/docs/decisions/**
-!/docs/reviews/
-!/docs/reviews/**
-/scripts/
 
-# Local scratch notes (may contain machine paths, links, or secrets)
+# Local scratch / historical agent dumps (may contain mailbox examples)
 /issue.md
 /INSTALL_GUIDE.md
 /README_REFACTOR.md
 /REFACTOR_COMPLETE_FINAL.md
 /REFACTOR_FINAL.md
 /VERIFICATION_COMPLETE.md
+/twinbox-evolution-prompt.md
+/EVOLUTION.md
+/prompts.md
 
 .beads/*
 !.beads/formulas/
@@ -108,10 +112,10 @@ dist/
 # Host-specific OpenClaw JSON fragment (copy from openclaw.fragment.example.json)
 integrations/openclaw/openclaw.fragment.json
 
-# Local indexes, eval prompts, and internal ops hops — never publish
+# Local indexes and internal ops hops — never publish
 .zvec-grep/
 **/.zvec-grep/
-/prompts.md
 .agents/skills/*-ops
 .cursor/skills/*-ops
 .codex/skills/*-ops
+.claude/skills/*-ops

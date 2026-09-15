@@ -6,7 +6,7 @@
 
 **Status**: Implemented / converged（2026-09-15：tasks.md 全勾选；不以 HTML/计划代替运行态）
 
-**Input**: User description: "纠正 Twinbox 分析与工具层：MIME 解码、按线程最新邮件判定 waiting_on、thread_key 归一化 join、过期快照自动同步、extract 返回可读正文、采样与 needs_attention 校准。历史输入见仓库根 `twinbox-evolution-prompt.md`。"
+**Input**: User description: "纠正 Twinbox 分析与工具层：MIME 解码、按线程最新邮件判定 waiting_on、thread_key 归一化 join、过期快照自动同步、extract 返回可读正文、采样与 needs_attention 校准。"
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -161,5 +161,5 @@ LLM 标出的 urgent / pending / sla 必须全部投影到 pulse 的 `queue_tags
 - 回放使用 `~/.twinbox` 的**副本**，不修改真实 IMAP。
 - 本地 MCP 返回解码正文符合 constitution II（平台 ingest 仍禁全文；001 未实现）。
 - `new_envelope_count` 语义保持「本次新入库信封数」；文档化即可，不改计数公式除非测出实现 bug。
-- 历史输入 [`twinbox-evolution-prompt.md`](../../twinbox-evolution-prompt.md) 不是权威来源；冲突以本 spec 为准。
+- 历史 evolution prompt 不是权威来源；冲突以本 spec 为准。
 - As-built 能力与缺口见 [`specs/000-as-built-mcp-baseline`](../000-as-built-mcp-baseline/spec.md)。本契约只修分析正确性，不吸收产品定位、语义包、周报运营或流程自动化（见 `003`–`006` 与 ADR）。

@@ -22,7 +22,7 @@ description: "Task list for analysis correctness"
 
 **Purpose**: 回放目录与共享测试夹具
 
-- [x] T001 复制 `~/.twinbox`（或 `TWINBOX_STATE_ROOT`）到一次性回放目录，只读真实状态；记录已同意审批误标 / 验收登记 / pending 丢标签的复现结果到后续 `EVOLUTION.md` 草稿
+- [x] T001 复制 `~/.twinbox`（或 `TWINBOX_STATE_ROOT`）到一次性回放目录，只读真实状态；记录已同意审批误标 / 验收登记 / pending 丢标签
 - [x] T002 [P] 在 `tests/fixtures/` 加入 GB2312 + quoted-printable + base64 附件的 multipart 样例 `.eml`
 
 ---
@@ -121,7 +121,7 @@ description: "Task list for analysis correctness"
 ## Phase 9: Polish
 
 - [x] T025 跑 `tests/mcp-smoke.mjs` 全绿
-- [x] T026 写 `EVOLUTION.md`（SYSTEM_PROMPT diff、回放前后对比）；`twinbox-evolution-prompt.md` 顶部指向本 spec
+- [x] T026 SYSTEM_PROMPT 规则已写入 analyze 实现；历史 prompt 不进公开树
 - [x] T027 确认未改真实邮箱、未提交凭据
 - [x] T028 [P] 审计 `mcp-server.mjs` 与 CLI JSON：既有字段不删不改类型；仅 additive（FR-013）
 - [x] T029 在回放副本上重跑分析：验证 SC-002（已同意审批不在 pending；验收登记进入 pending 或 daily_urgent）

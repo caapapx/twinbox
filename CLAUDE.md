@@ -50,13 +50,13 @@
 | 这类工作 | 写这里 | 不要写这里 |
 | --- | --- | --- |
 | 仓库怎么协作、选哪扇门 | 本文件 | skill 全文、主机/端口表 |
-| 功能范围、验收、任务状态 | `specs/<id>/` | 本文件堆需求；历史 `twinbox-evolution-prompt.md` |
+| 功能范围、验收、任务状态 | `specs/<id>/` | 本文件堆需求；本地历史 prompt / 评审 HTML |
 | 发版、热更、停启 | 现场 release skill（仓外） | 本文件复述 SOP |
 | 检索 HTTP 对接 | 仓外 ops skill | Twinbox 核心 recipes；不要把邮件规则写进检索 skill 正文 |
 | 产品 MCP 用法 | 仓内 `twinbox` skill | 发明未注册工具 |
 | 真凭据 | `~/.twinbox/`（gitignore） | git、日志、本文件 |
 
-项目 skill 正文不进本仓；hop 目录只软链。现场专属 skill 不要拷进公开树。
+产品 `twinbox` skill 在仓内（根 `SKILL.md` 与 `.cursor` / `.claude` / `.agents` / `.codex` hop）。现场专属 ops skill 不要拷进公开树。
 
 ## 不可绕过的护栏
 
@@ -126,7 +126,6 @@
 - **Planned 合同**：`specs/001`（部分落地）、`003`–`007`、`008`/`010`（触发后）、`009`（IDLE）；未在代码落地前不要写成当前交付面。
 - **企业路线已确认实施**：Phase 0 合同 + Phase 1 多账号只读 + 最小可观测性；Phase 2/6 触发后做；Phase 3+ 按路线顺序。
 - **决策**：[`docs/decisions/`](docs/decisions/README.md)。
-- [`twinbox-evolution-prompt.md`](twinbox-evolution-prompt.md) 只是历史输入。
 
 ## 关键路径
 

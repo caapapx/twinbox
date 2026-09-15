@@ -2,6 +2,6 @@
   "feature_directory": "specs/002-analysis-correctness",
   "notes": {
     "active_correctness": "specs/002-analysis-correctness (converged)",
-    "enterprise_slice_2026_09_15": "specs/001 Partial + 008/009/010 contracts; review HTML under docs/reviews/"
+    "enterprise_slice_2026_09_15": "specs/001 Partial + 008/009/010 contracts"
   }
 }
