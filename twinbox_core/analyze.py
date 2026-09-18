@@ -73,6 +73,9 @@ Analyze the thread data below and produce a JSON object with this structure:
 8. waiting_on_me MUST be decided from the LATEST message in the thread (is_latest=true). If the latest message is an approval/同意/已处理 reply, do NOT list it as pending; set resolved_by_reply instead.
 9. why must quote evidence from the provided body; do not speculate.
 10. Output ONLY the JSON object. No markdown, no explanation.
+11. Each message has evidence_id. why/action fields MUST set evidence_refs to those ids from this prompt. Never invent ids or thread_keys.
+12. waiting_on_me=true only with explicit evidence the mailbox owner must reply or approve. To/Cc membership alone is not enough. action_target is the named actor in the body when it is not the owner.
+13. Counts, dates, and day-aging quoted from mail are reported values; keep evidence_refs and do not recompute them as live project facts.
 Additional optional field on pending_replies: "resolved_by_reply": true when the latest mail clears the wait.
 """
 
@@ -113,9 +116,11 @@ def _build_prompt(context: dict[str, Any], human_context: dict[str, Any] | None 
             latest = i == 0
             body_preview = _body_for(env, body_map, latest=latest)
             flags_str = ", ".join(env.get("flags", []))
+            evid = _evidence_id(env)
             lines.append(
-                f"[{idx}] thread_key={tk} is_latest={str(latest).lower()} "
+                f"[{idx}] evidence_id={evid} thread_key={tk} is_latest={str(latest).lower()} "
                 f"recipient_role={env.get('recipient_role', 'unknown')} "
+                f"body_available={str(bool(body_preview)).lower()} "
                 f"subject={env.get('subject', '')} | "
                 f"from={env.get('from_name', '')} <{env.get('from_addr', '')}> | "
                 f"to={env.get('to', '')} | cc={env.get('cc', '')} | "
@@ -181,8 +186,134 @@ def _merge_stats(context: dict[str, Any], extra: dict[str, Any]) -> None:
         context["stats"].update(extra)
 
 
-def run_analysis(state_root: Path) -> dict[str, Any]:
-    """Run single-pass LLM analysis on the fetched mail context."""
+def _select_payload(select_diag: dict[str, Any]) -> dict[str, Any]:
+    out = {
+        "embeddings_degraded": bool(select_diag.get("embeddings_degraded")),
+        "envelope_in": select_diag.get("envelope_in"),
+        "envelope_llm": select_diag.get("envelope_llm"),
+        "candidate_threads": select_diag.get("candidate_threads"),
+    }
+    if select_diag.get("select_error"):
+        out["select_error"] = select_diag["select_error"]
+    return out
+
+
+def _envelope_id(env: dict[str, Any]) -> tuple[str, str]:
+    return (
+        str(env.get("folder", "INBOX") or "INBOX"),
+        str(env.get("id", "") or ""),
+    )
+
+
+def _evidence_id(env: dict[str, Any]) -> str:
+    folder, uid = _envelope_id(env)
+    return f"{folder}#{uid}" if uid else ""
+
+
+def _issued_evidence_ids(envelopes: list[dict[str, Any]]) -> set[str]:
+    return {eid for env in envelopes if (eid := _evidence_id(env))}
+
+
+def _validate_label_rows(
+    rows: list[dict[str, Any]],
+    *,
+    valid_keys: set[str],
+    valid_refs: set[str],
+    owner_action: bool = False,
+) -> tuple[list[dict[str, Any]], list[str], list[str]]:
+    kept: list[dict[str, Any]] = []
+    bad_keys: list[str] = []
+    bad_refs: list[str] = []
+    for row in rows:
+        tk = str(row.get("thread_key") or "")
+        if tk not in valid_keys:
+            if tk:
+                bad_keys.append(tk)
+            continue
+        refs_in = row.get("evidence_refs")
+        ok_refs: list[str] = []
+        if isinstance(refs_in, list):
+            for ref in refs_in:
+                token = str(ref or "").strip()
+                if not token:
+                    continue
+                if token in valid_refs:
+                    ok_refs.append(token)
+                else:
+                    bad_refs.append(token)
+        row["evidence_refs"] = ok_refs
+        if ok_refs:
+            row["evidence_basis"] = "explicit"
+        elif str(row.get("why") or "").strip():
+            row["evidence_basis"] = "inferred"
+        else:
+            row["evidence_basis"] = "insufficient"
+        if owner_action and (row.get("waiting_on_me") is True) and row["evidence_basis"] != "explicit":
+            row["evidence_basis"] = "insufficient"
+        if not row.get("action_target"):
+            waiting = str(row.get("waiting_on") or "").strip()
+            if waiting and waiting not in {"me", "我", "mailbox_owner"}:
+                row["action_target"] = waiting
+        kept.append(row)
+    return kept, bad_keys, bad_refs
+
+
+def _analyzed_id_list(envelopes: object) -> list[list[str]]:
+    out: list[list[str]] = []
+    seen: set[tuple[str, str]] = set()
+    if not isinstance(envelopes, list):
+        return out
+    for env in envelopes:
+        if not isinstance(env, dict):
+            continue
+        key = _envelope_id(env)
+        if not key[1] or key in seen:
+            continue
+        seen.add(key)
+        out.append([key[0], key[1]])
+    return out
+
+
+def _load_yaml_rows(path: Path, key: str) -> list[dict[str, Any]]:
+    if not path.is_file():
+        return []
+    try:
+        import yaml
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    rows = data.get(key) if isinstance(data, dict) else None
+    if not isinstance(rows, list):
+        return []
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def _merge_label_rows(
+    old_rows: list[dict[str, Any]],
+    new_rows: list[dict[str, Any]],
+    *,
+    analyzed_keys: set[str],
+    window_keys: set[str],
+) -> list[dict[str, Any]]:
+    kept = [
+        row
+        for row in old_rows
+        if str(row.get("thread_key") or "") in window_keys
+        and str(row.get("thread_key") or "") not in analyzed_keys
+    ]
+    return kept + new_rows
+
+
+def run_analysis(
+    state_root: Path,
+    *,
+    only_ids: set[tuple[str, str]] | None = None,
+) -> dict[str, Any]:
+    """Run single-pass LLM analysis on the fetched mail context.
+
+    ponytail: daytime patch only re-scores threads with new envelopes; nightly-full
+    rewrites the window. Upgrade: incremental SLA aging without new mail.
+    """
     context_path = state_root / "runtime" / "context" / "phase1-context.json"
     if not context_path.is_file():
         return {"ok": False, "error": "No mail context. Run sync first."}
@@ -195,7 +326,40 @@ def run_analysis(state_root: Path) -> dict[str, Any]:
     if not isinstance(context, dict) or not context.get("envelopes"):
         return {"ok": False, "error": "Empty mail context. Run sync first."}
 
+    from .pulse import normalize_thread_key
+
+    full_envelopes = [e for e in context.get("envelopes", []) if isinstance(e, dict)]
+    window_keys = {normalize_thread_key(env.get("subject")) for env in full_envelopes}
+    analyzed_keys: set[str] = set()
+    merge_mode = bool(only_ids)
+    if only_ids:
+        analyzed_keys = {
+            normalize_thread_key(env.get("subject"))
+            for env in full_envelopes
+            if _envelope_id(env) in only_ids
+        }
+        context = dict(context)
+        context["envelopes"] = [
+            env for env in full_envelopes if normalize_thread_key(env.get("subject")) in analyzed_keys
+        ]
+        if not context["envelopes"]:
+            return {
+                "ok": True,
+                "skipped": True,
+                "reason": "no-new-threads",
+                "analyzed_ids": [],
+                "select": {
+                    "embeddings_degraded": False,
+                    "envelope_in": len(full_envelopes),
+                    "envelope_llm": 0,
+                    "candidate_threads": 0,
+                },
+            }
+
     human_context = _load_human_context(state_root)
+    envelope_in = len(full_envelopes)
+    events_context = {**context, "envelopes": full_envelopes} if merge_mode else context
+    candidates: list[dict[str, Any]] = []
     select_diag: dict[str, Any] = {"embeddings_degraded": False}
     try:
         from .select import choose_candidates
@@ -210,15 +374,30 @@ def run_analysis(state_root: Path) -> dict[str, Any]:
         }
         if candidates:
             context = _envelopes_for_threads(context, candidates, skip_ids)
+            if merge_mode:
+                analyzed_keys = {
+                    normalize_thread_key(env.get("subject"))
+                    for env in context.get("envelopes", [])
+                    if isinstance(env, dict)
+                }
     except Exception as exc:
         select_diag = {
             "embeddings_degraded": True,
             "select_error": type(exc).__name__,
         }
+        candidates = []
+    envelope_llm = len([e for e in context.get("envelopes", []) if isinstance(e, dict)])
+    analyzed_ids = _analyzed_id_list(context.get("envelopes"))
+    select_diag = {
+        **select_diag,
+        "envelope_in": envelope_in,
+        "envelope_llm": envelope_llm,
+        "candidate_threads": len(candidates) if candidates else envelope_in,
+    }
     _merge_stats(context, select_diag)
     try:
         from .events import extract_events
-        extract_events(context, state_root)
+        extract_events(events_context if merge_mode else context, state_root)
     except Exception as exc:
         _merge_stats(context, {"events_error": type(exc).__name__})
     prompt = _build_prompt(context, human_context)
@@ -235,13 +414,14 @@ def run_analysis(state_root: Path) -> dict[str, Any]:
             json.dumps({
                 "error": str(exc),
                 "raw_preview": str(raw)[:800],
+                "select": _select_payload(select_diag),
             }, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
-        return {"ok": False, "error": f"LLM analysis failed: {exc}"}
+        return {"ok": False, "error": f"LLM analysis failed: {exc}", "select": _select_payload(select_diag), "analyzed_ids": []}
 
     if not isinstance(result, dict):
-        return {"ok": False, "error": "LLM returned non-object"}
+        return {"ok": False, "error": "LLM returned non-object", "select": _select_payload(select_diag), "analyzed_ids": []}
 
     # Write Phase 4 outputs
     phase4_dir = state_root / "runtime" / "validation" / "phase-4"
@@ -268,6 +448,42 @@ def run_analysis(state_root: Path) -> dict[str, Any]:
         if not p.get("resolved_by_reply")
     ]
     sla = _norm_rows(result.get("sla_risks", []))
+    prompt_envelopes = [e for e in context.get("envelopes", []) if isinstance(e, dict)]
+    valid_keys = {normalize_thread_key(env.get("subject")) for env in prompt_envelopes}
+    valid_refs = _issued_evidence_ids(prompt_envelopes)
+    urgent, u_keys, u_refs = _validate_label_rows(urgent, valid_keys=valid_keys, valid_refs=valid_refs)
+    pending, p_keys, p_refs = _validate_label_rows(
+        pending, valid_keys=valid_keys, valid_refs=valid_refs, owner_action=True,
+    )
+    sla, s_keys, s_refs = _validate_label_rows(sla, valid_keys=valid_keys, valid_refs=valid_refs)
+    evidence_diag = {
+        "invalid_thread_keys": u_keys + p_keys + s_keys,
+        "invalid_evidence_refs": u_refs + p_refs + s_refs,
+    }
+    if evidence_diag["invalid_thread_keys"] or evidence_diag["invalid_evidence_refs"]:
+        _write_json(phase4_dir / "analysis-diagnostics.json", evidence_diag)
+    if merge_mode:
+        urgent = _merge_label_rows(
+            _load_yaml_rows(phase4_dir / "daily-urgent.yaml", "daily_urgent"),
+            urgent,
+            analyzed_keys=analyzed_keys,
+            window_keys=window_keys,
+        )
+        pending = _merge_label_rows(
+            [
+                p for p in _load_yaml_rows(phase4_dir / "pending-replies.yaml", "pending_replies")
+                if not p.get("resolved_by_reply")
+            ],
+            pending,
+            analyzed_keys=analyzed_keys,
+            window_keys=window_keys,
+        )
+        sla = _merge_label_rows(
+            _load_yaml_rows(phase4_dir / "sla-risks.yaml", "sla_risks"),
+            sla,
+            analyzed_keys=analyzed_keys,
+            window_keys=window_keys,
+        )
     import yaml
     urgent_out = {"generated_at": _now_iso(), "daily_urgent": urgent}
     (phase4_dir / "daily-urgent.yaml").write_text(
@@ -282,15 +498,19 @@ def run_analysis(state_root: Path) -> dict[str, Any]:
         yaml.safe_dump(sla_out, allow_unicode=True, sort_keys=False), encoding="utf-8"
     )
 
-    # weekly-brief-raw.json
-    weekly = result.get("weekly_brief", {})
-    if isinstance(weekly, dict):
-        weekly["generated_at"] = _now_iso()
-        _write_json(phase4_dir / "weekly-brief-raw.json", weekly)
+    # weekly-brief-raw.json — daytime patch must not overwrite the nightly brief
+    if not merge_mode:
+        weekly = result.get("weekly_brief", {})
+        if isinstance(weekly, dict):
+            weekly["generated_at"] = _now_iso()
+            _write_json(phase4_dir / "weekly-brief-raw.json", weekly)
 
     return {
         "ok": True,
         "urgent_count": len(urgent) if isinstance(urgent, list) else 0,
         "pending_count": len(pending) if isinstance(pending, list) else 0,
         "sla_count": len(sla) if isinstance(sla, list) else 0,
+        "analyzed_ids": analyzed_ids,
+        "diagnostics": evidence_diag,
+        "select": _select_payload(select_diag),
     }

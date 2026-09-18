@@ -101,7 +101,7 @@ class TestMultiAccountSyncIsolation(unittest.TestCase):
             roots.append(str(state_root))
             return {"status": "ok", "generated_at": "now", "timings_ms": {}}
 
-        def fake_pulse(state_root):
+        def fake_pulse(state_root, **_kwargs):
             out = state_root / "runtime" / "validation" / "phase-4" / "activity-pulse.json"
             out.parent.mkdir(parents=True, exist_ok=True)
             return {"generated_at": "now", "summary": {"tracked_threads": 0}}, out

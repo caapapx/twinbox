@@ -111,6 +111,12 @@ def _queue_membership(state_root: Path) -> dict[str, dict[str, Any]]:
             slot["queue_tags"].append(tag)
             slot.setdefault("waiting_on", row.get("waiting_on"))
             slot.setdefault("why", row.get("why") or row.get("risk_description") or "")
+            if row.get("evidence_basis") and "evidence_basis" not in slot:
+                slot["evidence_basis"] = row.get("evidence_basis")
+            if row.get("action_target") and "action_target" not in slot:
+                slot["action_target"] = row.get("action_target")
+            if row.get("evidence_refs") and "evidence_refs" not in slot:
+                slot["evidence_refs"] = row.get("evidence_refs")
     for slot in membership.values():
         slot["queue_tags"] = sorted(set(str(t) for t in slot.get("queue_tags", [])))
     return membership
@@ -161,6 +167,20 @@ def _is_hidden(thread_key: str, queue_state: dict[str, Any]) -> bool:
     return False
 
 
+def hidden_thread_keys(state_root: Path) -> set[str]:
+    """Thread keys completed/dismissed in local queue (not IMAP)."""
+    queue_state = _load_queue_state(state_root)
+    keys: set[str] = set()
+    for bucket in ("completed", "dismissed"):
+        for row in queue_state.get(bucket, []):
+            if not isinstance(row, dict):
+                continue
+            tk = str(row.get("thread_key", "") or "")
+            if tk:
+                keys.add(tk)
+    return keys
+
+
 @dataclass
 class ThreadSnapshot:
     thread_key: str
@@ -177,10 +197,14 @@ class ThreadSnapshot:
     query_terms: list[str]
     score: int
     recipient_role: str = "unknown"
+    latest_recipient_role: str = "unknown"
     action_hint: str = ""
+    evidence_basis: str = ""
+    action_target: str = ""
+    evidence_refs: list[str] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        out = {
             "thread_key": self.thread_key,
             "latest_subject": self.latest_subject,
             "last_activity_at": self.last_activity_at,
@@ -195,8 +219,16 @@ class ThreadSnapshot:
             "query_terms": self.query_terms,
             "score": self.score,
             "recipient_role": self.recipient_role,
+            "latest_recipient_role": self.latest_recipient_role,
             "action_hint": self.action_hint,
         }
+        if self.evidence_basis:
+            out["evidence_basis"] = self.evidence_basis
+        if self.action_target:
+            out["action_target"] = self.action_target
+        if self.evidence_refs:
+            out["evidence_refs"] = self.evidence_refs
+        return out
 
 
 def build_activity_pulse(state_root: Path, *, window_hours: int = 24) -> dict[str, Any]:
@@ -218,9 +250,10 @@ def build_activity_pulse(state_root: Path, *, window_hours: int = 24) -> dict[st
         grouped.setdefault(tk, []).append((parsed, env))
 
     snapshots: list[ThreadSnapshot] = []
+    hidden_keys: set[str] = set()
     for tk, rows in grouped.items():
         if _is_hidden(tk, queue_state):
-            continue
+            hidden_keys.add(tk)
         rows.sort(key=lambda x: x[0], reverse=True)
         latest_dt, latest = rows[0]
         in_window = [r for r in rows if r[0] >= cutoff]
@@ -259,7 +292,9 @@ def build_activity_pulse(state_root: Path, *, window_hours: int = 24) -> dict[st
                 score += 15
                 action_hint = verb
                 break
-        unread = sum(1 for _, r in rows if "Seen" not in r.get("flags", []))
+        from .imap_fetch import is_unread
+
+        unread = sum(1 for _, r in rows if is_unread(r.get("flags") if isinstance(r.get("flags"), list) else []))
         fp = f"{ref}|{','.join(tags)}|{q.get('waiting_on', '')}"
         terms = sorted(set(_extract_tokens(tk) + _extract_tokens(latest.get("subject", ""))))
         snap = ThreadSnapshot(
@@ -271,20 +306,26 @@ def build_activity_pulse(state_root: Path, *, window_hours: int = 24) -> dict[st
             recipient_role=aggregate_thread_recipient_role(
                 [{"recipient_role": r.get("recipient_role")} for _, r in rows]
             ),
+            latest_recipient_role=str(latest.get("recipient_role") or "unknown"),
             action_hint=action_hint,
+            evidence_basis=str(q.get("evidence_basis") or ""),
+            action_target=str(q.get("action_target") or ""),
+            evidence_refs=list(q.get("evidence_refs") or []) if isinstance(q.get("evidence_refs"), list) else None,
         )
         snapshots.append(snap)
 
     snapshots.sort(key=lambda s: (s.score, s.last_activity_at), reverse=True)
-    recent = [s for s in snapshots if s.new_message_count > 0][:20]
-    attention = [s for s in snapshots if s.queue_tags][:20]
+    # Hidden (local complete/dismiss) stay in thread_index for inspect; leave attention/recent.
+    visible = [s for s in snapshots if s.thread_key not in hidden_keys]
+    recent = [s for s in visible if s.new_message_count > 0][:20]
+    attention = [s for s in visible if s.queue_tags][:20]
     misses = _queue_join_diagnostics(state_root, snapshots)
 
     payload = {
         "generated_at": _now_iso(),
         "window_hours": window_hours,
         "summary": {
-            "tracked_threads": len(snapshots),
+            "tracked_threads": len(visible),
             "recent_activity_count": len(recent),
             "needs_attention_count": len(attention),
         },
@@ -304,17 +345,98 @@ def build_activity_pulse(state_root: Path, *, window_hours: int = 24) -> dict[st
     try:
         from .project import attach_projections
         payload = attach_projections(payload, state_root)
-    except Exception:
-        pass
+    except Exception as exc:
+        diag = payload.setdefault("diagnostics", {})
+        if not isinstance(diag, dict):
+            diag = {}
+            payload["diagnostics"] = diag
+        diag["projection_error"] = type(exc).__name__
     return payload
 
 
-def write_activity_pulse(state_root: Path, **kwargs: Any) -> tuple[dict[str, Any], Path]:
+_PULSE_LINEAGE = (
+    "generated_at",
+    "source_account",
+    "stale_analysis",
+    "analysis_generated_at",
+    "analysis_skipped",
+    "analysis_skip_reason",
+    "fetch_at",
+)
+
+
+def pulse_path(state_root: Path) -> Path:
+    return state_root / "runtime" / "validation" / "phase-4" / "activity-pulse.json"
+
+
+def pulse_publish_lock(state_root: Path):
+    """Per-account exclusive lock for queue rebuild vs sync pulse publish."""
+    import fcntl
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _lock():
+        path = pulse_path(state_root).with_name("pulse.publish.lock")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fh = path.open("a+")
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+            fh.close()
+
+    return _lock()
+
+
+def _copy_lineage(payload: dict[str, Any], prior: dict[str, Any] | None, *, generated_at: str | None) -> dict[str, Any]:
+    if isinstance(prior, dict):
+        for key in _PULSE_LINEAGE:
+            if key in prior:
+                payload[key] = prior[key]
+    if generated_at:
+        payload["generated_at"] = str(generated_at)
+    return payload
+
+
+def commit_activity_pulse(
+    state_root: Path,
+    *,
+    preserve_generated_at: str | None = None,
+    preserve_lineage: bool = False,
+    extra: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> tuple[dict[str, Any], Path]:
     payload = build_activity_pulse(state_root, **kwargs)
-    out = state_root / "runtime" / "validation" / "phase-4" / "activity-pulse.json"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    prior = None
+    if preserve_lineage or preserve_generated_at:
+        loaded = _load_json(pulse_path(state_root), {})
+        prior = loaded if isinstance(loaded, dict) else {}
+        payload = _copy_lineage(payload, prior, generated_at=preserve_generated_at)
+    if extra:
+        payload.update(extra)
+    out = pulse_path(state_root)
+    from .imap_fetch import _write_json
+    _write_json(out, payload)
     return payload, out
+
+
+def write_activity_pulse(
+    state_root: Path,
+    *,
+    preserve_generated_at: str | None = None,
+    preserve_lineage: bool = False,
+    extra: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> tuple[dict[str, Any], Path]:
+    with pulse_publish_lock(state_root):
+        return commit_activity_pulse(
+            state_root,
+            preserve_generated_at=preserve_generated_at,
+            preserve_lineage=preserve_lineage,
+            extra=extra,
+            **kwargs,
+        )
 
 
 def load_activity_pulse(state_root: Path) -> dict[str, Any]:

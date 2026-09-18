@@ -26,7 +26,7 @@ description: "Task list for semantic context and event intelligence"
 
 ## Phase 3: User Story 1 - 事件与候选 (P1)
 
-- [x] T007 [US1] [US4] `twinbox_core/select.py`：结构信号 + attention_hints 相似度选 30–40 线程；无向量时回退 `002` 两阶段
+- [x] T007 [US1] [US4] `twinbox_core/select.py`：结构信号 + attention_hints 相似度选 30–40 线程；无向量时回退 `002` 两阶段。余弦不得单独替换结构序：`score = structure + round(sim*50)`，未读/To 召回托底。pack `threshold_*` 不进 select。
 - [x] T008 [US1] `analyze.py` 消费 `choose_candidates()`，去掉盲切 `envelopes[:100]`
 - [x] T009 [US1] 事件记录：稳定 ID、类型、引用、抽取字段；平台向输出无正文（`twinbox_core/events.py` 或 analyze 旁路）
 - [x] T010 [P] [US1] [US4] `tests/test_select.py`：hints 命中线程进入候选；embedding 失败仍能选出最新结构候选；select 失败写入 `embeddings_degraded`；分析 prompt 含同一线程多封信封
@@ -48,6 +48,7 @@ description: "Task list for semantic context and event intelligence"
 - [x] T017 MCP：既有工具名不变；材料导入可 CLI-only 或新 additive 工具
 - [x] T018 `tests/mcp-smoke.mjs` 仍过
 - [x] T019 确认无公有云 embedding、无 torch/numpy、无全文进平台字段
+- [x] T020 分析输出校验 evidence_refs/thread_key；insufficient 责任降为 watch；卡片含 latest_recipient_role / evidence_basis（`tests/test_evidence.py`）
 
 ## Dependencies
 

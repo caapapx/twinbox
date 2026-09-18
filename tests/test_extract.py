@@ -123,5 +123,30 @@ class TestProfileMerge(unittest.TestCase):
         self.assertEqual(criteria.since, date(2025, 1, 1))
 
 
+class TestExtractAccount(unittest.TestCase):
+    def test_run_extract_passes_account_id_to_imap_config(self) -> None:
+        from unittest import mock
+        from twinbox_core.extract import run_extract
+
+        seen: dict[str, str | None] = {}
+
+        def fake_resolve(account_id=None):
+            seen["account_id"] = account_id
+            return {"host": "h", "login": "acct-b@example.com", "password": "x", "port": 993, "encryption": "tls"}
+
+        with mock.patch("twinbox_core.extract.resolve_imap_config", side_effect=fake_resolve), \
+             mock.patch("twinbox_core.extract.fetch_by_query", return_value=([], [])), \
+             mock.patch("twinbox_core.extract.owner_email", return_value=""):
+            from pathlib import Path
+            import tempfile
+            with tempfile.TemporaryDirectory() as tmp:
+                run_extract(
+                    Path(tmp),
+                    ExtractCriteria(since=date(2026, 9, 1), folders=["INBOX"], fetch_bodies=False),
+                    account_id="acct-b",
+                )
+        self.assertEqual(seen["account_id"], "acct-b")
+
+
 if __name__ == "__main__":
     unittest.main()

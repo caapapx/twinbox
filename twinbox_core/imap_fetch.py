@@ -15,6 +15,7 @@ from datetime import date, datetime, timedelta
 from email import message_from_bytes
 from email.header import decode_header
 from email.parser import BytesHeaderParser
+from email.policy import compat32 as header_parse_policy
 from email.policy import default as email_policy
 from email.utils import getaddresses, parsedate_to_datetime
 from html import unescape
@@ -117,8 +118,17 @@ def _normalize_header_date(value: str) -> str:
         return text
 
 
+def _strip_header_controls(text: str) -> str:
+    """RFC822 header values must not carry bare CR/LF into address parsing."""
+    return str(text or "").replace("\r", " ").replace("\n", " ").strip()
+
+
 def _decode_header_value(value: object) -> str:
-    text = str(value or "")
+    try:
+        text = str(value or "")
+    except Exception:
+        return ""
+    text = _strip_header_controls(text)
     if not text:
         return ""
     parts: list[str] = []
@@ -131,7 +141,19 @@ def _decode_header_value(value: object) -> str:
                 parts.append(str(chunk))
     except (LookupError, UnicodeDecodeError, ValueError):
         return text
-    return "".join(parts).strip()
+    return _strip_header_controls("".join(parts))
+
+
+def _header_text(msg: Any, name: str) -> str:
+    """Read one header as plain text; never raise on defective address headers."""
+    try:
+        raw = msg.get(name, "") or ""
+    except Exception:
+        return ""
+    try:
+        return _strip_header_controls(str(raw))
+    except Exception:
+        return ""
 
 
 def _decode_charset(raw: bytes, charset: str | None) -> tuple[str, str]:
@@ -230,50 +252,75 @@ def decode_message_bytes(raw: bytes, *, max_chars: int = 0) -> dict[str, Any]:
     }
 
 
+def canonicalize_flags(flags: list[Any] | None) -> list[str]:
+    """Strip IMAP backslash system-flag prefix so pulse/select match on ``Seen``."""
+    out: list[str] = []
+    for flag in flags or []:
+        name = str(flag).lstrip("\\").strip()
+        if name:
+            out.append(name)
+    return out
+
+
+def is_unread(flags: list[Any] | None) -> bool:
+    return "Seen" not in canonicalize_flags(flags)
+
+
 def _parse_flag_list(meta_text: str) -> list[str]:
     match = re.search(r"FLAGS\s+\((.*?)\)", meta_text)
     if not match:
         return []
-    return [flag for flag in match.group(1).strip().split() if flag]
+    return canonicalize_flags(match.group(1).strip().split())
 
 
 def _decode_fetch_rows(fetch_data: list[Any], folder: str) -> list[dict[str, Any]]:
+    """Decode IMAP HEADER.FIELDS rows. Skip defective messages instead of failing the batch.
+
+    Real mailboxes sometimes encode CR/LF into From/To display names. Python's
+    ``email.policy.default`` AddressHeader raises ValueError on those; one bad
+    message must not abort the whole sync.
+    """
     rows: list[dict[str, Any]] = []
+    # compat32 keeps raw header strings; default policy reifies AddressHeader and can raise.
+    parser = BytesHeaderParser(policy=header_parse_policy)
     for chunk in fetch_data:
         if not isinstance(chunk, tuple) or len(chunk) < 2:
             continue
-        meta_raw, header_raw = chunk[0], chunk[1]
-        meta_text = meta_raw.decode(errors="ignore") if isinstance(meta_raw, bytes) else str(meta_raw)
-        uid_match = re.search(r"UID\s+(\d+)", meta_text)
-        if uid_match is None:
+        try:
+            meta_raw, header_raw = chunk[0], chunk[1]
+            meta_text = meta_raw.decode(errors="ignore") if isinstance(meta_raw, bytes) else str(meta_raw)
+            uid_match = re.search(r"UID\s+(\d+)", meta_text)
+            if uid_match is None:
+                continue
+            uid = int(uid_match.group(1))
+            flags = _parse_flag_list(meta_text)
+            header_bytes = header_raw if isinstance(header_raw, bytes) else str(header_raw).encode()
+            msg = parser.parsebytes(header_bytes)
+            from_raw = _header_text(msg, "from")
+            from_name, from_addr = "", ""
+            addresses = getaddresses([from_raw])
+            if addresses:
+                from_name, from_addr = addresses[0]
+            rows.append({
+                "id": str(uid),
+                "uid": uid,
+                "folder": folder,
+                "subject": _decode_header_value(_header_text(msg, "subject")),
+                "from_name": _decode_header_value(from_name or ""),
+                "from_addr": _strip_header_controls(str(from_addr or "")).lower(),
+                "date": _normalize_header_date(_header_text(msg, "date")),
+                "message_id": _header_text(msg, "message-id"),
+                "to": _header_text(msg, "to"),
+                "cc": _header_text(msg, "cc"),
+                "list_id": _header_text(msg, "list-id"),
+                "in_reply_to": _header_text(msg, "in-reply-to"),
+                "references": _header_text(msg, "references"),
+                "has_attachment": False,
+                "flags": flags,
+            })
+        except Exception:
+            # ponytail: skip one bad MIME header rather than fail the mailbox sync
             continue
-        uid = int(uid_match.group(1))
-        flags = _parse_flag_list(meta_text)
-        header_bytes = header_raw if isinstance(header_raw, bytes) else str(header_raw).encode()
-        msg = BytesHeaderParser(policy=email_policy).parsebytes(header_bytes)
-        from_name, from_addr = "", ""
-        addresses = getaddresses([str(msg.get("from", "") or "")])
-        if addresses:
-            from_name, from_addr = addresses[0]
-        to_raw = str(msg.get("to", "") or "")
-        cc_raw = str(msg.get("cc", "") or "")
-        rows.append({
-            "id": str(uid),
-            "uid": uid,
-            "folder": folder,
-            "subject": _decode_header_value(msg.get("subject", "") or ""),
-            "from_name": str(from_name or ""),
-            "from_addr": str(from_addr or "").lower(),
-            "date": _normalize_header_date(str(msg.get("date", "") or "")),
-            "message_id": str(msg.get("message-id", "") or ""),
-            "to": to_raw,
-            "cc": cc_raw,
-            "list_id": str(msg.get("list-id", "") or ""),
-            "in_reply_to": str(msg.get("in-reply-to", "") or ""),
-            "references": str(msg.get("references", "") or ""),
-            "has_attachment": False,
-            "flags": flags,
-        })
     return rows
 
 
@@ -352,8 +399,7 @@ def fetch_bodies_imap(
 
 def _structure_score(env: dict[str, Any]) -> int:
     score = 0
-    flags = [str(f) for f in env.get("flags", [])]
-    if "Seen" not in flags:
+    if is_unread(env.get("flags")):
         score += 20
     role = str(env.get("recipient_role", "") or "")
     if role in {"to", "direct"}:
@@ -469,6 +515,84 @@ def _fetch_envelope_headers(
     return rows
 
 
+def _decode_flags_fetch(fetch_data: list[Any]) -> dict[str, list[str]]:
+    """Parse FLAGS-only UID FETCH responses → ``{uid: canonical_flags}``."""
+    out: dict[str, list[str]] = {}
+    for chunk in fetch_data or []:
+        if isinstance(chunk, tuple) and chunk:
+            meta_raw = chunk[0]
+        else:
+            meta_raw = chunk
+        if isinstance(meta_raw, bytes):
+            meta_text = meta_raw.decode(errors="ignore")
+        else:
+            meta_text = str(meta_raw or "")
+        if "FLAGS" not in meta_text.upper():
+            continue
+        uid_match = re.search(r"UID\s+(\d+)", meta_text)
+        if uid_match is None:
+            continue
+        out[uid_match.group(1)] = _parse_flag_list(meta_text)
+    return out
+
+
+def _refresh_flags_imap(
+    client: imaplib.IMAP4 | imaplib.IMAP4_SSL,
+    envelopes: list[dict[str, Any]],
+    *,
+    skip_keys: set[tuple[str, str]] | None = None,
+    chunk_size: int = 80,
+) -> int:
+    """Read-only FLAGS refresh for lookback UIDs. Mutates ``envelopes`` in place.
+
+    Skips keys in ``skip_keys`` (this round's new header FETCHes already have FLAGS).
+    Returns how many envelopes had flags written back. Never counts as new mail.
+    """
+    skip = skip_keys or set()
+    by_folder: dict[str, list[str]] = {}
+    for env in envelopes:
+        folder = str(env.get("folder", "INBOX") or "INBOX")
+        uid = str(env.get("id", "") or "")
+        if not uid or (folder, uid) in skip:
+            continue
+        by_folder.setdefault(folder, []).append(uid)
+
+    refreshed = 0
+    for folder, uid_strs in by_folder.items():
+        wire = mailbox_for_wire(folder)
+        status, _ = client.select(wire, readonly=True)
+        if status != "OK":
+            continue
+        # Preserve order but unique
+        seen: set[str] = set()
+        uids: list[int] = []
+        for u in uid_strs:
+            if u in seen or not u.isdigit():
+                continue
+            seen.add(u)
+            uids.append(int(u))
+        flag_map: dict[str, list[str]] = {}
+        for i in range(0, len(uids), chunk_size):
+            chunk = uids[i : i + chunk_size]
+            uid_set = ",".join(str(u) for u in chunk)
+            try:
+                status, fetch_data = client.uid("FETCH", uid_set, "(UID FLAGS)")
+            except Exception:
+                continue
+            if status != "OK" or not fetch_data:
+                continue
+            flag_map.update(_decode_flags_fetch(fetch_data))
+        for env in envelopes:
+            if str(env.get("folder", "INBOX") or "INBOX") != folder:
+                continue
+            uid = str(env.get("id", "") or "")
+            if uid not in flag_map:
+                continue
+            env["flags"] = flag_map[uid]
+            refreshed += 1
+    return refreshed
+
+
 def _normalize_envelope_row(row: dict[str, Any], owner_addr: str = "") -> dict[str, Any]:
     env = {
         "id": str(row.get("id", "") or ""),
@@ -484,7 +608,7 @@ def _normalize_envelope_row(row: dict[str, Any], owner_addr: str = "") -> dict[s
         "in_reply_to": str(row.get("in_reply_to", "") or ""),
         "references": str(row.get("references", "") or ""),
         "has_attachment": bool(row.get("has_attachment", False)),
-        "flags": [str(f) for f in row.get("flags", [])],
+        "flags": canonicalize_flags(row.get("flags") if isinstance(row.get("flags"), list) else []),
         "body": str(row.get("body", "") or ""),
     }
     return apply_envelope_role(env, owner_addr)
@@ -593,6 +717,14 @@ def fetch_incremental(
     client.login(str(imap_config["login"]), str(imap_config["password"]))
 
     new_envelopes: list[dict[str, Any]] = []
+    uv_reset_folders: set[str] = set()
+    existing_ctx = _load_json(_context_path(state_root), {})
+    prev_lookback = 0
+    if isinstance(existing_ctx, dict):
+        try:
+            prev_lookback = int(existing_ctx.get("lookback_days") or 0)
+        except (TypeError, ValueError):
+            prev_lookback = 0
     updated_watermarks = dict(watermarks)
     folder_errors: list[dict[str, str]] = []
     sync_time = _now_iso()
@@ -612,7 +744,8 @@ def fetch_incremental(
 
             if prev_uv and prev_uv != current_uv:
                 updated_watermarks[folder] = {"uidvalidity": current_uv, "last_uid": 0, "last_sync_at": sync_time}
-                continue
+                prev_uid = 0
+                uv_reset_folders.add(folder)
 
             search_start = prev_uid + 1
             status, search_data = client.uid("SEARCH", None, "UID", f"{search_start}:*")
@@ -633,6 +766,35 @@ def fetch_incremental(
                     except Exception as exc:
                         folder_errors.append({"folder": folder, "step": "decode", "detail": str(exc)})
                         continue
+
+            if lookback_days > prev_lookback > 0:
+                cutoff = datetime.now(SHANGHAI) - timedelta(days=lookback_days)
+                stamp = cutoff.strftime("%d-%b-%Y")
+                status, since_data = client.uid("SEARCH", None, "SINCE", stamp)
+                if status == "OK":
+                    since_uids = _decode_uid_list(since_data)
+                    known = {
+                        str(row.get("id", "") or "")
+                        for row in (existing_ctx.get("envelopes") or [])
+                        if isinstance(row, dict)
+                        and str(row.get("folder") or "INBOX") == folder
+                    }
+                    already = {str(u) for u in uids}
+                    missing = [
+                        uid for uid in since_uids
+                        if str(uid) not in known and str(uid) not in already
+                    ][:200]
+                    if missing:
+                        uid_set = ",".join(str(u) for u in missing)
+                        status, fetch_data = client.uid(
+                            "FETCH", uid_set,
+                            "(UID FLAGS BODY.PEEK[HEADER.FIELDS (" + HEADER_FIELDS + ")])",
+                        )
+                        if status == "OK":
+                            try:
+                                new_envelopes.extend(_decode_fetch_rows(fetch_data, folder))
+                            except Exception as exc:
+                                folder_errors.append({"folder": folder, "step": "backfill", "detail": str(exc)})
 
             updated_watermarks[folder] = {
                 "uidvalidity": current_uv,
@@ -669,11 +831,18 @@ def fetch_incremental(
     # Normalize new envelopes
     normalized = [_normalize_envelope_row(row, owner) for row in new_envelopes]
 
-    # Merge envelopes by (id, folder)
+    # Merge envelopes by (id, folder); canonicalize flags on disk leftovers.
     merged: dict[tuple[str, str], dict[str, Any]] = {}
     for row in (existing.get("envelopes", []) if isinstance(existing.get("envelopes"), list) else []):
         if isinstance(row, dict):
-            merged[(str(row.get("id", "")), str(row.get("folder", "")))] = row
+            folder_name = str(row.get("folder", "") or "")
+            if folder_name in uv_reset_folders:
+                continue
+            fixed = dict(row)
+            fixed["flags"] = canonicalize_flags(
+                fixed.get("flags") if isinstance(fixed.get("flags"), list) else []
+            )
+            merged[(str(fixed.get("id", "")), str(fixed.get("folder", "")))] = fixed
     for row in normalized:
         merged[(row["id"], row["folder"])] = row
 
@@ -692,6 +861,18 @@ def fetch_incremental(
         except ValueError:
             filtered.append(row)  # keep if unparseable
     filtered.sort(key=lambda r: str(r.get("date", "")), reverse=True)
+
+    # Read-only FLAGS refresh for lookback UIDs already on disk (not this round's new headers).
+    new_keys = {
+        (str(row.get("folder", "INBOX") or "INBOX"), str(row.get("id", "") or ""))
+        for row in normalized
+        if str(row.get("id", "") or "")
+    }
+    flags_refreshed_count = 0
+    try:
+        flags_refreshed_count = _refresh_flags_imap(client, filtered, skip_keys=new_keys)
+    except Exception:
+        flags_refreshed_count = 0  # non-fatal; keep last known flags
 
     # Sample bodies for new envelopes
     body_started = time.monotonic()
@@ -745,9 +926,25 @@ def fetch_incremental(
     _write_json(watermarks_path, updated_watermarks)
     pulse_ms = round((time.monotonic() - pulse_started) * 1000)
 
+    # Ids that IMAP treated as new AND survived lookback trim.
+    filtered_keys = {
+        (str(e.get("folder", "INBOX") or "INBOX"), str(e.get("id", "") or ""))
+        for e in filtered
+        if str(e.get("id", "") or "")
+    }
+    new_envelope_ids = [
+        [str(row.get("folder", "INBOX") or "INBOX"), str(row.get("id", "") or "")]
+        for row in normalized
+        if str(row.get("id", "") or "")
+        and (str(row.get("folder", "INBOX") or "INBOX"), str(row.get("id", "") or "")) in filtered_keys
+    ]
+
     return {
         "status": "ok" if normalized else "noop",
         "new_envelope_count": len(normalized),
+        # cmd_sync uses this so duplicate UID re-fetch (count>0, already in window) does not force full.
+        "new_envelope_ids": new_envelope_ids,
+        "flags_refreshed_count": flags_refreshed_count,
         "sampled_body_count": len(new_bodies),
         "total_envelopes": len(filtered),
         "embeddings_degraded": embeddings_degraded,

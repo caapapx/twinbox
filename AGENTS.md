@@ -4,4 +4,4 @@
 
 @CLAUDE.md
 
-产品 MCP 用法：仓内 `twinbox` skill（`.cursor/skills/twinbox`、`.codex/skills/twinbox`）。现场热更 SOP 不进本仓。
+产品 MCP 用法：仓内 `twinbox` skill（`.agents/skills/twinbox` → 根 `SKILL.md`）。现场热更 SOP 不进本仓。

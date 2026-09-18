@@ -55,7 +55,7 @@ def classify_error(*, step: str = "", message: str = "", degraded: list[str] | N
     if step_l in {"fetch", "imap"} or "imap" in msg_l or "connection" in msg_l:
         if any(k in msg_l for k in ("login", "auth", "credential", "connect", "ssl", "tls", "refused", "timeout")):
             return "imap_connect"
-        if "envelope" in msg_l or "header" in msg_l:
+        if any(k in msg_l for k in ("envelope", "header", "decode", "cr or lf", "linefeed", "carriage")):
             return "imap_envelope"
         if "body" in msg_l or "rfc822" in msg_l or "fetch" in msg_l:
             return "imap_body"
@@ -108,6 +108,9 @@ def append_run(account_root: Path, record: dict[str, Any], *, keep: int = MAX_RU
         "error": sanitize_error_message(str(record.get("error") or "")) if record.get("error") else None,
         "timings_ms": record.get("timings_ms") if isinstance(record.get("timings_ms"), dict) else {},
         "stages": record.get("stages") if isinstance(record.get("stages"), dict) else {},
+        "select": record.get("select") if isinstance(record.get("select"), dict) else None,
+        "analysis_path": record.get("analysis_path") if record.get("analysis_path") in {"skip", "incremental", "full", "quick"} else None,
+        "new_envelope_count": record.get("new_envelope_count") if record.get("new_envelope_count") is None or isinstance(record.get("new_envelope_count"), int) else None,
     }
     with path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -156,18 +159,47 @@ def _mtime_iso(path: Path) -> str | None:
     return datetime.fromtimestamp(path.stat().st_mtime, tz=SHANGHAI).isoformat(timespec="seconds")
 
 
+def _nonempty_iso(value: object) -> str | None:
+    text = str(value or "").strip()
+    return text or None
+
+
+def _artifact_generated_at(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    try:
+        if path.suffix in {".yaml", ".yml"}:
+            import yaml
+            data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        else:
+            data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, Exception):
+        return None
+    if isinstance(data, dict):
+        return _nonempty_iso(data.get("generated_at"))
+    return None
+
+
 def account_freshness(account_root: Path) -> dict[str, Any]:
     """Attempt vs success freshness for one account namespace."""
     last = load_last_run(account_root) or {}
     context = account_root / "runtime" / "context" / "phase1-context.json"
     analysis = account_root / "runtime" / "validation" / "phase-4" / "pending-replies.yaml"
     pulse = account_root / "runtime" / "validation" / "phase-4" / "activity-pulse.json"
+    pulse_data: dict[str, Any] = {}
+    if pulse.is_file():
+        try:
+            raw = json.loads(pulse.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            raw = {}
+        if isinstance(raw, dict):
+            pulse_data = raw
     return {
         "last_attempt_at": last.get("attempted_at"),
         "last_success_at": last.get("success_at"),
-        "last_fetch_at": _mtime_iso(context),
-        "last_analysis_at": _mtime_iso(analysis),
-        "last_pulse_at": _mtime_iso(pulse),
+        "last_fetch_at": _nonempty_iso(pulse_data.get("fetch_at")) or _artifact_generated_at(context),
+        "last_analysis_at": _nonempty_iso(pulse_data.get("analysis_generated_at")) or _artifact_generated_at(analysis),
+        "last_pulse_at": _nonempty_iso(pulse_data.get("generated_at")) or _mtime_iso(pulse),
         "last_run_ok": last.get("ok"),
         "last_error_class": last.get("error_class"),
         "degraded": list(last.get("degraded") or []),

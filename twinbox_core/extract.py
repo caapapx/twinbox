@@ -327,6 +327,7 @@ def run_extract(
     criteria: ExtractCriteria,
     *,
     code_root: Path | None = None,
+    account_id: str | None = None,
 ) -> dict[str, Any]:
     """Run targeted IMAP extract; persist under runtime/queries/."""
     if not criteria.since:
@@ -334,7 +335,7 @@ def run_extract(
     if not criteria.folders:
         return {"ok": False, "error": "at least one folder is required"}
 
-    imap_cfg = resolve_imap_config()
+    imap_cfg = resolve_imap_config(account_id)
     if not imap_cfg.get("host") or not imap_cfg.get("login"):
         return {"ok": False, "error": "IMAP not configured. Run setup first."}
 
@@ -354,7 +355,7 @@ def run_extract(
             "folder_errors": folder_errors,
         }
 
-    owner = owner_email()
+    owner = owner_email() or str(imap_cfg.get("login") or "")
     matched = [e for e in envelopes if matches_envelope(e, criteria, owner=owner)]
     reports = [envelope_to_report(e, bucket=criteria.bucket) for e in matched]
     reports = bucket_reports(reports, criteria.bucket)

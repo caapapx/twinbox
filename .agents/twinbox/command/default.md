@@ -8,21 +8,20 @@ exact names.
 ## Tool map
 
 - Latest mail / today snapshot: `twinbox_latest_mail`
-  - Optional input: `{ "unread_only": true }`
+  - Optional: `unread_only`, `account_id` (omit uses `default_account_id`)
   - Automatically syncs when the activity pulse is missing.
-- Todo / urgent / pending replies: `twinbox_todo`
-- Current weekly brief: `twinbox_weekly`
+- Todo / urgent / pending replies: `twinbox_todo` (optional `account_id`)
+- Current weekly brief: `twinbox_weekly` (optional `account_id`)
 - Refresh mail and analysis: `twinbox_sync`
-  - Optional input: `{ "job": "daytime-sync" }` or `{ "job": "nightly-full" }`
+  - Optional `job`: `daytime-sync` / `nightly-full` / `quick-refresh`
+  - Omit `account_id` to sync all accounts
 - Inspect/search a thread: `twinbox_thread_inspect`
-  - Required input: `{ "query": "..." }`
+  - Required `query`; optional `account_id`
 - Local queue action: `twinbox_queue_action`
-  - Required inputs: `action` (`complete`, `dismiss`, or `restore`) and
-    `thread_key`; optional `reason`.
-- Historical/targeted extraction: `twinbox_extract`
-  - Supports `profile`, `since`, `until`, `folders`, `subject_contains`,
-    `subject_regex`, `body_contains`, `weekdays`, `from_self`, and `bucket`.
-- Mailbox health: `twinbox_status`
+  - Required `action` (`complete`, `dismiss`, or `restore`) and `thread_key`
+- Historical/targeted extraction: `twinbox_extract` (optional `account_id`)
+- Mailbox health: `twinbox_status` (optional `account_id`)
+- Accounts: `twinbox_accounts` (`list` / `add` / `remove` / `set-default`)
 - Initial setup: `twinbox_setup`
 
 ## Rule

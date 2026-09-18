@@ -94,14 +94,44 @@ function needsSync(stdout) {
   }
 }
 
+function flagValue(args, flag) {
+  const i = args.indexOf(flag);
+  if (i >= 0 && i + 1 < args.length) return String(args[i + 1] || "");
+  return "";
+}
+
+function isDegraded(procResult) {
+  try {
+    const parsed = JSON.parse(procResult.stdout.trim());
+    return Array.isArray(parsed?.degraded) && parsed.degraded.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/** Missing weekly needs a full-window rewrite; latest/todo keep default daytime-sync. */
+function recoverySyncArgs(cliArgs) {
+  const syncArgs = cliArgs[0] === "weekly"
+    ? ["sync", "--job", "nightly-full", "--json"]
+    : ["sync", "--json"];
+  const accountId = flagValue(cliArgs, "--account-id");
+  if (accountId) syncArgs.push("--account-id", accountId);
+  return syncArgs;
+}
+
+function recoveryFailed(procResult, cliArgs) {
+  if (isError(procResult)) return true;
+  return cliArgs[0] === "weekly" && isDegraded(procResult);
+}
+
 async function withAutoSync(cliArgs, label) {
   const r1 = await runCli(cliArgs);
   // A stale pulse is still useful. Do not turn a read request into a blocking
   // IMAP sync; cron or an explicit twinbox_sync owns freshness recovery.
   if (!needsSync(r1.stdout)) return makeResult(r1);
 
-  const rSync = await runCli(["sync", "--json"]);
-  if (isError(rSync)) {
+  const rSync = await runCli(recoverySyncArgs(cliArgs));
+  if (recoveryFailed(rSync, cliArgs)) {
     return {
       content: [
         {
@@ -113,6 +143,7 @@ async function withAutoSync(cliArgs, label) {
     };
   }
   const r2 = await runCli(cliArgs);
+  const stillMissing = needsSync(r2.stdout);
   return {
     content: [
       {
@@ -120,14 +151,28 @@ async function withAutoSync(cliArgs, label) {
         text: [
           `=== auto sync (${label}) ===`,
           formatResult(rSync).content[0].text,
-          `=== ${cliArgs[0]} (after sync) ===`,
+          stillMissing
+            ? `=== ${cliArgs[0]} still missing after recovery ===`
+            : `=== ${cliArgs[0]} (after sync) ===`,
           formatResult(r2).content[0].text,
         ].join("\n\n"),
       },
     ],
-    isError: isError(r2),
+    isError: stillMissing || isError(r2),
   };
 }
+
+const ACCOUNT_ID_PROP = {
+  type: "string",
+  description:
+    "Mailbox account_id. Omit to use twinbox.json default_account_id.",
+};
+
+const SYNC_ACCOUNT_ID_PROP = {
+  type: "string",
+  description:
+    "If set, sync only this account. Omit to sync all registered accounts.",
+};
 
 const TOOLS = [
   {
@@ -146,6 +191,7 @@ const TOOLS = [
           description:
             "daytime-sync (fetch + analysis), nightly-full (complete rebuild), quick-refresh (fetch + pulse only, no LLM analysis)",
         },
+        account_id: SYNC_ACCOUNT_ID_PROP,
       },
     },
   },
@@ -163,18 +209,19 @@ const TOOLS = [
           type: "boolean",
           description: "If true, only returns threads with unread emails.",
         },
+        account_id: ACCOUNT_ID_PROP,
       },
     },
   },
   {
     name: "twinbox_todo",
     description: "Urgent / pending queue snapshot (read-only). Chinese: 待办、待回复.",
-    inputSchema: { type: "object", properties: {} },
+    inputSchema: { type: "object", properties: { account_id: ACCOUNT_ID_PROP } },
   },
   {
     name: "twinbox_weekly",
     description: "Weekly brief. Chinese: 周报、每周简报.",
-    inputSchema: { type: "object", properties: {} },
+    inputSchema: { type: "object", properties: { account_id: ACCOUNT_ID_PROP } },
   },
   {
     name: "twinbox_thread_inspect",
@@ -188,6 +235,7 @@ const TOOLS = [
           type: "string",
           description: "Subject fragment, thread key, or keyword",
         },
+        account_id: ACCOUNT_ID_PROP,
       },
       required: ["query"],
     },
@@ -213,6 +261,7 @@ const TOOLS = [
           type: "string",
           description: "Short note (default: 已完成/已处理)",
         },
+        account_id: ACCOUNT_ID_PROP,
       },
       required: ["action", "thread_key"],
     },
@@ -277,6 +326,7 @@ const TOOLS = [
           type: "number",
           description: "Local-hour end filter (exclusive)",
         },
+        account_id: ACCOUNT_ID_PROP,
       },
     },
   },
@@ -285,7 +335,7 @@ const TOOLS = [
     description:
       "Mailbox health + setup status (IMAP preflight, LLM validation, artifact check). " +
       "Chinese: 邮箱状态、检查连接.",
-    inputSchema: { type: "object", properties: {} },
+    inputSchema: { type: "object", properties: { account_id: ACCOUNT_ID_PROP } },
   },
   {
     name: "twinbox_setup",
@@ -329,13 +379,13 @@ const TOOLS = [
   {
     name: "twinbox_accounts",
     description:
-      "List/add/remove mailbox accounts. Credentials stay in local vault; outputs only password_set booleans. Chinese: 邮箱账号管理.",
+      "List/add/remove/set-default mailbox accounts. Credentials stay in local vault; outputs only password_set booleans. Chinese: 邮箱账号管理.",
     inputSchema: {
       type: "object",
       properties: {
         action: {
           type: "string",
-          enum: ["list", "get", "add", "remove"],
+          enum: ["list", "get", "add", "remove", "set-default"],
           default: "list",
         },
         account_id: { type: "string" },

@@ -29,6 +29,9 @@ def project_item(item: dict[str, Any], pack: dict[str, Any] | None) -> str:
     defaults = (pack or {}).get("classification", {}).get("defaults", {}) if pack else {}
     broadcast_default = str(defaults.get("broadcast", "reference") if isinstance(defaults, dict) else "reference")
     axes = _axes(item)
+    # Owner-action claims without validated evidence stay watch (待确认), not action_required.
+    if "pending" in tags and (item.get("evidence_basis") == "insufficient" or item.get("action_target")):
+        return "watch"
     if "pending" in tags or (axes["urgency"] == "high" and axes["actionability"] == "high"):
         return "action_required"
     if "urgent" in tags or "sla_risk" in tags or item.get("action_hint"):

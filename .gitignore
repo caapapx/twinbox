@@ -81,8 +81,11 @@ state.json
 !.beads/formulas/
 .beads/formulas/*
 !.beads/formulas/twinbox-*.formula.toml
+
+# Harness leftovers — product skill hop is only .agents/skills/twinbox
 .claude/
-!.claude/skills/
+.cursor/
+.codex/
 
 # Local user materials and office documents
 *.xlsx
@@ -116,6 +119,3 @@ integrations/openclaw/openclaw.fragment.json
 .zvec-grep/
 **/.zvec-grep/
 .agents/skills/*-ops
-.cursor/skills/*-ops
-.codex/skills/*-ops
-.claude/skills/*-ops

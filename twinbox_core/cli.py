@@ -57,8 +57,120 @@ def _account_root(account_id: str | None = None) -> Path:
     return account_state_root(account_id)
 
 
+def _resolved_account_id(account_id: str | None = None) -> str:
+    from .config import default_account_id
+    aid = (account_id or default_account_id() or "").strip()
+    return aid or "default"
+
+
 def _json_out(data: Any) -> None:
     print(json.dumps(data, ensure_ascii=False, indent=2))
+
+
+def _envelope_id_set(account_root: Path) -> set[tuple[str, str]]:
+    path = account_root / "runtime" / "context" / "phase1-context.json"
+    if not path.is_file():
+        return set()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return set()
+    envelopes = data.get("envelopes") if isinstance(data, dict) else None
+    if not isinstance(envelopes, list):
+        return set()
+    out: set[tuple[str, str]] = set()
+    for env in envelopes:
+        if not isinstance(env, dict):
+            continue
+        uid = str(env.get("id", "") or "")
+        if not uid:
+            continue
+        out.add((str(env.get("folder", "INBOX") or "INBOX"), uid))
+    return out
+
+
+def _id_pair_set(raw: object) -> set[tuple[str, str]]:
+    out: set[tuple[str, str]] = set()
+    if not isinstance(raw, list):
+        return out
+    for item in raw:
+        if not isinstance(item, (list, tuple)) or len(item) != 2:
+            continue
+        uid = str(item[1] or "")
+        if not uid:
+            continue
+        out.add((str(item[0] or "INBOX"), uid))
+    return out
+
+
+def _pending_path(account_root: Path) -> Path:
+    return account_root / "runtime" / "context" / "pending-analysis.json"
+
+
+def _load_pending(account_root: Path) -> tuple[set[tuple[str, str]], dict[str, int]]:
+    path = _pending_path(account_root)
+    if not path.is_file():
+        return set(), {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return set(), {}
+    if not isinstance(data, dict):
+        return set(), {}
+    uv: dict[str, int] = {}
+    raw_uv = data.get("uidvalidity")
+    if isinstance(raw_uv, dict):
+        for folder, val in raw_uv.items():
+            try:
+                uv[str(folder)] = int(val or 0)
+            except (TypeError, ValueError):
+                continue
+    return _id_pair_set(data.get("ids")), uv
+
+
+def _save_pending(
+    account_root: Path,
+    ids: set[tuple[str, str]],
+    uidvalidity: dict[str, int],
+) -> None:
+    from .imap_fetch import _write_json
+    payload = {
+        "ids": sorted([list(item) for item in ids]),
+        "uidvalidity": uidvalidity,
+    }
+    _write_json(_pending_path(account_root), payload)
+
+
+def _watermark_uidvalidity(account_root: Path) -> dict[str, int]:
+    from .imap_fetch import _load_json, _watermarks_path
+    raw = _load_json(_watermarks_path(account_root), {})
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, int] = {}
+    for folder, row in raw.items():
+        if not isinstance(row, dict):
+            continue
+        try:
+            out[str(folder)] = int(row.get("uidvalidity") or 0)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _reconcile_pending_uv(
+    ids: set[tuple[str, str]],
+    pending_uv: dict[str, int],
+    watermark_uv: dict[str, int],
+) -> tuple[set[tuple[str, str]], dict[str, int]]:
+    kept = set(ids)
+    uv = dict(pending_uv)
+    for folder, current in watermark_uv.items():
+        prev = int(uv.get(folder) or 0)
+        if prev and current and prev != current:
+            kept = {item for item in kept if item[0] != folder}
+        if current:
+            uv[folder] = current
+    return kept, uv
 
 
 def _recovery_hint(tool: str, msg: str) -> dict[str, Any]:
@@ -141,6 +253,7 @@ def cmd_sync(job: str = "daytime-sync", account_id: str | None = None) -> dict[s
     lookback = 30 if job == "nightly-full" else 7
     # quick-refresh: fetch + embed + rebuild pulse, keep the last scheduled LLM analysis.
     quick = job == "quick-refresh"
+    prior_ids = _envelope_id_set(root)
 
     fetch_started = time.monotonic()
     fetch_result = fetch_incremental(
@@ -149,7 +262,18 @@ def cmd_sync(job: str = "daytime-sync", account_id: str | None = None) -> dict[s
         account_id=aid,
     )
     if fetch_result.get("status") == "error":
-        msg = str(fetch_result.get("error") or "fetch failed")
+        msg = str(fetch_result.get("error") or "").strip()
+        folder_errors = fetch_result.get("folder_errors")
+        if not msg and isinstance(folder_errors, list) and folder_errors:
+            bits = []
+            for err in folder_errors[:3]:
+                if not isinstance(err, dict):
+                    continue
+                bits.append(
+                    f"{err.get('folder') or '?'}:{err.get('step') or '?'}:{err.get('detail') or 'error'}"
+                )
+            msg = "; ".join(bits)
+        msg = msg or "fetch failed"
         err_class = classify_error(step="fetch", message=msg)
         out = {"ok": False, "step": "fetch", "account_id": aid, "run_id": run_id, **fetch_result}
         append_run(
@@ -167,31 +291,78 @@ def cmd_sync(job: str = "daytime-sync", account_id: str | None = None) -> dict[s
         )
         return out
     fetch_ms = round((time.monotonic() - fetch_started) * 1000)
+    new_count = fetch_result.get("new_envelope_count")
+    reported = fetch_result.get("new_envelope_ids")
+    if isinstance(reported, list):
+        # Prefer IMAP-new ids that survived into context; subtract prior so duplicates → empty.
+        current = _envelope_id_set(root)
+        new_ids: set[tuple[str, str]] = set()
+        for item in reported:
+            if not isinstance(item, (list, tuple)) or len(item) != 2:
+                continue
+            key = (str(item[0] or "INBOX"), str(item[1] or ""))
+            if key[1] and key in current and key not in prior_ids:
+                new_ids.add(key)
+    else:
+        new_ids = _envelope_id_set(root) - prior_ids
+    current_ids = _envelope_id_set(root)
+    pending_ids, pending_uv = _load_pending(root)
+    pending_ids, pending_uv = _reconcile_pending_uv(
+        pending_ids, pending_uv, _watermark_uidvalidity(root),
+    )
+    pending_ids |= new_ids
+    pending_ids &= current_ids
+    _save_pending(root, pending_ids, pending_uv)
+    urgent_yaml = root / "runtime" / "validation" / "phase-4" / "daily-urgent.yaml"
+    has_analysis = urgent_yaml.is_file()
 
     degraded: list[str] = []
     analysis_started = time.monotonic()
+    analysis_path = "full"
     if quick:
         analysis: dict[str, Any] = {"ok": True, "skipped": True, "reason": "quick-refresh"}
-    else:
+        analysis_path = "quick"
+    elif job == "nightly-full" or not has_analysis or new_count is None:
         analysis = run_analysis(root)
+        analysis_path = "full"
         if not analysis.get("ok"):
             degraded.append("analysis")
+        elif not analysis.get("skipped"):
+            pending_ids -= _id_pair_set(analysis.get("analyzed_ids"))
+    elif pending_ids:
+        analysis = run_analysis(root, only_ids=set(pending_ids))
+        analysis_path = "incremental"
+        if not analysis.get("ok"):
+            degraded.append("analysis")
+        elif not analysis.get("skipped"):
+            pending_ids -= _id_pair_set(analysis.get("analyzed_ids"))
+    else:
+        # True noop, or IMAP count>0 but no new ids in window (duplicate UID / trimmed).
+        # R8 zjma12: new_envelope_count=1 + empty new_ids used to fall into full — never again.
+        reason = "no-new-mail" if int(new_count or 0) == 0 else "no-new-ids-in-window"
+        analysis = {"ok": True, "skipped": True, "reason": reason}
+        analysis_path = "skip"
+    _save_pending(root, pending_ids, pending_uv)
     analysis_ms = round((time.monotonic() - analysis_started) * 1000)
 
     pulse_started = time.monotonic()
     try:
-        pulse_data, pulse_path = write_activity_pulse(root)
-        pulse_ok = True
         from .pulse import _load_yaml
-        urgent_yaml = root / "runtime" / "validation" / "phase-4" / "daily-urgent.yaml"
-        pulse_data["analysis_generated_at"] = _load_yaml(urgent_yaml).get("generated_at") or None
+        extra: dict[str, Any] = {
+            "source_account": aid,
+            "fetch_at": fetch_result.get("generated_at") or "",
+        }
+        extra["analysis_generated_at"] = _load_yaml(urgent_yaml).get("generated_at") or None
         if quick:
-            pulse_data["analysis_skipped"] = True
+            extra["analysis_skipped"] = True
+        if analysis.get("skipped"):
+            extra["analysis_skipped"] = True
+            extra["analysis_skip_reason"] = analysis.get("reason")
         if "analysis" in degraded:
-            pulse_data["stale_analysis"] = True
-        pulse_data["source_account"] = aid
-        from .imap_fetch import _write_json
-        _write_json(pulse_path, pulse_data)
+            extra["stale_analysis"] = True
+        pulse_data, pulse_path = write_activity_pulse(root, extra=extra)
+        pulse_data.update(extra)
+        pulse_ok = True
     except Exception as exc:
         pulse_ok = False
         pulse_data = {"error": str(exc)}
@@ -230,9 +401,13 @@ def cmd_sync(job: str = "daytime-sync", account_id: str | None = None) -> dict[s
             "timings_ms": timings,
             "stages": {
                 "fetch": "ok",
-                "analysis": "skipped" if quick else ("degraded" if "analysis" in degraded else "ok"),
+                "analysis": "skipped" if analysis.get("skipped") else ("degraded" if "analysis" in degraded else "ok"),
                 "pulse": "ok" if pulse_ok else "error",
             },
+            "select": analysis.get("select") if isinstance(analysis.get("select"), dict) else None,
+            "analysis_path": analysis_path,
+            "new_envelope_count": new_count,
+            "pending_analysis_count": len(pending_ids),
         },
     )
 
@@ -243,13 +418,16 @@ def cmd_sync(job: str = "daytime-sync", account_id: str | None = None) -> dict[s
         "run_id": run_id,
         "source_account": aid,
         "degraded": degraded,
+        "analysis_path": analysis_path,
+        "pending_analysis_count": len(pending_ids),
         "fetch": fetch_result,
         "analysis": analysis,
         "pulse": {"ok": pulse_ok, "tracked_threads": pulse_data.get("summary", {}).get("tracked_threads", 0)},
         "consistency": {
             "fetch_at": fetch_at,
             "analysis_ok": analysis.get("ok"),
-            "analysis_skipped": quick,
+            "analysis_skipped": bool(analysis.get("skipped")),
+            "analysis_path": analysis_path,
             "analysis_generated_at": pulse_data.get("analysis_generated_at"),
             "pulse_ok": pulse_ok,
         },
@@ -289,6 +467,9 @@ _CARD_KEYS = (
     "action_hint",
     "waiting_on",
     "recipient_role",
+    "latest_recipient_role",
+    "evidence_basis",
+    "action_target",
 )
 
 
@@ -313,14 +494,18 @@ def _compact_rows(rows: object, *, limit: int) -> list[dict[str, Any]]:
 
 
 def cmd_latest_mail(unread_only: bool = False, account_id: str | None = None) -> dict[str, Any]:
-    from .pulse import load_activity_pulse
+    from .pulse import hidden_thread_keys, load_activity_pulse
     root = _account_root(account_id)
     try:
         pulse = load_activity_pulse(root)
     except RuntimeError:
         return _recovery_hint("twinbox_sync", "Missing activity-pulse.json")
 
-    threads = [t for t in pulse.get("thread_index", []) if isinstance(t, dict)]
+    hidden = hidden_thread_keys(root)
+    threads = [
+        t for t in pulse.get("thread_index", [])
+        if isinstance(t, dict) and str(t.get("thread_key", "")) not in hidden
+    ]
     if unread_only:
         threads = [t for t in threads if t.get("unread_count", 0) > 0]
     threads.sort(key=lambda t: str(t.get("last_activity_at") or ""), reverse=True)
@@ -328,7 +513,7 @@ def cmd_latest_mail(unread_only: bool = False, account_id: str | None = None) ->
 
     return {
         "ok": True,
-        "source_account": (account_id or "default"),
+        "source_account": _resolved_account_id(account_id),
         "generated_at": pulse.get("generated_at", ""),
         "staleness": _staleness(str(pulse.get("generated_at", "") or "")),
         "summary": pulse.get("summary", {}),
@@ -338,21 +523,32 @@ def cmd_latest_mail(unread_only: bool = False, account_id: str | None = None) ->
 
 
 def cmd_todo(account_id: str | None = None) -> dict[str, Any]:
-    from .pulse import load_activity_pulse
+    from .pulse import hidden_thread_keys, load_activity_pulse
     root = _account_root(account_id)
     try:
         pulse = load_activity_pulse(root)
     except RuntimeError:
         return _recovery_hint("twinbox_sync", "Missing activity-pulse.json")
 
-    attention = _compact_rows(pulse.get("needs_attention", []), limit=20)
+    hidden = hidden_thread_keys(root)
+
+    def _visible(rows: object) -> list[dict[str, Any]]:
+        if not isinstance(rows, list):
+            return []
+        return [
+            r for r in rows
+            if isinstance(r, dict) and str(r.get("thread_key", "")) not in hidden
+        ]
+
+    attention = _compact_rows(_visible(pulse.get("needs_attention", [])), limit=20)
     raw_proj = pulse.get("projections")
     projections: dict[str, Any] = {}
     if isinstance(raw_proj, dict):
         for key, rows in raw_proj.items():
-            projections[key] = _compact_rows(rows, limit=8)
+            projections[key] = _compact_rows(_visible(rows), limit=8)
     return {
         "ok": True,
+        "source_account": _resolved_account_id(account_id),
         "generated_at": pulse.get("generated_at", ""),
         "staleness": _staleness(str(pulse.get("generated_at", "") or "")),
         "needs_attention": attention,
@@ -375,6 +571,7 @@ def cmd_weekly(account_id: str | None = None) -> dict[str, Any]:
         "ok": True,
         "staleness": _staleness(str(data.get("generated_at", "") or "")),
         **data,
+        "source_account": _resolved_account_id(account_id),
     }
 
 
@@ -385,7 +582,13 @@ def cmd_thread_inspect(query: str, account_id: str | None = None) -> dict[str, A
         results = search_threads(query, root, limit=10)
     except RuntimeError:
         return _recovery_hint("twinbox_sync", "Missing activity-pulse.json")
-    return {"ok": True, "query": query, "results": results, "count": len(results)}
+    return {
+        "ok": True,
+        "source_account": _resolved_account_id(account_id),
+        "query": query,
+        "results": results,
+        "count": len(results),
+    }
 
 
 def _code_root() -> Path:
@@ -461,19 +664,35 @@ def cmd_extract(remaining: list[str], account_id: str | None = None) -> dict[str
             "error": "Provide --since YYYY-MM-DD or --profile <name> (e.g. weekly_report)",
         }
 
-    return run_extract(_account_root(account_id), criteria, code_root=_code_root())
+    return run_extract(_account_root(account_id), criteria, code_root=_code_root(), account_id=account_id)
 
 
 def cmd_queue_action(action: str, thread_key: str, reason: str = "", account_id: str | None = None) -> dict[str, Any]:
+    from .pulse import commit_activity_pulse, pulse_publish_lock
     from .queue import complete_thread, dismiss_thread, restore_thread
     root = _account_root(account_id)
-    if action == "complete":
-        return complete_thread(root, thread_key, reason or "已完成")
-    elif action == "dismiss":
-        return dismiss_thread(root, thread_key, reason or "已处理")
-    elif action == "restore":
-        return restore_thread(root, thread_key)
-    return {"ok": False, "error": f"Unknown action: {action}"}
+    with pulse_publish_lock(root):
+        if action == "complete":
+            result = complete_thread(root, thread_key, reason or "已完成")
+        elif action == "dismiss":
+            result = dismiss_thread(root, thread_key, reason or "已处理")
+        elif action == "restore":
+            result = restore_thread(root, thread_key)
+        else:
+            return {"ok": False, "error": f"Unknown action: {action}"}
+
+        if not result.get("ok"):
+            return result
+
+        try:
+            commit_activity_pulse(root, preserve_lineage=True)
+            return {**result, "pulse_updated": True}
+        except Exception as exc:
+            return {
+                **result,
+                "pulse_updated": False,
+                "pulse_error": type(exc).__name__,
+            }
 
 
 
@@ -527,6 +746,7 @@ def cmd_status(account_id: str | None = None) -> dict[str, Any]:
                 "type": acct.get("type"),
                 "email": acct.get("email"),
                 "password_set": bool(acct.get("password_set")),
+                "is_default": bool(acct.get("is_default")),
                 "freshness": freshness,
             }
         )
@@ -572,11 +792,23 @@ def cmd_status(account_id: str | None = None) -> dict[str, Any]:
 
 
 def cmd_accounts(remaining: list[str], account_id: str | None = None) -> dict[str, Any]:
-    from .config import list_accounts, upsert_account, remove_account, get_account
+    from .config import (
+        default_account_id,
+        get_account,
+        list_accounts,
+        remove_account,
+        set_default_account,
+        upsert_account,
+    )
 
     if not remaining or remaining[0] in {"list", "ls"}:
         rows = list_accounts()
-        return {"ok": True, "accounts": rows, "count": len(rows)}
+        return {
+            "ok": True,
+            "accounts": rows,
+            "count": len(rows),
+            "default_account_id": default_account_id(),
+        }
 
     action = remaining[0]
     if action == "get":
@@ -591,6 +823,15 @@ def cmd_accounts(remaining: list[str], account_id: str | None = None) -> dict[st
         if not aid:
             return {"ok": False, "error": "Usage: accounts remove <account_id>"}
         return remove_account(aid)
+
+    if action in {"set-default", "setdefault"}:
+        aid = remaining[1] if len(remaining) > 1 else (account_id or "")
+        if not aid:
+            return {"ok": False, "error": "Usage: accounts set-default <account_id>"}
+        try:
+            return set_default_account(aid)
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
 
     if action == "add":
         kwargs: dict[str, Any] = {}
@@ -622,7 +863,7 @@ def cmd_accounts(remaining: list[str], account_id: str | None = None) -> dict[st
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
-    return {"ok": False, "error": "Usage: accounts [list|get|add|remove] ..."}
+    return {"ok": False, "error": "Usage: accounts [list|get|add|remove|set-default] ..."}
 
 
 def cmd_ingest(remaining: list[str], account_id: str | None = None) -> dict[str, Any]:
