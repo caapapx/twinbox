@@ -31,6 +31,8 @@ description: "Task list for semantic context and event intelligence"
 - [x] T009 [US1] 事件记录：稳定 ID、类型、引用、抽取字段；平台向输出无正文（`twinbox_core/events.py` 或 analyze 旁路）
 - [x] T010 [P] [US1] [US4] `tests/test_select.py`：hints 命中线程进入候选；embedding 失败仍能选出最新结构候选；select 失败写入 `embeddings_degraded`；分析 prompt 含同一线程多封信封
 
+**2026-09-18 双向加固注记（T007/T010）**：补齐非正 `limit` 零工作返回、无 hints 的结构模式不误报降级、空/不完整 hint embedding 响应与 sidecar 读取异常的结构回退；召回托底与结构分按线程内任意消息聚合，而不是只读取最新代表信封。以上均为既有合同的健壮性加固，不改变 pack 阈值、rerank、skip_llm 或 IMAP 语义。
+
 ## Phase 4: User Story 2 - 声明式规则 (P1)
 
 - [x] T011 [US2] `twinbox_core/rules.py`：硬条件（sender/folder/recipient_role/header）可 `skip_llm`；语义三段余弦
