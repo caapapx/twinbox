@@ -1,0 +1,345 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "decision_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "scope_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "case_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "expected_revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "actor_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "kind": {
+      "enum": [
+        "correction_proposal",
+        "human_confirmation",
+        "execution_receipt"
+      ]
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 160
+      },
+      "maxItems": 32
+    },
+    "decision": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "enum": [
+                "primary_event_type",
+                "action_target"
+              ]
+            },
+            "proposed_values": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 96
+              },
+              "maxItems": 1,
+              "minItems": 1
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "required": [
+            "field",
+            "proposed_values",
+            "reason"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "confirmation": {
+              "enum": [
+                "responsibility_confirmed",
+                "business_outcome_confirmed",
+                "needs_review"
+              ]
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "required": [
+            "confirmation",
+            "reason"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "run_ref": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            "outcome": {
+              "enum": [
+                "succeeded",
+                "failed",
+                "cancelled",
+                "unknown"
+              ]
+            },
+            "occurred_at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "run_ref",
+            "outcome",
+            "occurred_at"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "const": "tags"
+            },
+            "proposed_tags": {
+              "type": "object",
+              "maxProperties": 16,
+              "propertyNames": {
+                "maxLength": 64
+              },
+              "additionalProperties": {
+                "type": "array",
+                "maxItems": 8,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 96
+                }
+              }
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "required": [
+            "field",
+            "proposed_tags",
+            "reason"
+          ]
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "decision_id",
+    "scope_id",
+    "case_ref",
+    "expected_revision",
+    "actor_ref",
+    "kind",
+    "evidence_refs",
+    "decision"
+  ],
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Proposed TwinBox feedback v1",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "correction_proposal"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "decision": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "field": {
+                    "enum": [
+                      "primary_event_type",
+                      "action_target"
+                    ]
+                  },
+                  "proposed_values": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 96
+                    },
+                    "maxItems": 1,
+                    "minItems": 1
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "field",
+                  "proposed_values",
+                  "reason"
+                ]
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "field": {
+                    "const": "tags"
+                  },
+                  "proposed_tags": {
+                    "type": "object",
+                    "maxProperties": 16,
+                    "propertyNames": {
+                      "maxLength": 64
+                    },
+                    "additionalProperties": {
+                      "type": "array",
+                      "maxItems": 8,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 96
+                      }
+                    }
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "field",
+                  "proposed_tags",
+                  "reason"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "human_confirmation"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "decision": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "confirmation": {
+                "enum": [
+                  "responsibility_confirmed",
+                  "business_outcome_confirmed",
+                  "needs_review"
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "required": [
+              "confirmation",
+              "reason"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "execution_receipt"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "decision": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "run_ref": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              },
+              "outcome": {
+                "enum": [
+                  "succeeded",
+                  "failed",
+                  "cancelled",
+                  "unknown"
+                ]
+              },
+              "occurred_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "run_ref",
+              "outcome",
+              "occurred_at"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

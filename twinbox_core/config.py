@@ -42,6 +42,27 @@ def save_config(cfg: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def get_weknora_config() -> dict[str, bool]:
+    """Return the safe public WeKnora setting without projecting provider details.
+
+    No currently tracked configuration can mark a provider/API as verified.  The
+    ADR-004 capability and live-service gates remain external human decisions,
+    so this helper exposes a requested enable flag separately from actual live
+    operation availability.  ``adr_004_accepted`` is read here (default False)
+    so the live gate in ``weknora_http.live_authorized`` has a config source;
+    flipping it requires an explicit owner-signed config change, never code.
+    """
+    raw = load_config().get("weknora")
+    enabled = isinstance(raw, dict) and raw.get("enabled") is True
+    adr_accepted = isinstance(raw, dict) and raw.get("adr_004_accepted") is True
+    return {
+        "enabled": enabled,
+        "adr_004_accepted": adr_accepted,
+        "provider_port_verified": False,
+        "live_operations_available": False,
+    }
+
+
 def mask_secret(value: str) -> str:
     if len(value) < 6:
         return "***"

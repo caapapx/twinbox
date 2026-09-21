@@ -16,6 +16,7 @@ Commands:
   onboard      — write user semantic pack from questionnaire answers
   material-import — optional xlsx/docx pack fragment
   actions      — dry-run proposals / review
+  weknora     — local diagnostics / gated sync / revoke (hide then delete)
 """
 
 from __future__ import annotations
@@ -27,6 +28,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
+
+from .config import get_weknora_config
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 STALE_HOURS_DEFAULT = 4
@@ -904,6 +907,145 @@ def cmd_events(remaining: list[str], account_id: str | None = None) -> dict[str,
     return load_event_records(_account_root(aid), account_id=aid, limit=limit)
 
 
+def _trusted_weknora_grant(root: Path, aid: str):
+    """Load a local source grant; CLI payloads cannot confer retrieval authority."""
+    from .evidence_contract import SourceGrant
+
+    path = root / "config" / "source-grant.json"
+    if not path.is_file():
+        raise ValueError("source_grant_missing")
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        raise ValueError("source_grant_invalid") from None
+    if not isinstance(raw, dict) or raw.get("schema_version") != "1.0":
+        raise ValueError("source_grant_invalid")
+    if str(raw.get("account_ref") or "") != aid:
+        raise ValueError("source_binding_invalid")
+    return SourceGrant(
+        scope_id=str(raw.get("scope_id") or ""),
+        account_ref=aid,
+        mail_refs=frozenset(str(v) for v in raw.get("mail_refs", []) if isinstance(v, str)),
+        evidence_refs=frozenset(str(v) for v in raw.get("evidence_refs", []) if isinstance(v, str)),
+        enabled=raw.get("enabled") is True,
+    )
+
+
+def _live_provider_or_unavailable(
+    root: Path,
+    aid: str,
+    settings: dict[str, bool],
+    *,
+    require_grant_enabled: bool = True,
+):
+    """Build the live HTTP provider only behind the triple gate, else None."""
+    from .weknora import WeKnoraSyncError
+    from .weknora_http import build_http_provider, live_authorized
+
+    try:
+        grant = _trusted_weknora_grant(root, aid)
+    except ValueError:
+        return None
+    if not live_authorized(
+        settings=settings, grant=grant, require_grant_enabled=require_grant_enabled,
+    ):
+        return None
+    try:
+        return build_http_provider()
+    except WeKnoraSyncError:
+        return None
+
+
+class _PendingDeleteProvider:
+    """No-network stub so revoke can hide locally when the live gate is closed."""
+
+    def delete_excerpt(self, scope: str, knowledge_ref: str) -> dict[str, str]:
+        return {"status": "pending"}
+
+
+def cmd_weknora(
+    remaining: list[str],
+    account_id: str | None = None,
+    *,
+    provider: object | None = None,
+) -> dict[str, Any]:
+    """Expose local diagnostics, gated sync, and hide-then-delete revoke.
+
+    ``provider`` dependency injection stays for local fake-provider tests.  When
+    it is omitted, the CLI builds a live HTTP provider only if the triple gate
+    holds (enabled flag + ADR-004 acceptance + per-scope source grant) and
+    credentials plus the dedicated KB binding resolve; otherwise sync stays
+    unavailable with no network attempt.  Revoke still hides locally when the
+    live gate is closed, and may delete remotely after the grant is turned off.
+    """
+    from .weknora import WeKnoraSyncError, revoke_excerpt, sync_diagnostics, sync_excerpt
+
+    aid = _resolved_account_id(account_id)
+    root = _account_root(aid)
+    action = remaining[0] if remaining and not remaining[0].startswith("--") else "status"
+    args = remaining[1:] if remaining and not remaining[0].startswith("--") else remaining
+    settings = get_weknora_config()
+    if action == "status":
+        diagnostics = sync_diagnostics(root)
+        return {
+            "ok": True,
+            "data": {
+                "enabled": settings["enabled"],
+                "adr_004_accepted": settings.get("adr_004_accepted", False),
+                "provider_port_verified": settings["provider_port_verified"],
+                "live_provider_available": False,
+                "diagnostics": diagnostics,
+            },
+        }
+    if action == "revoke":
+        mail_ref, _rest = _parse_flag(args, "--mail-ref")
+        if not mail_ref:
+            return {"ok": False, "error": "weknora_usage", "recovery_tool": "twinbox_status"}
+        if provider is None:
+            provider = _live_provider_or_unavailable(
+                root, aid, settings, require_grant_enabled=False,
+            )
+            if provider is None:
+                provider = _PendingDeleteProvider()
+        try:
+            grant = _trusted_weknora_grant(root, aid)
+            result = revoke_excerpt(root, provider, grant, mail_ref=mail_ref)
+            return {"ok": True, "data": result}
+        except (WeKnoraSyncError, ValueError, OSError) as exc:
+            return {"ok": False, "error": str(exc), "recovery_tool": "twinbox_status"}
+    if action != "sync":
+        return {"ok": False, "error": "weknora_usage", "recovery_tool": "twinbox_status"}
+    if not settings["enabled"]:
+        return {"ok": False, "error": "weknora_disabled", "recovery_tool": "twinbox_status"}
+    if provider is None:
+        provider = _live_provider_or_unavailable(root, aid, settings)
+        if provider is None:
+            return {"ok": False, "error": "weknora_provider_unavailable", "recovery_tool": "twinbox_status"}
+
+    payload_json = ""
+    payload_file = ""
+    for i, arg in enumerate(args):
+        if arg == "--payload-json" and i + 1 < len(args):
+            payload_json = args[i + 1]
+        elif arg == "--payload-file" and i + 1 < len(args):
+            payload_file = args[i + 1]
+    try:
+        if payload_file:
+            payload = json.loads(Path(payload_file).read_text(encoding="utf-8"))
+        elif payload_json:
+            payload = json.loads(payload_json)
+        else:
+            return {"ok": False, "error": "weknora_payload_required", "recovery_tool": "twinbox_status"}
+        if not isinstance(payload, dict):
+            raise ValueError("invalid_payload")
+        grant = _trusted_weknora_grant(root, aid)
+        result = sync_excerpt(root, provider, grant, payload)
+        return {"ok": True, "data": result}
+    except (WeKnoraSyncError, ValueError, OSError, json.JSONDecodeError) as exc:
+        return {"ok": False, "error": str(exc), "recovery_tool": "twinbox_status"}
+
+
+
 # --- Main ---
 
 # --- Main ---
@@ -959,6 +1101,8 @@ def main(argv: list[str] | None = None) -> int:
             result = cmd_ingest(remaining, account_id=account_id)
         elif cmd == "events":
             result = cmd_events(remaining, account_id=account_id)
+        elif cmd == "weknora":
+            result = cmd_weknora(remaining, account_id=account_id)
         elif cmd == "schedule":
             sub = remaining[0] if remaining else ""
             if sub == "run-due":

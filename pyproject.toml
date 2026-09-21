@@ -7,10 +7,13 @@ name = "twinbox-core"
 version = "0.1.0"
 description = "Lightweight email intelligence for OpenClaw"
 requires-python = ">=3.11"
-dependencies = ["PyYAML>=6.0", "cryptography>=42"]
+dependencies = ["PyYAML>=6.0", "cryptography>=42", "jsonschema>=4.23,<5"]
 
 [project.scripts]
 twinbox = "twinbox_core.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["twinbox_core*"]
+
+[tool.setuptools.package-data]
+twinbox_core = ["schemas/*.json"]

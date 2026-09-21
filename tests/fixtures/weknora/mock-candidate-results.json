@@ -1,0 +1,272 @@
+{
+  "keyword-00": {
+    "hits": [
+      {
+        "mail_ref": "mail-keyword-00"
+      }
+    ],
+    "latency_ms": 8,
+    "cost_usd": 0.02
+  },
+  "keyword-01": {
+    "hits": [
+      {
+        "mail_ref": "mail-keyword-01"
+      }
+    ],
+    "latency_ms": 8,
+    "cost_usd": 0.02
+  },
+  "keyword-02": {
+    "hits": [
+      {
+        "mail_ref": "mail-keyword-02"
+      }
+    ],
+    "latency_ms": 8,
+    "cost_usd": 0.02
+  },
+  "keyword-03": {
+    "hits": [
+      {
+        "mail_ref": "mail-keyword-03"
+      }
+    ],
+    "latency_ms": 8,
+    "cost_usd": 0.02
+  },
+  "keyword-04": {
+    "hits": [
+      {
+        "mail_ref": "mail-keyword-04"
+      }
+    ],
+    "latency_ms": 8,
+    "cost_usd": 0.02
+  },
+  "keyword-05": {
+    "hits": [
+      {
+        "mail_ref": "mail-keyword-05"
+      }
+    ],
+    "latency_ms": 8,
+    "cost_usd": 0.02
+  },
+  "keyword-06": {
+    "hits": [
+      {
+        "mail_ref": "mail-keyword-06"
+      }
+    ],
+    "latency_ms": 8,
+    "cost_usd": 0.02
+  },
+  "keyword-07": {
+    "hits": [
+      {
+        "mail_ref": "mail-keyword-07"
+      }
+    ],
+    "latency_ms": 8,
+    "cost_usd": 0.02
+  },
+  "keyword-08": {
+    "hits": [
+      {
+        "mail_ref": "mail-keyword-08"
+      }
+    ],
+    "latency_ms": 8,
+    "cost_usd": 0.02
+  },
+  "keyword-09": {
+    "hits": [
+      {
+        "mail_ref": "mail-keyword-09"
+      }
+    ],
+    "latency_ms": 8,
+    "cost_usd": 0.02
+  },
+  "semantic-00": {
+    "hits": [
+      {
+        "mail_ref": "mail-semantic-00"
+      }
+    ],
+    "latency_ms": 8,
+    "cost_usd": 0.02
+  },
+  "semantic-01": {
+    "hits": [
+      {
+        "mail_ref": "mail-semantic-01"
+      }
+    ],
+    "latency_ms": 8,
+    "cost_usd": 0.02
+  },
+  "semantic-02": {
+    "hits": [
+      {
+        "mail_ref": "mail-semantic-02"
+      }
+    ],
+    "latency_ms": 8,
+    "cost_usd": 0.02
+  },
+  "semantic-03": {
+    "hits": [
+      {
+        "mail_ref": "mail-semantic-03"
+      }
+    ],
+    "latency_ms": 8,
+    "cost_usd": 0.02
+  },
+  "semantic-04": {
+    "hits": [
+      {
+        "mail_ref": "mail-semantic-04"
+      }
+    ],
+    "latency_ms": 8,
+    "cost_usd": 0.02
+  },
+  "semantic-05": {
+    "hits": [
+      {
+        "mail_ref": "mail-semantic-05"
+      }
+    ],
+    "latency_ms": 8,
+    "cost_usd": 0.02
+  },
+  "semantic-06": {
+    "hits": [
+      {
+        "mail_ref": "mail-semantic-06"
+      }
+    ],
+    "latency_ms": 8,
+    "cost_usd": 0.02
+  },
+  "semantic-07": {
+    "hits": [
+      {
+        "mail_ref": "mail-semantic-07"
+      }
+    ],
+    "latency_ms": 8,
+    "cost_usd": 0.02
+  },
+  "semantic-08": {
+    "hits": [
+      {
+        "mail_ref": "mail-semantic-08"
+      }
+    ],
+    "latency_ms": 8,
+    "cost_usd": 0.02
+  },
+  "semantic-09": {
+    "hits": [
+      {
+        "mail_ref": "mail-semantic-09"
+      }
+    ],
+    "latency_ms": 8,
+    "cost_usd": 0.02
+  },
+  "classification-00": {
+    "hits": [
+      {
+        "mail_ref": "mail-classification-00"
+      }
+    ],
+    "latency_ms": 8,
+    "cost_usd": 0.02
+  },
+  "classification-01": {
+    "hits": [
+      {
+        "mail_ref": "mail-classification-01"
+      }
+    ],
+    "latency_ms": 8,
+    "cost_usd": 0.02
+  },
+  "classification-02": {
+    "hits": [
+      {
+        "mail_ref": "mail-classification-02"
+      }
+    ],
+    "latency_ms": 8,
+    "cost_usd": 0.02
+  },
+  "classification-03": {
+    "hits": [
+      {
+        "mail_ref": "mail-classification-03"
+      }
+    ],
+    "latency_ms": 8,
+    "cost_usd": 0.02
+  },
+  "classification-04": {
+    "hits": [
+      {
+        "mail_ref": "mail-classification-04"
+      }
+    ],
+    "latency_ms": 8,
+    "cost_usd": 0.02
+  },
+  "classification-05": {
+    "hits": [
+      {
+        "mail_ref": "mail-classification-05"
+      }
+    ],
+    "latency_ms": 8,
+    "cost_usd": 0.02
+  },
+  "classification-06": {
+    "hits": [
+      {
+        "mail_ref": "mail-classification-06"
+      }
+    ],
+    "latency_ms": 8,
+    "cost_usd": 0.02
+  },
+  "classification-07": {
+    "hits": [
+      {
+        "mail_ref": "mail-classification-07"
+      }
+    ],
+    "latency_ms": 8,
+    "cost_usd": 0.02
+  },
+  "classification-08": {
+    "hits": [
+      {
+        "mail_ref": "mail-classification-08"
+      }
+    ],
+    "latency_ms": 8,
+    "cost_usd": 0.02
+  },
+  "classification-09": {
+    "hits": [
+      {
+        "mail_ref": "mail-classification-09"
+      }
+    ],
+    "latency_ms": 8,
+    "cost_usd": 0.02
+  }
+}

@@ -1,0 +1,386 @@
+{
+  "schema_version": "1.0",
+  "provenance": "synthetic_dry_run",
+  "cases": [
+    {
+      "query_id": "keyword-00",
+      "query": "anonymous keyword query 00",
+      "group": "keyword",
+      "allowed_mail_refs": [
+        "mail-keyword-00"
+      ],
+      "relevant_mail_refs": [
+        "mail-keyword-00"
+      ],
+      "classification_filter": null
+    },
+    {
+      "query_id": "keyword-01",
+      "query": "anonymous keyword query 01",
+      "group": "keyword",
+      "allowed_mail_refs": [
+        "mail-keyword-01"
+      ],
+      "relevant_mail_refs": [
+        "mail-keyword-01"
+      ],
+      "classification_filter": null
+    },
+    {
+      "query_id": "keyword-02",
+      "query": "anonymous keyword query 02",
+      "group": "keyword",
+      "allowed_mail_refs": [
+        "mail-keyword-02"
+      ],
+      "relevant_mail_refs": [
+        "mail-keyword-02"
+      ],
+      "classification_filter": null
+    },
+    {
+      "query_id": "keyword-03",
+      "query": "anonymous keyword query 03",
+      "group": "keyword",
+      "allowed_mail_refs": [
+        "mail-keyword-03"
+      ],
+      "relevant_mail_refs": [
+        "mail-keyword-03"
+      ],
+      "classification_filter": null
+    },
+    {
+      "query_id": "keyword-04",
+      "query": "anonymous keyword query 04",
+      "group": "keyword",
+      "allowed_mail_refs": [
+        "mail-keyword-04"
+      ],
+      "relevant_mail_refs": [
+        "mail-keyword-04"
+      ],
+      "classification_filter": null
+    },
+    {
+      "query_id": "keyword-05",
+      "query": "anonymous keyword query 05",
+      "group": "keyword",
+      "allowed_mail_refs": [
+        "mail-keyword-05"
+      ],
+      "relevant_mail_refs": [
+        "mail-keyword-05"
+      ],
+      "classification_filter": null
+    },
+    {
+      "query_id": "keyword-06",
+      "query": "anonymous keyword query 06",
+      "group": "keyword",
+      "allowed_mail_refs": [
+        "mail-keyword-06"
+      ],
+      "relevant_mail_refs": [
+        "mail-keyword-06"
+      ],
+      "classification_filter": null
+    },
+    {
+      "query_id": "keyword-07",
+      "query": "anonymous keyword query 07",
+      "group": "keyword",
+      "allowed_mail_refs": [
+        "mail-keyword-07"
+      ],
+      "relevant_mail_refs": [
+        "mail-keyword-07"
+      ],
+      "classification_filter": null
+    },
+    {
+      "query_id": "keyword-08",
+      "query": "anonymous keyword query 08",
+      "group": "keyword",
+      "allowed_mail_refs": [
+        "mail-keyword-08"
+      ],
+      "relevant_mail_refs": [
+        "mail-keyword-08"
+      ],
+      "classification_filter": null
+    },
+    {
+      "query_id": "keyword-09",
+      "query": "anonymous keyword query 09",
+      "group": "keyword",
+      "allowed_mail_refs": [
+        "mail-keyword-09"
+      ],
+      "relevant_mail_refs": [
+        "mail-keyword-09"
+      ],
+      "classification_filter": null
+    },
+    {
+      "query_id": "semantic-00",
+      "query": "anonymous semantic query 00",
+      "group": "semantic",
+      "allowed_mail_refs": [
+        "mail-semantic-00"
+      ],
+      "relevant_mail_refs": [
+        "mail-semantic-00"
+      ],
+      "classification_filter": null
+    },
+    {
+      "query_id": "semantic-01",
+      "query": "anonymous semantic query 01",
+      "group": "semantic",
+      "allowed_mail_refs": [
+        "mail-semantic-01"
+      ],
+      "relevant_mail_refs": [
+        "mail-semantic-01"
+      ],
+      "classification_filter": null
+    },
+    {
+      "query_id": "semantic-02",
+      "query": "anonymous semantic query 02",
+      "group": "semantic",
+      "allowed_mail_refs": [
+        "mail-semantic-02"
+      ],
+      "relevant_mail_refs": [
+        "mail-semantic-02"
+      ],
+      "classification_filter": null
+    },
+    {
+      "query_id": "semantic-03",
+      "query": "anonymous semantic query 03",
+      "group": "semantic",
+      "allowed_mail_refs": [
+        "mail-semantic-03"
+      ],
+      "relevant_mail_refs": [
+        "mail-semantic-03"
+      ],
+      "classification_filter": null
+    },
+    {
+      "query_id": "semantic-04",
+      "query": "anonymous semantic query 04",
+      "group": "semantic",
+      "allowed_mail_refs": [
+        "mail-semantic-04"
+      ],
+      "relevant_mail_refs": [
+        "mail-semantic-04"
+      ],
+      "classification_filter": null
+    },
+    {
+      "query_id": "semantic-05",
+      "query": "anonymous semantic query 05",
+      "group": "semantic",
+      "allowed_mail_refs": [
+        "mail-semantic-05"
+      ],
+      "relevant_mail_refs": [
+        "mail-semantic-05"
+      ],
+      "classification_filter": null
+    },
+    {
+      "query_id": "semantic-06",
+      "query": "anonymous semantic query 06",
+      "group": "semantic",
+      "allowed_mail_refs": [
+        "mail-semantic-06"
+      ],
+      "relevant_mail_refs": [
+        "mail-semantic-06"
+      ],
+      "classification_filter": null
+    },
+    {
+      "query_id": "semantic-07",
+      "query": "anonymous semantic query 07",
+      "group": "semantic",
+      "allowed_mail_refs": [
+        "mail-semantic-07"
+      ],
+      "relevant_mail_refs": [
+        "mail-semantic-07"
+      ],
+      "classification_filter": null
+    },
+    {
+      "query_id": "semantic-08",
+      "query": "anonymous semantic query 08",
+      "group": "semantic",
+      "allowed_mail_refs": [
+        "mail-semantic-08"
+      ],
+      "relevant_mail_refs": [
+        "mail-semantic-08"
+      ],
+      "classification_filter": null
+    },
+    {
+      "query_id": "semantic-09",
+      "query": "anonymous semantic query 09",
+      "group": "semantic",
+      "allowed_mail_refs": [
+        "mail-semantic-09"
+      ],
+      "relevant_mail_refs": [
+        "mail-semantic-09"
+      ],
+      "classification_filter": null
+    },
+    {
+      "query_id": "classification-00",
+      "query": "anonymous classification query 00",
+      "group": "classification",
+      "allowed_mail_refs": [
+        "mail-classification-00"
+      ],
+      "relevant_mail_refs": [
+        "mail-classification-00"
+      ],
+      "classification_filter": {
+        "primary_event_type": "contract.review"
+      }
+    },
+    {
+      "query_id": "classification-01",
+      "query": "anonymous classification query 01",
+      "group": "classification",
+      "allowed_mail_refs": [
+        "mail-classification-01"
+      ],
+      "relevant_mail_refs": [
+        "mail-classification-01"
+      ],
+      "classification_filter": {
+        "primary_event_type": "contract.review"
+      }
+    },
+    {
+      "query_id": "classification-02",
+      "query": "anonymous classification query 02",
+      "group": "classification",
+      "allowed_mail_refs": [
+        "mail-classification-02"
+      ],
+      "relevant_mail_refs": [
+        "mail-classification-02"
+      ],
+      "classification_filter": {
+        "primary_event_type": "contract.review"
+      }
+    },
+    {
+      "query_id": "classification-03",
+      "query": "anonymous classification query 03",
+      "group": "classification",
+      "allowed_mail_refs": [
+        "mail-classification-03"
+      ],
+      "relevant_mail_refs": [
+        "mail-classification-03"
+      ],
+      "classification_filter": {
+        "primary_event_type": "contract.review"
+      }
+    },
+    {
+      "query_id": "classification-04",
+      "query": "anonymous classification query 04",
+      "group": "classification",
+      "allowed_mail_refs": [
+        "mail-classification-04"
+      ],
+      "relevant_mail_refs": [
+        "mail-classification-04"
+      ],
+      "classification_filter": {
+        "primary_event_type": "contract.review"
+      }
+    },
+    {
+      "query_id": "classification-05",
+      "query": "anonymous classification query 05",
+      "group": "classification",
+      "allowed_mail_refs": [
+        "mail-classification-05"
+      ],
+      "relevant_mail_refs": [
+        "mail-classification-05"
+      ],
+      "classification_filter": {
+        "primary_event_type": "contract.review"
+      }
+    },
+    {
+      "query_id": "classification-06",
+      "query": "anonymous classification query 06",
+      "group": "classification",
+      "allowed_mail_refs": [
+        "mail-classification-06"
+      ],
+      "relevant_mail_refs": [
+        "mail-classification-06"
+      ],
+      "classification_filter": {
+        "primary_event_type": "contract.review"
+      }
+    },
+    {
+      "query_id": "classification-07",
+      "query": "anonymous classification query 07",
+      "group": "classification",
+      "allowed_mail_refs": [
+        "mail-classification-07"
+      ],
+      "relevant_mail_refs": [
+        "mail-classification-07"
+      ],
+      "classification_filter": {
+        "primary_event_type": "contract.review"
+      }
+    },
+    {
+      "query_id": "classification-08",
+      "query": "anonymous classification query 08",
+      "group": "classification",
+      "allowed_mail_refs": [
+        "mail-classification-08"
+      ],
+      "relevant_mail_refs": [
+        "mail-classification-08"
+      ],
+      "classification_filter": {
+        "primary_event_type": "contract.review"
+      }
+    },
+    {
+      "query_id": "classification-09",
+      "query": "anonymous classification query 09",
+      "group": "classification",
+      "allowed_mail_refs": [
+        "mail-classification-09"
+      ],
+      "relevant_mail_refs": [
+        "mail-classification-09"
+      ],
+      "classification_filter": {
+        "primary_event_type": "contract.review"
+      }
+    }
+  ]
+}

@@ -212,3 +212,62 @@ def semantic_search(query: str, state_root: Path, *, limit: int = 5) -> list[dic
         out.append(row)
     out.sort(key=lambda r: int(r.get("match_score", 0)), reverse=True)
     return rerank(out, query=query)[:limit]
+
+
+def search_authorized(
+    query: str,
+    state_root: Path,
+    *,
+    mail_refs: frozenset[str],
+    limit: int = 5,
+) -> list[dict[str, Any]]:
+    """Search the local pulse only after the caller supplies an exact allowlist.
+
+    This is a deliberately narrow fallback for the optional WeKnora adapter.
+    It does not call :func:`search_threads` because that function searches the
+    full local pulse before it deduplicates its output.  Here rows are filtered
+    by source locator *before* subject/thread matching, vectors, or reranking;
+    body text is never attached to the returned rows.
+    """
+    if not isinstance(query, str) or not query.strip() or type(limit) is not int or limit <= 0:
+        return []
+    allowed = frozenset(ref for ref in mail_refs if isinstance(ref, str) and ref)
+    if not allowed:
+        return []
+    try:
+        from .pulse import load_activity_pulse
+
+        pulse = load_activity_pulse(state_root)
+    except (OSError, RuntimeError, ValueError):
+        return []
+    index = pulse.get("thread_index")
+    if not isinstance(index, list):
+        return []
+
+    normalized_query = query.strip().lower()
+    tokens = {token.lower() for token in normalized_query.split() if token}
+    matches: list[tuple[int, dict[str, Any]]] = []
+    for item in index:
+        if not isinstance(item, dict):
+            continue
+        mail_ref = item.get("latest_message_ref")
+        if not isinstance(mail_ref, str) or mail_ref not in allowed:
+            continue
+        thread_key = str(item.get("thread_key", "") or "")
+        subject = str(item.get("latest_subject", "") or "")
+        haystack = f"{thread_key}\n{subject}".lower()
+        query_terms = item.get("query_terms")
+        terms = {str(term).lower() for term in query_terms} if isinstance(query_terms, list) else set()
+        score = 0
+        if normalized_query in haystack:
+            score += 80
+        if tokens:
+            score += 15 * len(tokens & terms)
+            score += 10 * sum(1 for token in tokens if token in haystack)
+        if score <= 0:
+            continue
+        # The fallback renderer joins the trusted mapping and owns the visible
+        # thread key/knowledge ref.  Keep this envelope source-minimal.
+        matches.append((score, {"mail_ref": mail_ref, "score": score}))
+    matches.sort(key=lambda row: (-row[0], str(row[1]["mail_ref"])))
+    return [row for _score, row in matches[:limit]]
