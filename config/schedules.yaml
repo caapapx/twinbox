@@ -4,9 +4,14 @@ schedules:
     cron: "0 12 * * *"
     job: daytime-sync
     command: "python3 -m twinbox_core.cli schedule run-due --json"
-    description: "Daytime sync at 12:00 Asia/Shanghai"
+    description: "Daytime sync at 12:00 Asia/Shanghai (push ~12:30)"
+  - name: afternoon-sync
+    cron: "30 16 * * *"
+    job: daytime-sync
+    command: "python3 -m twinbox_core.cli schedule run-due --json"
+    description: "Afternoon daytime sync at 16:30 Asia/Shanghai (push ~17:00)"
   - name: nightly-full
     cron: "0 2 * * *"
     job: nightly-full
     command: "python3 -m twinbox_core.cli schedule run-due --json"
-    description: "Nightly full rebuild at 02:00 Asia/Shanghai"
+    description: "Nightly full rebuild at 02:00 Asia/Shanghai (push ~08:30)"
