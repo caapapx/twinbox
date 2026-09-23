@@ -252,6 +252,39 @@ class TestClosedAttention(unittest.TestCase):
             self.assertEqual(case_ledger.current_value(root, ref, "lifecycle_state"), "open")
 
 
+class TestLedgerCurrentViewCli(unittest.TestCase):
+    def test_cli_current_view_contains_closed_and_omits_needs_confirmation(self) -> None:
+        import contextlib
+        import io
+        import os
+        from unittest import mock
+
+        from twinbox_core import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with mock.patch.dict(os.environ, {"TWINBOX_STATE_ROOT": str(root)}):
+                ref = "case_a"
+                case_ledger.append_record(root, case_ref=ref, attribute="lifecycle_state",
+                                          value="closed", valid_from=_iso("2030-02-01"))
+                # Latest valid_from but an illegal closed -> non-reopen transition,
+                # so it is stored as needs_confirmation and must not become current.
+                case_ledger.append_record(root, case_ref=ref, attribute="lifecycle_state",
+                                          value="waiting_on_me", valid_from=_iso("2030-03-01"))
+
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    rc = cli.main(["case-ledger", "--json"])
+                self.assertEqual(rc, 0)
+                payload = json.loads(buf.getvalue())
+
+            cases = payload["cases"]
+            ref_cases = [c for c in cases if c["case_ref"] == ref]
+            self.assertEqual([c["value"] for c in ref_cases], ["closed"])
+            self.assertEqual([c.get("status") for c in ref_cases], ["valid"])
+            self.assertNotIn("needs_confirmation", [c.get("status") for c in cases])
+
+
 class TestNoStageNamesInCore(unittest.TestCase):
     def test_twinbox_core_contains_no_fixture_stage_names(self) -> None:
         from tests.fixtures.case_ledger_stages import CASE_STAGE_NAMES

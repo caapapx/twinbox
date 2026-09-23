@@ -14,10 +14,10 @@
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-**Purpose**: 归类轴配置与测试夹具先行
+**Purpose**: 历史固定六轴路径的处置与证据夹具边界；动态语义已收敛到 `013` Semantic Pack。
 
-- [ ] T001 在 `config/extract-profiles.yaml` 中定义六轴归类结构（person / thing / intent / urgency / sensitivity / thread）与初始取值规则
-- [ ] T002 [P] 在 `tests/` 下准备测试夹具：含周报/风险/计划变更语义的样例邮件（`tests/fixtures/`）
+- [x] T001 [superseded by 013] 不在 `config/extract-profiles.yaml` 新建固定六轴。动态、不透明的轴和值由 `013` 的版本化 `config/packs/*.yaml` Semantic Pack 声明；平台消费者不得获得六键枚举。
+- [x] T002 [P] 已在 `tests/fixtures/adapter_events/v1.json` 准备周报/风险/计划变更的**合成、仅信封字段**样例，并由 `tests/test_adapter_event_fixtures.py` 验证动态 Semantic Pack 分类与无正文事件输出（2026-09-20）；不是人工金标、召回/ROI 语料，T025 继续等待受权 owner 的独立质量集。
 
 ---
 
@@ -28,6 +28,7 @@
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
 - [x] T003 扩展 `twinbox_core/config.py`：账号列表模型（account_id、type=personal/shared、连接参数、vault 引用），向后兼容单账号配置
+- [x] T003b 持久默认箱：`set_default_account` / `accounts set-default`；`list` 带 `is_default`；删当前默认回落到剩余账号；查询省略 `account_id` 走 `default_account_id`
 - [x] T004 实现 `twinbox_core/vault.py`：Fernet 对称加密的本地 vault（`~/.twinbox/vault.enc`），主密钥经系统 keyring 或 `~/.twinbox/.vault_key`（0600）
 - [x] T005 [P] 新增 `tests/test_vault.py`：加解密往返、存储文件无明文口令、存在性布尔查询
 - [x] T006 扩展 `twinbox_core/pulse.py`：按账号循环同步，同步记录携带 account_id
@@ -62,11 +63,11 @@
 ### Implementation for User Story 2
 
 - [x] T011 [US2] 新增 `twinbox_core/adapter.py`：ingest envelope 组装（reference + attributes + cursor），摘要 ≤280 字截断
-- [ ] T012 [US2] 在 `twinbox_core/llm.py` 增加 envelope 归类输出 schema（六轴，opaque string），接入 T001 的轴配置
+- [x] T012 [superseded by 013] 不在 `twinbox_core/llm.py` 固化六轴 schema。`013` 的 Pack→分类快照→opaque projection 是当前路径；任何 provider 保持 TwinBox 内部可选、默认关闭，不能成为 adapter 契约。
 - [x] T013 [P] [US2] 新增 `tests/test_adapter.py`：schema 断言、无全文扫描断言（body/html/attachment 字段不存在）、cursor 重放幂等
 - [x] T014 [US2] 扩展 `twinbox_core/cli.py`：`ingest` 子命令（since 游标、分页上限）
 - [x] T015 [US2] 扩展 `mcp-server.mjs`：注册 `twinbox_ingest` 工具
-- [ ] T016 [US2] 敏感轴降级：sensitivity 命中高敏时摘要进一步截断或省略，引用保留
+- [x] T016 [US2] Pack语义轴驱动的出站降级：默认`reference_only`；仅Pack显式轴/值可选择允许、截断或省略摘录，未匹配值fail-safe且保留引用（2026-09-20本地合成契约验收）
 
 **Checkpoint**: User Stories 1 和 2 均独立可用
 
@@ -97,11 +98,11 @@
 
 ### Implementation for User Story 4
 
-- [ ] T021 [US4] 新增 `twinbox_core/events.py`：事件 schema（稳定 ID = hash(account_id, message_id, event_type, 键字段)）与 LLM 抽取通路（复用 `extract.py` 模式）
-- [ ] T022 [US4] 在 `config/extract-profiles.yaml` 增加三类事件的判定规则与抽取字段定义
-- [ ] T023 [US4] 扩展 `twinbox_core/cli.py`：`events` 子命令；事件 ID 链接进 ingest envelope 的 `events` 字段
+- [x] T021 [superseded by 013] `twinbox_core/events.py` 已作为引用式 Pack 事件投影存在；不补固定三类事件或以 `llm.py` 为必经抽取通路。稳定身份、证据与可配置事件语义以 `013` 的 Pack/分类合同为准。
+- [x] T022 [superseded by 013] 不在 `config/extract-profiles.yaml` 固定 weekly_report/risk/plan_change。事件类型和字段由 `config/packs/*.yaml` 声明；三个类型只可作为 Pack fixture，不得成为核心枚举。
+- [x] T023 [superseded by 013] 当前 `events` CLI/read path 与 ingest 的引用式事件链接已存在；不重建旧型端到端抽取链路。真实 Pack/source grant 与现场回放仍归 `013/T021` 的独立 gate。
 - [x] T024 [US4] 扩展 `mcp-server.mjs`：注册 `twinbox_events` 工具
-- [ ] T025 [US4] 用 T002 夹具验证召回率 ≥ 80%（人工标注对照），未达标则调整 T022 规则迭代
+- [ ] T025 [US4] 以受权 owner 的独立、冻结 development/holdout 人工金标验证 holdout 主事件召回率 ≥ 80%；`tests/evaluations/adapter_event_recall.py` 与 `tests/test_adapter_event_recall.py` 已提供离线、无网络的受控 harness（仅伪名信封字段、source grant / owner approval / frozen split、无输入字段回显）。合成 T002 fixture 只能做回归，不能关闭本任务；有语义规则时 hard-rule 模式明确阻断全分类质量结论，必须以获批的离线预测集复跑。未达标才在 `013` Pack 规则上迭代，不能恢复 T022 固定事件枚举。
 
 **Checkpoint**: 全部用户故事独立可用
 
@@ -113,7 +114,7 @@
 
 - [x] T026 [P] 扩展 `tests/mcp-smoke.mjs`：新增三个工具的端到端冒烟
 - [x] T027 [P] 更新 `CLAUDE.md` 关键路径表（新增 adapter/events/vault 模块与新工具）
-- [ ] T028 全文外泄端到端校验：对平台可见的全部工具响应做自动化全文扫描
+- [x] T028 全文外泄端到端校验：对平台可见的全部工具响应做自动化全文扫描（2026-09-20：`tests/mcp-output-safety.mjs` 通过真实MCP stdio边界枚举并调用全部17个已注册工具；注入正文形字段、异常文本与非结构化输出均不回显，显式 `platform_output_redacted` / fail-closed；仅为本地合成CLI回归，不替代真实邮箱/现场验收）
 - [x] T029 既有 9 个 `twinbox_*` 工具回归：签名与 envelope 形状不变
 
 ---
@@ -164,8 +165,11 @@
 5. +US4 → 事件驱动的周报/风险/计划变更数据层
 
 
+## Legacy-path disposition (2026-09-20)
+
+`[superseded by 013]` is a terminal planning disposition, **not** a claim that the literal legacy task was implemented or that its original acceptance test passed. It prevents a second, fixed six-axis / fixed-event / mandatory-LLM pipeline from being built beside the current Semantic Pack contract. The only 001 quality claim that remains open is evidence-backed recall under T002/T025; it cannot be closed by synthetic fixtures, a provider mock, or a green local unit suite.
+
 ## Remaining beyond confirmed Phase 1 gate (2026-09-15)
 
 Confirmed enterprise slice = Phase 0 contracts + Phase 1 read plane + min observability.
-Still open for fuller 001 US2/US4: T001–T002 axes/fixtures, T012 LLM schema, T016 sensitivity truncate,
-T021–T023/T025 richer event extraction & recall, T028 full-body scan across all tool responses.
+Open 001 evidence work is intentionally limited to T002/T025: synthetic fixture coverage may support local regression, but the ≥80% event-recall claim requires approved private owner gold and a held-out evaluation. T001/T012/T021–T023 are superseded by the `013` Pack contract rather than implemented under the obsolete fixed-axis path. T016 is locally closed by the 2026-09-20 Pack-axis evidence-contract regression, and T028 by the MCP-boundary regression; neither proves a live mailbox or provider path.

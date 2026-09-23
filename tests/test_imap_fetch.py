@@ -338,8 +338,8 @@ class TestLookbackAndUidvalidity(unittest.TestCase):
             wm.write_text(json.dumps({"INBOX": {"uidvalidity": 1, "last_uid": 9}}), encoding="utf-8")
             with mock.patch.object(imap_fetch, "_build_client", return_value=client), \
                  mock.patch.object(imap_fetch, "sample_bodies_imap", return_value={}), \
-                 mock.patch("twinbox_core.embeddings.embed_new_messages", return_value=None):
-                imap_fetch.fetch_incremental(
+                 mock.patch("twinbox_core.embeddings.embed_new_messages", return_value=None) as embed:
+                result = imap_fetch.fetch_incremental(
                     root, ["INBOX"],
                     {"host": "x", "login": "u", "password": "p", "port": 993, "encryption": "tls"},
                     sample_body_count=0,
@@ -352,4 +352,9 @@ class TestLookbackAndUidvalidity(unittest.TestCase):
             self.assertNotIn("1", ids)
             wm_after = json.loads(wm.read_text())
             self.assertEqual(int(wm_after["INBOX"]["uidvalidity"]), 99)
+            self.assertEqual(result["uidvalidity_reset_folders"], ["INBOX"])
+            # Rebuilt UIDs may repopulate the local window, but are not newly
+            # arrived work and must never enqueue later LLM analysis.
+            self.assertEqual(result["new_envelope_ids"], [])
+            self.assertEqual(embed.call_args.kwargs.get("reset_folders"), {"INBOX"})
 

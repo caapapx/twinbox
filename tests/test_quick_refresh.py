@@ -173,6 +173,26 @@ class TestQuickRefresh(unittest.TestCase):
         self.assertEqual(result["analysis_path"], "full")
         self.assertIsNone(run_analysis.call_args.kwargs.get("only_ids"))
 
+    def test_daytime_missing_analysis_artifact_falls_back_to_full(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_ctx(root, [{"id": "1", "folder": "INBOX"}])
+            run_analysis = mock.Mock(return_value={"ok": True, "analyzed_ids": [["INBOX", "1"]]})
+            with mock.patch.object(cli, "_account_root", return_value=root), \
+                 mock.patch("twinbox_core.config.resolve_imap_config", return_value={"host": "h", "login": "u"}), \
+                 mock.patch("twinbox_core.config.default_account_id", return_value="default"), \
+                 mock.patch("twinbox_core.runs.append_run", return_value={}), \
+                 mock.patch(
+                     "twinbox_core.imap_fetch.fetch_incremental",
+                     return_value={"status": "noop", "generated_at": "now", "new_envelope_count": 0},
+                 ), \
+                 mock.patch("twinbox_core.analyze.run_analysis", run_analysis), \
+                 mock.patch("twinbox_core.pulse.write_activity_pulse", side_effect=lambda r, **_k: _fake_pulse(r)):
+                result = cli.cmd_sync("daytime-sync")
+            run_analysis.assert_called_once()
+            self.assertIsNone(run_analysis.call_args.kwargs.get("only_ids"))
+            self.assertEqual(result["analysis_path"], "full")
+
 
 def _write_ctx(root: Path, envelopes: list[dict]) -> None:
     path = root / "runtime" / "context" / "phase1-context.json"
@@ -342,6 +362,28 @@ class TestPendingAnalysis(unittest.TestCase):
             self.assertEqual(retry["analysis_path"], "incremental")
             analysis.assert_called_once()
             self.assertEqual(_pending_ids(root), set())
+
+    def test_skipped_analysis_does_not_ack_pending(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_urgent(root)
+            _write_ctx(root, [{"id": "2", "folder": "INBOX"}])
+            cli._save_pending(root, {("INBOX", "2")}, {"INBOX": 1})
+            _write_watermarks(root, 1)
+            result, analysis = self._sync(
+                root,
+                "daytime-sync",
+                {"status": "noop", "generated_at": "now", "new_envelope_count": 0, "new_envelope_ids": []},
+                mock.Mock(return_value={
+                    "ok": True,
+                    "skipped": True,
+                    "reason": "no-new-threads",
+                    "analyzed_ids": [["INBOX", "2"]],
+                }),
+            )
+            self.assertEqual(result["analysis_path"], "incremental")
+            analysis.assert_called_once()
+            self.assertEqual(_pending_ids(root), {("INBOX", "2")})
 
     def test_budget_overflow_does_not_batch_ack(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

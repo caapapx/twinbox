@@ -14,12 +14,16 @@ from twinbox_core.pulse import normalize_thread_key, write_activity_pulse
 
 def _seed_mailbox(root: Path, *, subject: str = "Deploy review") -> str:
     """Write envelopes + urgent tag so pulse has attention + unread."""
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
     tk = normalize_thread_key(subject)
+    when = datetime.now(ZoneInfo("Asia/Shanghai")) - timedelta(hours=2)
     env = {
         "id": "7",
         "folder": "INBOX",
         "subject": subject,
-        "date": "2030-01-10T12:00:00+08:00",
+        "date": when.isoformat(timespec="seconds"),
         "flags": [],
         "from_addr": "boss@example.com",
         "recipient_role": "to",
@@ -184,6 +188,94 @@ class TestQueueVisibility(unittest.TestCase):
             )
             attention = [row.get("thread_key") for row in data.get("needs_attention") or []]
             self.assertNotIn(tk, attention)
+
+
+def _write_case(root: Path, envelopes: list[dict], *, dismissed_key: str | None = None, dismissed_at: str = "2030-03-01T00:00:00+08:00") -> None:
+    raw = root / "runtime" / "validation" / "phase-1" / "raw"
+    raw.mkdir(parents=True)
+    (raw / "envelopes-merged.json").write_text(json.dumps(envelopes), encoding="utf-8")
+    phase4 = root / "runtime" / "validation" / "phase-4"
+    phase4.mkdir(parents=True)
+    key = normalize_thread_key(envelopes[0]["subject"])
+    (phase4 / "daily-urgent.yaml").write_text(
+        f"daily_urgent:\n  - thread_key: '{key}'\n    why: need reply\n",
+        encoding="utf-8",
+    )
+    if dismissed_key:
+        queue = root / "runtime" / "context"
+        queue.mkdir(parents=True, exist_ok=True)
+        (queue / "user-queue-state.yaml").write_text(
+            f"dismissed:\n  - thread_key: '{dismissed_key}'\n    dismissed_at: '{dismissed_at}'\ncompleted: []\n",
+            encoding="utf-8",
+        )
+
+
+class TestReopen(unittest.TestCase):
+    def test_direct_reply_reopens_with_reason(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_case(root, [
+                {"id": "1", "folder": "INBOX", "subject": "Budget", "date": "2030-01-01T00:00:00+08:00", "from_addr": "a@x", "recipient_role": "to"},
+                {"id": "2", "folder": "INBOX", "subject": "Re: Budget", "date": "2030-06-01T00:00:00+08:00", "from_addr": "b@x", "recipient_role": "to"},
+            ], dismissed_key=normalize_thread_key("Budget"))
+            payload, _ = write_activity_pulse(root)
+            cards = payload["needs_attention"]
+            self.assertEqual(cards[0]["reopened_reason"], "valid_new_message")
+
+    def test_protocol_mail_and_old_mail_stay_hidden(self) -> None:
+        cases = [
+            {"id": "2", "subject": "Re: Budget", "date": "2030-06-01T00:00:00+08:00", "from_addr": "bot@x", "auto_submitted": "auto-replied", "recipient_role": "to"},
+            {"id": "2", "subject": "Re: Budget", "date": "2030-06-01T00:00:00+08:00", "from_addr": "list@x", "list_id": "team.example", "recipient_role": "to"},
+            {"id": "2", "subject": "Re: Budget", "date": "2030-06-01T00:00:00+08:00", "from_addr": "news@x", "precedence": "bulk", "recipient_role": "to"},
+            {"id": "2", "subject": "Re: Budget", "date": "2030-06-01T00:00:00+08:00", "from_addr": "me@x", "recipient_role": "to"},
+            {"id": "2", "subject": "Re: Budget", "date": "2029-01-01T00:00:00+08:00", "from_addr": "b@x", "recipient_role": "to"},
+        ]
+        for extra in cases:
+            with self.subTest(extra=extra), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                first = {"id": "1", "folder": "INBOX", "subject": "Budget", "date": "2030-01-01T00:00:00+08:00", "from_addr": "a@x", "recipient_role": "to"}
+                extra = {"folder": "INBOX", **extra}
+                _write_case(root, [first, extra], dismissed_key=normalize_thread_key("Budget"))
+                with mock.patch("twinbox_core.config.owner_email", return_value="me@x"):
+                    payload, _ = write_activity_pulse(root)
+                self.assertEqual(payload["needs_attention"], [])
+
+    def test_cc_stays_hidden_when_pack_requires_direct(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_case(root, [
+                {"id": "1", "folder": "INBOX", "subject": "Budget", "date": "2030-01-01T00:00:00+08:00", "from_addr": "a@x", "recipient_role": "to"},
+                {"id": "2", "folder": "INBOX", "subject": "Re: Budget", "date": "2030-06-01T00:00:00+08:00", "from_addr": "b@x", "recipient_role": "cc"},
+            ], dismissed_key=normalize_thread_key("Budget"))
+            pack = root / "packs"
+            pack.mkdir()
+            (pack / "user.yaml").write_text(
+                "id: test\nversion: '0'\nclassification:\n  event_types: []\n  defaults:\n    broadcast: reference\n"
+                "attention_hints: []\nreopen:\n  dismissed:\n    require_direct: true\n",
+                encoding="utf-8",
+            )
+            payload, _ = write_activity_pulse(root)
+            self.assertEqual(payload["needs_attention"], [])
+
+    def test_references_share_one_queue_key(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_case(root, [
+                {"id": "1", "folder": "INBOX", "subject": "Alpha", "date": "2030-01-01T00:00:00+08:00", "message_id": "<a@x>", "from_addr": "a@x"},
+                {"id": "2", "folder": "INBOX", "subject": "Something else", "date": "2030-02-01T00:00:00+08:00", "in_reply_to": "<a@x>", "from_addr": "b@x"},
+            ])
+            payload, _ = write_activity_pulse(root)
+            self.assertEqual([row["thread_key"] for row in payload["thread_index"]], ["alpha"])
+            self.assertEqual(payload["thread_index"][0]["message_count"], 2)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_case(root, [
+                {"id": "1", "folder": "INBOX", "subject": "Alpha", "date": "2030-01-01T00:00:00+08:00", "message_id": "<a@x>", "from_addr": "a@x"},
+                {"id": "2", "folder": "INBOX", "subject": "Something else", "date": "2030-02-01T00:00:00+08:00", "from_addr": "b@x"},
+            ])
+            payload, _ = write_activity_pulse(root)
+            self.assertEqual(len(payload["thread_index"]), 2)
 
 
 if __name__ == "__main__":

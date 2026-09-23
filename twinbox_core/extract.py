@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import uuid
 from dataclasses import dataclass, field
@@ -28,6 +29,9 @@ WEEKDAY_MAP = {
 }
 
 
+EXTRACT_SOURCES = ("auto", "local", "imap")
+
+
 @dataclass
 class ExtractCriteria:
     folders: list[str] = field(default_factory=lambda: ["INBOX"])
@@ -43,6 +47,7 @@ class ExtractCriteria:
     profile: str | None = None
     from_hour: int | None = None
     to_hour: int | None = None
+    source: str = "auto"  # auto | local | imap
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -59,6 +64,7 @@ class ExtractCriteria:
             "fetch_bodies": self.fetch_bodies,
             "from_hour": self.from_hour,
             "to_hour": self.to_hour,
+            "source": self.source,
         }
 
     def _weekday_labels(self) -> list[str] | None:
@@ -169,6 +175,11 @@ def merge_criteria(
         base.from_hour = int(overrides["from_hour"])
     if overrides.get("to_hour") is not None:
         base.to_hour = int(overrides["to_hour"])
+    if overrides.get("source") is not None:
+        source = str(overrides["source"]).strip().lower() or "auto"
+        if source not in EXTRACT_SOURCES:
+            raise ValueError(f"Unknown extract source: {source}")
+        base.source = source
 
     return base
 
@@ -322,6 +333,67 @@ def _query_dir(state_root: Path, query_id: str) -> Path:
     return state_root / "runtime" / "queries" / query_id
 
 
+def _load_json(path: Path, default: object) -> object:
+    if not path.is_file():
+        return default
+    try:
+        import json
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return default
+
+
+def load_local_envelopes(state_root: Path, folders: list[str]) -> list[dict[str, Any]]:
+    """Read retained envelopes for the named folders. Never talks to IMAP."""
+    wanted = {str(f) for f in folders}
+    raw = state_root / "runtime" / "validation" / "phase-1" / "raw" / "envelopes-merged.json"
+    rows = _load_json(raw, None)
+    if not isinstance(rows, list):
+        ctx = _load_json(state_root / "runtime" / "context" / "phase1-context.json", {})
+        rows = ctx.get("envelopes") if isinstance(ctx, dict) else []
+    if not isinstance(rows, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        folder = str(row.get("folder", "INBOX") or "INBOX")
+        if folder in wanted:
+            out.append(dict(row))
+    return out
+
+
+def local_retention_covers(envelopes: list[dict[str, Any]], since: date | None) -> bool:
+    """True when since is on/after the oldest local date. Empty store is outside."""
+    if since is None or not envelopes:
+        return False
+    oldest: date | None = None
+    for env in envelopes:
+        dt = _parse_envelope_dt(env.get("date"))
+        if dt is None:
+            continue
+        day = dt.date()
+        if oldest is None or day < oldest:
+            oldest = day
+    return oldest is not None and since >= oldest
+
+
+def _attach_local_bodies(state_root: Path, envelopes: list[dict[str, Any]]) -> None:
+    ctx = _load_json(state_root / "runtime" / "context" / "phase1-context.json", {})
+    bodies = ctx.get("sampled_bodies") if isinstance(ctx, dict) else {}
+    if not isinstance(bodies, dict):
+        return
+    for env in envelopes:
+        folder = str(env.get("folder", "INBOX") or "INBOX")
+        uid = str(env.get("id", "") or "")
+        key = f"{folder}#{uid}"
+        entry = bodies.get(key) or bodies.get(uid)
+        if isinstance(entry, dict):
+            env["body"] = str(entry.get("body", "") or "")
+        elif isinstance(entry, str):
+            env["body"] = entry
+
+
 def run_extract(
     state_root: Path,
     criteria: ExtractCriteria,
@@ -329,33 +401,53 @@ def run_extract(
     code_root: Path | None = None,
     account_id: str | None = None,
 ) -> dict[str, Any]:
-    """Run targeted IMAP extract; persist under runtime/queries/."""
+    """Run targeted extract from local retention and/or IMAP; persist under runtime/queries/."""
     if not criteria.since:
         return {"ok": False, "error": "since date is required (use --since or --profile with default_since_days)"}
     if not criteria.folders:
         return {"ok": False, "error": "at least one folder is required"}
 
-    imap_cfg = resolve_imap_config(account_id)
-    if not imap_cfg.get("host") or not imap_cfg.get("login"):
-        return {"ok": False, "error": "IMAP not configured. Run setup first."}
+    source = (criteria.source or "auto").strip().lower() or "auto"
+    if source not in EXTRACT_SOURCES:
+        return {"ok": False, "error": f"Unknown extract source: {source}"}
 
-    envelopes, folder_errors = fetch_by_query(
-        imap_cfg,
-        criteria.folders,
-        since=criteria.since,
-        until=criteria.until,
-        fetch_bodies=criteria.fetch_bodies,
-        subject_terms=criteria.subject_contains or None,
-    )
+    local_rows = load_local_envelopes(state_root, criteria.folders)
+    use_local = source == "local" or (source == "auto" and local_retention_covers(local_rows, criteria.since))
+    folder_errors: list[dict[str, str]] = []
+    envelopes: list[dict[str, Any]]
+    source_used: str
 
-    if folder_errors and not envelopes:
-        return {
-            "ok": False,
-            "error": "IMAP fetch failed for all folders",
-            "folder_errors": folder_errors,
-        }
+    if use_local:
+        source_used = "local"
+        envelopes = local_rows
+        if criteria.fetch_bodies:
+            _attach_local_bodies(state_root, envelopes)
+        else:
+            for env in envelopes:
+                env["body"] = ""
+        owner = owner_email()
+    else:
+        source_used = "imap"
+        imap_cfg = resolve_imap_config(account_id)
+        if not imap_cfg.get("host") or not imap_cfg.get("login"):
+            return {"ok": False, "error": "IMAP not configured. Run setup first."}
+        envelopes, folder_errors = fetch_by_query(
+            imap_cfg,
+            criteria.folders,
+            since=criteria.since,
+            until=criteria.until,
+            fetch_bodies=criteria.fetch_bodies,
+            subject_terms=criteria.subject_contains or None,
+        )
+        if folder_errors and not envelopes:
+            return {
+                "ok": False,
+                "error": "IMAP fetch failed for all folders",
+                "folder_errors": folder_errors,
+                "source_used": source_used,
+            }
+        owner = owner_email() or str(imap_cfg.get("login") or "")
 
-    owner = owner_email() or str(imap_cfg.get("login") or "")
     matched = [e for e in envelopes if matches_envelope(e, criteria, owner=owner)]
     reports = [envelope_to_report(e, bucket=criteria.bucket) for e in matched]
     reports = bucket_reports(reports, criteria.bucket)
@@ -365,9 +457,11 @@ def run_extract(
         "ok": True,
         "query_id": query_id,
         "query": criteria.to_dict(),
+        "source_used": source_used,
         "fetched_count": len(envelopes),
         "matched_count": len(reports),
         "folder_errors": folder_errors or None,
+        **({"result": "no_match"} if not reports else {}),
         "reports": reports,
         "result_path": str(_query_dir(state_root, query_id) / "result.json"),
     }

@@ -58,16 +58,73 @@ def _parse_dt(value: object) -> datetime | None:
     return parsed.replace(tzinfo=SHANGHAI) if parsed.tzinfo is None else parsed
 
 
+_DEFAULT_PREFIXES = ("re", "fw", "fwd", "回复", "转发", "答复")
+_PREFIX_RE: re.Pattern[str] | None = None
+_BULK_PRECEDENCE = {"bulk", "list", "junk"}
+
+
+def _prefix_re() -> re.Pattern[str]:
+    global _PREFIX_RE
+    if _PREFIX_RE is not None:
+        return _PREFIX_RE
+    data = _load_yaml(Path(__file__).resolve().parents[1] / "config" / "thread-prefixes.yaml")
+    raw = data.get("prefixes")
+    prefixes = [str(item).strip() for item in raw if str(item).strip()] if isinstance(raw, list) else []
+    chosen = prefixes or list(_DEFAULT_PREFIXES)
+    pattern = "|".join(re.escape(item) for item in chosen)
+    _PREFIX_RE = re.compile(rf"^(\s*(?:{pattern})\s*[:：])+\s*", re.IGNORECASE)
+    return _PREFIX_RE
+
+
 def normalize_thread_key(subject: object) -> str:
     return _normalize_thread(subject)
 
 
 def _normalize_thread(subject: object) -> str:
-    value = str(subject or "").lower()
-    value = re.sub(r"^(\s*(re|fw|fwd|回复|转发|答复)\s*[:：])+\s*", "", value, flags=re.IGNORECASE)
+    value = _prefix_re().sub("", str(subject or "").lower())
     value = re.sub(r"[-_ ]?(20\d{6}|\d{8})$", "", value)
     value = re.sub(r"\s+", " ", value).strip()
     return value or "(no-subject)"
+
+
+def _angle_ids(value: object) -> list[str]:
+    return [item.lower() for item in re.findall(r"<[^>]+>", str(value or ""))]
+
+
+def _group_envelopes(envelopes: list[dict[str, Any]]) -> dict[str, list[tuple[datetime, dict[str, Any]]]]:
+    """Link replies by References, then key each group by its earliest subject."""
+    dated: list[tuple[datetime, dict[str, Any]]] = []
+    id_index: dict[str, int] = {}
+    for env in envelopes:
+        parsed = _parse_dt(env.get("date"))
+        if parsed is None or not isinstance(env, dict):
+            continue
+        dated.append((parsed, env))
+        for mid in _angle_ids(env.get("message_id")):
+            id_index.setdefault(mid, len(dated) - 1)
+    parent = list(range(len(dated)))
+
+    def find(idx: int) -> int:
+        while parent[idx] != idx:
+            parent[idx] = parent[parent[idx]]
+            idx = parent[idx]
+        return idx
+
+    for idx, (_, env) in enumerate(dated):
+        refs = _angle_ids(env.get("in_reply_to")) + _angle_ids(env.get("references"))
+        for ref in refs:
+            other = id_index.get(ref)
+            if other is not None:
+                parent[find(idx)] = find(other)
+    buckets: dict[int, list[tuple[datetime, dict[str, Any]]]] = {}
+    for idx, row in enumerate(dated):
+        buckets.setdefault(find(idx), []).append(row)
+    grouped: dict[str, list[tuple[datetime, dict[str, Any]]]] = {}
+    for members in buckets.values():
+        earliest = min(members, key=lambda item: item[0])[1]
+        key = _normalize_thread(earliest.get("subject"))
+        grouped.setdefault(key, []).extend(members)
+    return grouped
 
 
 def _extract_tokens(text: object) -> list[str]:
@@ -110,6 +167,7 @@ def _queue_membership(state_root: Path) -> dict[str, dict[str, Any]]:
             slot = membership.setdefault(tk, {"queue_tags": []})
             slot["queue_tags"].append(tag)
             slot.setdefault("waiting_on", row.get("waiting_on"))
+            slot.setdefault("deadline", row.get("deadline"))
             slot.setdefault("why", row.get("why") or row.get("risk_description") or "")
             if row.get("evidence_basis") and "evidence_basis" not in slot:
                 slot["evidence_basis"] = row.get("evidence_basis")
@@ -130,6 +188,40 @@ def _load_action_verbs() -> set[str]:
     if isinstance(verbs, list):
         return {str(v).strip() for v in verbs if str(v).strip()}
     return {"请审批", "请确认", "请登记", "请处理"}
+
+
+# Pack-declared pulse score weights.  When a factor is missing or empty in the
+# active pack, the engine falls back to these exact defaults so an undeclared
+# pack keeps the historical scores.
+_FACTOR_DEFAULTS = {
+    "recent_window": 10,
+    "urgent": 40,
+    "pending": 30,
+    "sla_risk": 20,
+    "sla_aging_48h": -25,
+    "action_verb": 15,
+}
+
+
+def _load_value_factors(state_root: Path) -> dict[str, int]:
+    """Resolve pulse score factors from the active pack, defaulting each gap."""
+    try:
+        from .pack import load_active_pack
+        pack = load_active_pack(state_root)
+    except Exception:
+        pack = None
+    declared: dict[Any, Any] = {}
+    if isinstance(pack, dict):
+        ranking = pack.get("value_ranking")
+        if isinstance(ranking, dict):
+            factors = ranking.get("factors")
+            if isinstance(factors, dict):
+                declared = factors
+    factors: dict[str, int] = {}
+    for key, default in _FACTOR_DEFAULTS.items():
+        value = declared.get(key)
+        factors[key] = value if type(value) is int else default
+    return factors
 
 
 def _queue_join_diagnostics(state_root: Path, snapshots: list[ThreadSnapshot]) -> list[dict[str, str]]:
@@ -157,28 +249,95 @@ def _load_queue_state(state_root: Path) -> dict[str, Any]:
     return _load_yaml(path)
 
 
-def _is_hidden(thread_key: str, queue_state: dict[str, Any]) -> bool:
-    for row in queue_state.get("completed", []):
-        if isinstance(row, dict) and str(row.get("thread_key", "")) == thread_key:
-            return True
-    for row in queue_state.get("dismissed", []):
-        if isinstance(row, dict) and str(row.get("thread_key", "")) == thread_key:
-            return True
-    return False
+def _is_valid_reopen(env: dict[str, Any], owner: str) -> bool:
+    sender = str(env.get("from_addr") or "").lower()
+    if owner and sender == owner.lower():
+        return False
+    if str(env.get("list_id") or "").strip():
+        return False
+    if str(env.get("auto_submitted") or "").strip():
+        return False
+    if str(env.get("precedence") or "").strip().lower() in _BULK_PRECEDENCE:
+        return False
+    return True
+
+
+def _is_direct(env: dict[str, Any]) -> bool:
+    return str(env.get("recipient_role") or "") in {"to", "direct"}
+
+
+def _dismiss_requires_direct(state_root: Path) -> bool:
+    try:
+        from .pack import load_active_pack
+        pack = load_active_pack(state_root)
+    except Exception:
+        return False
+    reopen = pack.get("reopen") if isinstance(pack, dict) else None
+    dismissed = reopen.get("dismissed") if isinstance(reopen, dict) else None
+    return bool(dismissed.get("require_direct")) if isinstance(dismissed, dict) else False
+
+
+def _hide_decision(
+    keys: set[str],
+    rows: list[tuple[datetime, dict[str, Any]]],
+    queue_state: dict[str, Any],
+    *,
+    owner: str,
+    require_direct: bool,
+) -> tuple[bool, str]:
+    """Return (hidden, reopened_reason). A hide without a timestamp stays hidden."""
+    matched: list[tuple[str, datetime | None]] = []
+    for bucket in ("completed", "dismissed"):
+        for row in queue_state.get(bucket, []):
+            if isinstance(row, dict) and str(row.get("thread_key") or "") in keys:
+                stamp = row.get("completed_at") if bucket == "completed" else row.get("dismissed_at")
+                matched.append((bucket, _parse_dt(stamp)))
+    if not matched:
+        return False, ""
+    if any(stamp is None for _, stamp in matched):
+        return True, ""
+    bucket, cutoff = max(matched, key=lambda item: item[1] or datetime.min.replace(tzinfo=SHANGHAI))
+    for when, env in rows:
+        if when <= cutoff:
+            continue
+        if not _is_valid_reopen(env, owner):
+            continue
+        if bucket == "dismissed" and require_direct and not _is_direct(env):
+            continue
+        return False, "valid_new_message"
+    return True, ""
+
+
+def _thread_keys(thread_key: str, rows: list[tuple[datetime, dict[str, Any]]]) -> set[str]:
+    keys = {thread_key}
+    for _, env in rows:
+        keys.add(_normalize_thread(env.get("subject")))
+    return keys
 
 
 def hidden_thread_keys(state_root: Path) -> set[str]:
-    """Thread keys completed/dismissed in local queue (not IMAP)."""
+    """Thread keys still completed/dismissed after valid-new-mail reopen."""
     queue_state = _load_queue_state(state_root)
-    keys: set[str] = set()
+    grouped = _group_envelopes(_load_envelopes(state_root))
+    from .config import owner_email
+    owner = owner_email()
+    require_direct = _dismiss_requires_direct(state_root)
+    hidden: set[str] = set()
+    seen: set[str] = set()
+    for thread_key, rows in grouped.items():
+        keys = _thread_keys(thread_key, rows)
+        seen |= keys
+        stays, _reason = _hide_decision(keys, rows, queue_state, owner=owner, require_direct=require_direct)
+        if stays:
+            hidden |= keys
     for bucket in ("completed", "dismissed"):
         for row in queue_state.get(bucket, []):
             if not isinstance(row, dict):
                 continue
-            tk = str(row.get("thread_key", "") or "")
-            if tk:
-                keys.add(tk)
-    return keys
+            tk = str(row.get("thread_key") or "")
+            if tk and tk not in seen:
+                hidden.add(tk)
+    return hidden
 
 
 @dataclass
@@ -202,6 +361,8 @@ class ThreadSnapshot:
     evidence_basis: str = ""
     action_target: str = ""
     evidence_refs: list[str] | None = None
+    reopened_reason: str = ""
+    deadline: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         out = {
@@ -214,6 +375,7 @@ class ThreadSnapshot:
             "unread_count": self.unread_count,
             "queue_tags": self.queue_tags,
             "waiting_on": self.waiting_on,
+            "deadline": self.deadline,
             "why": self.why,
             "fingerprint": self.fingerprint,
             "query_terms": self.query_terms,
@@ -228,6 +390,8 @@ class ThreadSnapshot:
             out["action_target"] = self.action_target
         if self.evidence_refs:
             out["evidence_refs"] = self.evidence_refs
+        if self.reopened_reason:
+            out["reopened_reason"] = self.reopened_reason
         return out
 
 
@@ -239,21 +403,22 @@ def build_activity_pulse(state_root: Path, *, window_hours: int = 24) -> dict[st
     queue_mem = _queue_membership(state_root)
     queue_state = _load_queue_state(state_root)
     cutoff = datetime.now(SHANGHAI) - timedelta(hours=window_hours)
-
-    # Group by thread
-    grouped: dict[str, list[tuple[datetime, dict[str, Any]]]] = {}
-    for env in envelopes:
-        parsed = _parse_dt(env.get("date"))
-        if parsed is None:
-            continue
-        tk = _normalize_thread(env.get("subject"))
-        grouped.setdefault(tk, []).append((parsed, env))
+    from .config import owner_email
+    owner = owner_email()
+    require_direct = _dismiss_requires_direct(state_root)
+    grouped = _group_envelopes(envelopes)
 
     snapshots: list[ThreadSnapshot] = []
     hidden_keys: set[str] = set()
+    reopened: dict[str, str] = {}
+    factors = _load_value_factors(state_root)
     for tk, rows in grouped.items():
-        if _is_hidden(tk, queue_state):
+        keys = _thread_keys(tk, rows)
+        stays, reason = _hide_decision(keys, rows, queue_state, owner=owner, require_direct=require_direct)
+        if stays:
             hidden_keys.add(tk)
+        elif reason:
+            reopened[tk] = reason
         rows.sort(key=lambda x: x[0], reverse=True)
         latest_dt, latest = rows[0]
         in_window = [r for r in rows if r[0] >= cutoff]
@@ -263,16 +428,16 @@ def build_activity_pulse(state_root: Path, *, window_hours: int = 24) -> dict[st
         why = str(q.get("why", "") or "")
         if not why:
             why = f"最近{window_hours}小时新增 {len(in_window)} 封邮件" if in_window else "当前无新增邮件"
-        score = len(in_window) * 10
+        score = len(in_window) * factors["recent_window"]
         if "urgent" in tags:
-            score += 40
+            score += factors["urgent"]
         if "pending" in tags:
-            score += 30
+            score += factors["pending"]
         if "sla_risk" in tags:
-            score += 20
+            score += factors["sla_risk"]
             age_hours = (datetime.now(SHANGHAI) - latest_dt).total_seconds() / 3600
             if age_hours >= 48:
-                score = max(0, score - 25)
+                score = max(0, score + factors["sla_aging_48h"])
                 why = f"{why}（aging）"
         latest_body = ""
         ctx_path = state_root / "runtime" / "context" / "phase1-context.json"
@@ -289,7 +454,7 @@ def build_activity_pulse(state_root: Path, *, window_hours: int = 24) -> dict[st
         hay = f"{latest.get('subject', '')} {latest_body}"
         for verb in verbs:
             if verb and verb in hay:
-                score += 15
+                score += factors["action_verb"]
                 action_hint = verb
                 break
         from .imap_fetch import is_unread
@@ -302,6 +467,7 @@ def build_activity_pulse(state_root: Path, *, window_hours: int = 24) -> dict[st
             last_activity_at=latest_dt.isoformat(), latest_message_ref=ref,
             new_message_count=len(in_window), message_count=len(rows),
             unread_count=unread, queue_tags=tags, waiting_on=q.get("waiting_on"),
+            deadline=q.get("deadline"),
             why=why, fingerprint=fp, query_terms=terms, score=score,
             recipient_role=aggregate_thread_recipient_role(
                 [{"recipient_role": r.get("recipient_role")} for _, r in rows]
@@ -311,6 +477,7 @@ def build_activity_pulse(state_root: Path, *, window_hours: int = 24) -> dict[st
             evidence_basis=str(q.get("evidence_basis") or ""),
             action_target=str(q.get("action_target") or ""),
             evidence_refs=list(q.get("evidence_refs") or []) if isinstance(q.get("evidence_refs"), list) else None,
+            reopened_reason=reopened.get(tk, ""),
         )
         snapshots.append(snap)
 
@@ -334,14 +501,34 @@ def build_activity_pulse(state_root: Path, *, window_hours: int = 24) -> dict[st
         "thread_index": [s.to_dict() for s in snapshots],
         "diagnostics": {"queue_join_misses": misses},
         "score_legend": {
-            "recent_window": 10,
-            "urgent": 40,
-            "pending": 30,
-            "sla_risk": 20,
-            "sla_aging_48h": -25,
-            "action_verb": 15,
+            "recent_window": factors["recent_window"],
+            "urgent": factors["urgent"],
+            "pending": factors["pending"],
+            "sla_risk": factors["sla_risk"],
+            "sla_aging_48h": factors["sla_aging_48h"],
+            "action_verb": factors["action_verb"],
         },
     }
+    try:
+        from .case_ledger import drop_closed_from_attention
+        payload = drop_closed_from_attention(payload, state_root)
+    except Exception as exc:
+        diag = payload.setdefault("diagnostics", {})
+        if not isinstance(diag, dict):
+            diag = {}
+            payload["diagnostics"] = diag
+        diag["case_ledger_error"] = type(exc).__name__
+    try:
+        from .classification_store import classification_lineage
+        lineage = classification_lineage(state_root)
+        if lineage is not None:
+            payload["classification_lineage"] = lineage
+    except Exception as exc:
+        diag = payload.setdefault("diagnostics", {})
+        if not isinstance(diag, dict):
+            diag = {}
+            payload["diagnostics"] = diag
+        diag["classification_lineage_error"] = type(exc).__name__
     try:
         from .project import attach_projections
         payload = attach_projections(payload, state_root)

@@ -121,14 +121,62 @@ async function main() {
 
     console.log(`✓ tools/list returned ${tools.length} tools`);
 
+    const controlPlaneLeaks = [
+      "work_context",
+      "professional_agent",
+      "operations_capability",
+      "meeting_capability",
+      "human_task",
+      "agent_os",
+      "route_plan",
+    ];
+    const listedBlob = JSON.stringify(listed.result || {}).toLowerCase();
+    const leaked = controlPlaneLeaks.filter((token) => listedBlob.includes(token));
+    if (leaked.length) {
+      throw new Error(`TwinBox MCP must not advertise Agent OS control-plane terms: ${leaked.join(", ")}`);
+    }
+
     const missing = expected.filter((n) => !names.includes(n));
 
     if (missing.length) {
       throw new Error(`Missing tools: ${missing.join(", ")}`);
     }
 
+    const actionReview = tools.find((tool) => tool.name === "twinbox_action_review");
+    if (!actionReview?.inputSchema?.properties?.confirmation_token) {
+      throw new Error("twinbox_action_review must expose confirmation_token for confirm");
+    }
+
+    const openInputs = tools.filter((tool) => tool.inputSchema?.additionalProperties !== false);
+    if (openInputs.length) {
+      throw new Error(
+        `TwinBox MCP tools must reject undeclared arguments: ${openInputs.map((tool) => tool.name).join(", ")}`,
+      );
+    }
+
     console.log("✓ required 9 tools present (extras allowed)");
+    console.log("✓ action review exposes confirmation-token confirmation contract");
     console.log("  " + names.join(", "));
+
+    send(child.stdin, {
+      jsonrpc: "2.0",
+      id: 3,
+      method: "tools/call",
+      params: {
+        name: "twinbox_setup",
+        arguments: { unexpected: true },
+      },
+    });
+    const rejected = await readResponse(child, (msg) => msg.id === 3);
+    const rejectedText = JSON.stringify(rejected).toLowerCase();
+    if (!rejected.result?.isError || !rejectedText.includes("undeclared_argument")) {
+      throw new Error(`TwinBox MCP must reject undeclared tool arguments: ${JSON.stringify(rejected)}`);
+    }
+    if (rejectedText.includes("imap") || rejectedText.includes("sync")) {
+      throw new Error("undeclared tool arguments must fail before mailbox access");
+    }
+    console.log("✓ undeclared tool arguments are rejected before mailbox access");
+
     console.log("\nSmoke test passed.");
   } finally {
     child.kill();

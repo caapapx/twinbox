@@ -4,7 +4,7 @@
 
 **Created**: 2026-09-04
 
-**Status**: Draft / Planned
+**Status**: Implemented / verified locally
 
 **Input**: 轻量配置与用户可见注意力投影；紧急度与行动性分轴，避免互斥三分类本体。
 
@@ -45,10 +45,26 @@
 
 **Independent Test**: 文档与验收引用 `002`；本目录任务不复制 MIME 解码工作。
 
+### User Story 4 - 等待方与截止时间可选轴 (Priority: P2)
+
+投影可按**可选轴**呈现两条附加信息：**等待方（waiting party）**与**截止时间（deadline）**。二者均可缺省；一旦分析或包提供取值，该值即携带 `evidence_refs` 回溯到具体邮件证据。本 story 复用既有单次分析产出，**不新增分析 LLM 调用**。
+
+**Why this priority**: 这两条轴增强可解释性，但非最小配置所必需；不新起分析调用以免膨胀合同。
+
+**Independent Test**: 分析行携带 `waiting_on` / `deadline`（或包声明对应值）时，投影项输出带 `evidence_refs`；缺省时投影项不出现这两条轴，也不报错。
+
+**Acceptance Scenarios**:
+
+1. **Given** 分析对某线程声明 `waiting_on`，**When** 投影，**Then** 等待方出现在该项且携带对应 `evidence_refs`。
+2. **Given** 分析对某线程声明 `deadline`，**When** 投影，**Then** 截止时间出现在该项且携带对应 `evidence_refs`。
+3. **Given** 分析未提供任一可选轴，**When** 投影，**Then** 该项不包含这两条轴且无额外提示。
+
 ## Edge Cases
 
 - 无语义包：使用安全默认（偏 reference，避免误标 urgent）。
 - 规则与 LLM 冲突：声明式硬约束优先，冲突写入 diagnostics。
+- 可选轴（等待方 / 截止时间）缺省：不投影这两条轴，不报错、不触发额外分析。
+- 可选轴取值：必须可携带 `evidence_refs`；无证据时不杜撰，沿用现有 `evidence_basis` 语义。
 
 ## Requirements *(mandatory)*
 
@@ -59,6 +75,9 @@
 - **FR-003**: Urgency, actionability, interest, and sensitivity MUST be modelable as separate axes.
 - **FR-004**: Each projected item MUST carry evidence or rule rationale.
 - **FR-005**: Defaults for institutional/broadcast mail MAY classify as `reference` when user skips configuration.
+- **FR-006**: System MAY expose an optional `waiting party` axis; a value supplied by analysis or a pack MUST be able to carry `evidence_refs`.
+- **FR-007**: System MAY expose an optional `deadline` axis; a value supplied by analysis or a pack MUST be able to carry `evidence_refs`.
+- **FR-008**: An induced taxonomy is a draft until the owner confirms it into the pack. Query assignment reads only a live pack taxonomy and MUST NOT call a model. At most 12 categories plus `other`. A draft run stops on stable batches, held-out other at or below 15%, or an exhausted budget. Nightly drift records a note and does not replace the live list.
 
 ### Key Entities
 

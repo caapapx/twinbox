@@ -13,9 +13,13 @@ Commands:
   queue        — Mark thread complete / dismiss / restore
   status       — Mailbox health + setup status
   schedule     — run-due jobs under file lock
+  realtime-watch — externally supervised IMAP IDLE/poll trigger (quick-refresh only)
   onboard      — write user semantic pack from questionnaire answers
+  taxonomy     — induce / confirm / drift for pack taxonomy drafts
   material-import — optional xlsx/docx pack fragment
   actions      — dry-run proposals / review
+  semantics    — dynamic classification catalog/case projections
+  feedback     — authorized correction/confirmation/execution receipt
   weknora     — local diagnostics / gated sync / revoke (hide then delete)
 """
 
@@ -320,6 +324,16 @@ def cmd_sync(job: str = "daytime-sync", account_id: str | None = None) -> dict[s
     has_analysis = urgent_yaml.is_file()
 
     degraded: list[str] = []
+    # Quick refresh is explicitly a local pulse rebuild; it must not make a
+    # network-only Sent-header attempt part of its health result.
+    if not quick:
+        try:
+            from .imap_fetch import capture_sent_headers
+            sent = capture_sent_headers(root, imap_cfg, lookback_days=max(lookback, 30))
+            if not sent.get("ok"):
+                degraded.append("sent_headers")
+        except Exception:
+            degraded.append("sent_headers")
     analysis_started = time.monotonic()
     analysis_path = "full"
     if quick:
@@ -473,6 +487,7 @@ _CARD_KEYS = (
     "latest_recipient_role",
     "evidence_basis",
     "action_target",
+    "reopened_reason",
 )
 
 
@@ -646,6 +661,9 @@ def _parse_extract_args(remaining: list[str]) -> dict[str, Any]:
         elif arg == "--to-hour" and i + 1 < len(remaining):
             overrides["to_hour"] = remaining[i + 1]
             i += 2
+        elif arg == "--source" and i + 1 < len(remaining):
+            overrides["source"] = remaining[i + 1]
+            i += 2
         else:
             i += 1
     return overrides
@@ -699,11 +717,25 @@ def cmd_queue_action(action: str, thread_key: str, reason: str = "", account_id:
 
 
 
+def status_warnings(last: dict[str, Any] | None, misses: list, join_misses: list) -> list:
+    warnings = []
+    select = {}
+    if isinstance(last, dict) and isinstance(last.get("select"), dict):
+        select = last["select"]
+    if select.get("embeddings_degraded"):
+        warnings.append({"embeddings_degraded": True, "run_id": last.get("run_id") if isinstance(last, dict) else None})
+    if misses:
+        warnings.append({"missed_runs": misses})
+    if join_misses:
+        warnings.append({"queue_join_misses": join_misses})
+    return warnings
+
+
 def cmd_status(account_id: str | None = None) -> dict[str, Any]:
     from .config import resolve_imap_config, list_accounts, default_account_id
     from .imap_fetch import preflight
     from .llm import validate_backend
-    from .runs import account_freshness, load_recent_runs
+    from .runs import account_freshness, load_last_run, load_recent_runs
 
     aid = (account_id or default_account_id()).strip() or "default"
     root = _account_root(aid)
@@ -732,11 +764,7 @@ def cmd_status(account_id: str | None = None) -> dict[str, Any]:
             join_misses = load_activity_pulse(root).get("diagnostics", {}).get("queue_join_misses", [])
         except Exception:
             join_misses = []
-    warnings = []
-    if misses:
-        warnings.append({"missed_runs": misses})
-    if join_misses:
-        warnings.append({"queue_join_misses": join_misses})
+    warnings = status_warnings(load_last_run(root), misses, join_misses)
 
     accounts_health = []
     for acct in list_accounts():
@@ -890,6 +918,51 @@ def cmd_ingest(remaining: list[str], account_id: str | None = None) -> dict[str,
     return build_ingest_envelopes(_account_root(aid), account_id=aid, since_cursor=since, limit=limit)
 
 
+def cmd_realtime_watch(remaining: list[str], account_id: str | None = None) -> dict[str, Any]:
+    """Run the supervised realtime ingress worker; this never starts a daemon."""
+    from .config import resolve_imap_config
+    from .realtime_mail_events import RealtimeMailWorker
+
+    aid = _resolved_account_id(account_id)
+    imap_cfg = resolve_imap_config(aid)
+    if not imap_cfg.get("host") or not imap_cfg.get("login") or not imap_cfg.get("password"):
+        return {"ok": False, "error": "imap_not_configured", "recovery_tool": "twinbox_setup"}
+
+    def _seconds(flag: str, default: float, *, minimum: float = 0.0) -> float:
+        if flag not in remaining:
+            return default
+        index = remaining.index(flag)
+        if index + 1 >= len(remaining):
+            raise ValueError(f"{flag}_value_required")
+        value = float(remaining[index + 1])
+        if value < minimum:
+            raise ValueError(f"{flag}_must_be_at_least_{minimum:g}")
+        return value
+
+    once = "--once" in remaining
+    max_cycles: int | None = 1 if once else None
+    if "--max-cycles" in remaining:
+        index = remaining.index("--max-cycles")
+        if index + 1 >= len(remaining):
+            return {"ok": False, "error": "max_cycles_value_required"}
+        max_cycles = int(remaining[index + 1])
+        if max_cycles < 1:
+            return {"ok": False, "error": "max_cycles_must_be_positive"}
+    try:
+        worker = RealtimeMailWorker(
+            state_root=_account_root(aid),
+            account_id=aid,
+            imap_config=imap_cfg,
+            idle_timeout_seconds=_seconds("--idle-timeout-seconds", 29 * 60, minimum=1),
+            poll_interval_seconds=_seconds("--poll-interval-seconds", 5 * 60, minimum=1),
+            reconnect_backoff_seconds=_seconds("--reconnect-backoff-seconds", 5, minimum=0),
+        )
+        return worker.run(max_cycles=max_cycles)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+
 def cmd_events(remaining: list[str], account_id: str | None = None) -> dict[str, Any]:
     from .adapter import load_event_records
     from .config import default_account_id
@@ -905,6 +978,131 @@ def cmd_events(remaining: list[str], account_id: str | None = None) -> dict[str,
         else:
             i += 1
     return load_event_records(_account_root(aid), account_id=aid, limit=limit)
+
+
+def cmd_case_ledger(remaining: list[str], account_id: str | None = None) -> dict[str, Any]:
+    from . import case_ledger
+
+    root = _account_root(account_id)
+    view = case_ledger.current_view(root)
+    cases = [
+        {
+            "case_ref": ref,
+            "attribute": attribute,
+            "value": record.get("value"),
+            "valid_from": record.get("valid_from"),
+            "recorded_at": record.get("recorded_at"),
+            "evidence_ref": record.get("evidence_ref"),
+            "source": record.get("source"),
+            "status": record.get("status"),
+        }
+        for (ref, attribute), record in sorted(view.items())
+    ]
+    return {"ok": True, "cases": cases}
+
+
+def cmd_taxonomy(remaining: list[str], account_id: str | None = None) -> dict[str, Any]:
+    from . import taxonomy
+
+    root = _account_root(account_id)
+    sub = remaining[0] if remaining else ""
+    if sub == "induce":
+        lookback, rest = _parse_flag(remaining[1:], "--lookback")
+        budget, _rest = _parse_flag(rest, "--budget")
+        return taxonomy.induce(
+            root,
+            lookback_days=int(lookback) if lookback and lookback.isdigit() else None,
+            budget=int(budget) if budget and budget.isdigit() else 3,
+        )
+    if sub == "confirm":
+        return taxonomy.confirm(root)
+    if sub == "drift":
+        return taxonomy.record_drift(root)
+    return {"ok": False, "error": "Usage: taxonomy induce|confirm|drift"}
+
+
+def cmd_semantics(remaining: list[str], account_id: str | None = None) -> dict[str, Any]:
+    from .classification_store import classification_path
+    from .semantic_client import project_semantics
+
+    aid = _resolved_account_id(account_id)
+    root = _account_root(aid)
+    action = remaining[0] if remaining and not remaining[0].startswith("--") else "list"
+    case = ""
+    include_evidence = "--include-evidence" in remaining
+    for i, arg in enumerate(remaining):
+        if arg == "--case-ref" and i + 1 < len(remaining):
+            case = remaining[i + 1]
+    # Scope comes from the local classification authority, never from tool input.
+    scope_id = aid
+    path = classification_path(root)
+    if path.is_file():
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict) and raw.get("scope_id"):
+                scope_id = str(raw["scope_id"])
+        except (OSError, json.JSONDecodeError):
+            pass
+    data = project_semantics(root, scope_id=scope_id, action=action, case_ref=case,
+                             include_evidence=include_evidence)
+    return {"ok": "error" not in data, "data": data,
+            **({"error": data["error"]} if "error" in data else {})}
+
+
+def _trusted_feedback_context(root: Path, aid: str, payload: dict[str, Any]):
+    from .evidence_contract import SourceGrant
+
+    path = root / "config" / "source-grant.json"
+    if not path.is_file():
+        raise ValueError("source_grant_missing")
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        raise ValueError("source_grant_invalid") from None
+    if not isinstance(raw, dict) or raw.get("schema_version") != "1.0":
+        raise ValueError("source_grant_invalid")
+    if str(raw.get("account_ref") or "") != aid:
+        raise ValueError("source_binding_invalid")
+    actors = raw.get("actors")
+    actor = str(payload.get("actor_ref") or "")
+    kinds = actors.get(actor) if isinstance(actors, dict) else None
+    if not isinstance(kinds, list):
+        raise ValueError("actor_forbidden")
+    grant = SourceGrant(
+        scope_id=str(raw.get("scope_id") or ""), account_ref=aid,
+        mail_refs=frozenset(str(v) for v in raw.get("mail_refs", []) if isinstance(v, str)),
+        evidence_refs=frozenset(str(v) for v in raw.get("evidence_refs", []) if isinstance(v, str)),
+        enabled=raw.get("enabled") is True,
+    )
+    return grant, actor, frozenset(str(v) for v in kinds)
+
+
+def cmd_feedback(remaining: list[str], account_id: str | None = None) -> dict[str, Any]:
+    from .feedback import FeedbackStoreError, process_feedback
+
+    aid = _resolved_account_id(account_id)
+    root = _account_root(aid)
+    payload_json = ""
+    payload_file = ""
+    for i, arg in enumerate(remaining):
+        if arg == "--payload-json" and i + 1 < len(remaining):
+            payload_json = remaining[i + 1]
+        elif arg == "--payload-file" and i + 1 < len(remaining):
+            payload_file = remaining[i + 1]
+    try:
+        if payload_file:
+            payload = json.loads(Path(payload_file).read_text(encoding="utf-8"))
+        elif payload_json:
+            payload = json.loads(payload_json)
+        else:
+            return {"ok": False, "error": "feedback_payload_required", "recovery_tool": "twinbox_semantics"}
+        if not isinstance(payload, dict):
+            raise ValueError("invalid_payload")
+        grant, actor, kinds = _trusted_feedback_context(root, aid, payload)
+        result = process_feedback(root, payload, grant=grant, actor_ref=actor, allowed_kinds=kinds)
+        return {"ok": True, "data": result}
+    except (FeedbackStoreError, ValueError, OSError, json.JSONDecodeError) as exc:
+        return {"ok": False, "error": str(exc), "recovery_tool": "twinbox_semantics"}
 
 
 def _trusted_weknora_grant(root: Path, aid: str):
@@ -1045,7 +1243,6 @@ def cmd_weknora(
         return {"ok": False, "error": str(exc), "recovery_tool": "twinbox_status"}
 
 
-
 # --- Main ---
 
 # --- Main ---
@@ -1101,6 +1298,16 @@ def main(argv: list[str] | None = None) -> int:
             result = cmd_ingest(remaining, account_id=account_id)
         elif cmd == "events":
             result = cmd_events(remaining, account_id=account_id)
+        elif cmd == "case-ledger":
+            result = cmd_case_ledger(remaining, account_id=account_id)
+        elif cmd == "taxonomy":
+            result = cmd_taxonomy(remaining, account_id=account_id)
+        elif cmd == "realtime-watch":
+            result = cmd_realtime_watch(remaining, account_id=account_id)
+        elif cmd == "semantics":
+            result = cmd_semantics(remaining, account_id=account_id)
+        elif cmd == "feedback":
+            result = cmd_feedback(remaining, account_id=account_id)
         elif cmd == "weknora":
             result = cmd_weknora(remaining, account_id=account_id)
         elif cmd == "schedule":
@@ -1116,7 +1323,19 @@ def main(argv: list[str] | None = None) -> int:
                 if a.startswith("--") and i + 1 < len(remaining):
                     answers[a[2:].replace("-", "_")] = remaining[i + 1]
             from .onboard import save_user_pack
+            from . import taxonomy
             result = save_user_pack(_account_root(account_id), answers)
+            if result.get("ok"):
+                try:
+                    draft = taxonomy.induce(_account_root(account_id))
+                    result["taxonomy_draft"] = {
+                        "ok": draft.get("ok"),
+                        "path": draft.get("path"),
+                        "stop": draft.get("stop"),
+                        "categories": draft.get("categories"),
+                    }
+                except Exception as exc:  # fail-open: onboard already succeeded
+                    result["taxonomy_draft"] = {"ok": False, "error": type(exc).__name__}
         elif cmd == "material-import":
             path = remaining[0] if remaining else ""
             intent = "reference"
@@ -1132,9 +1351,17 @@ def main(argv: list[str] | None = None) -> int:
             sub = remaining[0] if remaining else "list"
             from .actions import scan_proposals, review_proposal
             if sub == "review":
-                pid = remaining[1] if len(remaining) > 1 else ""
-                action = remaining[2] if len(remaining) > 2 else "confirm"
-                result = review_proposal(_account_root(account_id), pid, action)
+                confirmation_token, review_args = _parse_flag(remaining, "--confirmation-token")
+                reason, review_args = _parse_flag(review_args, "--reason")
+                pid = review_args[1] if len(review_args) > 1 else ""
+                action = review_args[2] if len(review_args) > 2 else "confirm"
+                result = review_proposal(
+                    _account_root(account_id),
+                    pid,
+                    action,
+                    reason=reason or "",
+                    confirmation_token=confirmation_token,
+                )
             else:
                 result = scan_proposals(_account_root(account_id))
         else:

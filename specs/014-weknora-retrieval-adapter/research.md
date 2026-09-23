@@ -1,6 +1,6 @@
 # 014 WeKnora 现场能力与授权核验矩阵
 
-**状态**：`partial`（2026-09-21 grill 五项决议见 §5；团队会议库复用 + 邮件空壳库已建 + 读写 key 已配并验证；mail excerpt 落盘、公共邮箱 grant 落地、正式 retention 策略、金标真值仍缺，`weknora.enabled` 保持关闭）
+**状态**：`partial`（ADR-004 与 retention 已记录；现场 grant 的 `account_ref=shared-aion`，`mail_refs` 有一条 opaque locator；正文未同步，运行时开关仍关）
 **用途**：为 T008/T010 收集可审计、脱敏的现场证据。此文件不是 WeKnora API 的事实来源；实际端点、字段和状态必须以目标环境 Swagger 为准。
 
 ## 1. 门禁结论
@@ -9,13 +9,13 @@
 
 | 门禁 | 当前状态 | 需要的最小证据 | 证据落点（待填写） |
 | --- | --- | --- | --- |
-| ADR-004 接受 | `accepted（owner 口头，待正式记录）` | 负责人、日期、接受记录；明确 sidecar 默认路径与回退策略 | grill 2026-09-21 Q1 接受；正式接受记录（负责人签字/日期）待补 |
+| ADR-004 接受 | `recorded` | 负责人、日期、接受记录；明确 sidecar 默认路径与回退策略 | [ADR-004](../../docs/decisions/ADR-004-optional-weknora-retrieval-proposed.md) 2026-09-22 Accepted；运行时 `adr_004_accepted` 仍为 false，接受记录不打开开关 |
 | 专用知识库 | `done` | 租户/账户隔离说明、KB 标识（脱敏）、所有者 | 租户 10001；邮件空壳库 `邮件 9c2d23ae…`、团队会议库 `团队会议 63907aa3…`，同 embedding，不混分；所有者 admin |
 | 独立最小写权限 key | `done` | key 仅存在于受控凭据存储；只记录 presence，不记录值 | tenant key（meetmail profile，scope 仅上两库，`retrieve/chat/ingest/message_history`，已去 `manage_kbs`）；值仅 weknora-ops gitignored creds + 251 agent env，presence 已验证 |
 | API 能力 | `verified` | 目标环境 Swagger 中的创建、查询、更新、解析状态、检索、删除能力矩阵 | 2026-09-21 实测：建库/列表/`manual` 创建/带全文 PUT 发布/单篇 parse 查询/hybrid-search；单篇 `DELETE /knowledge/:id` 合成探测文档 200+`task_id` 异步 pending。`manual` 默认 draft、`publish` 须带全文（`published` 400）；管理面 Bearer、业务面 X-API-Key。真 provider + CLI `status|sync|revoke` 已接线（三重门，测试零真实网络）；门未开故默认关闭 |
-| 检索前授权隔离 | `partial` | 证明 KB/文档级过滤可在检索前生效；不能以结果后过滤替代 | scoped key 只能列出授权的 2 个库（KB 级隔离已验证）；文档级 grant 过滤待公共邮箱 source grant 落地后验证 |
+| 检索前授权隔离 | `partial` | 证明 KB/文档级过滤可在检索前生效；不能以结果后过滤替代 | scoped key 只能列出授权的 2 个库（KB 级隔离已验证）；账号 grant 已落地且 `mail_refs` 为空，文档级过滤要等列入一条摘录后再验 |
 | 幂等与超时对账 | `partial` | source key 查询、创建超时后的 reconcile、映射丢失恢复证据 | 先按 title/channel 查再 PUT，会议纪要 4 篇零重复已验证；真超时 reconcile/映射丢失恢复仍是 fake 合同，未做真演练 |
-| 保留与删除 | `agreed（语义已定，正式策略待批）` | retention、撤权先隐藏后删除、失败重试和审计要求 | grill 2026-09-21 Q3 同意合同语义；单篇 `DELETE /knowledge/:id` 已用合成探测文档核验（200+task_id，异步；非邮件）；正式保留策略文档待批 |
+| 保留与删除 | `recorded` | retention、撤权先隐藏后删除、失败重试和审计要求 | [retention.md](retention.md)；单篇 DELETE 已用合成探测文档核验为异步 pending；关开关不自动删副本 |
 | 脱敏/有界摘录 | `defined（待真样本）` | 明确允许字段、正文上限（当前合同为 512 字符/32 KiB payload） | 上限与 allowlist 见合同；真 mail excerpt 样本待公共邮箱 grant 落地后 |
 | 30 条人工金标 | `mock-first accepted` | 匿名 query、旧基线冻结结果、候选冻结结果、owner 签字 | grill 2026-09-21 Q4：mock 先行，真值等落盘后冻结；T009 mock 可做，真金标待定。mock 基线已跑：`tests/fixtures/weknora/mock-30.json` + 新旧 runner 结果 → `docs/runtime/weknora-retrieval-mock-20260921.json`（`fixture_not_human_gold`，三组 recall 1.0/1.0，不作启用结论） |
 | 回退验收 | `pending` | 关闭开关后旧 sidecar 正常、权限不扩大、证据在 `docs/runtime/` | 待小样本阶段演练 |
@@ -42,9 +42,9 @@
 
 ## 5. grill 决议记录（2026-09-21，owner 确认）
 
-1. ADR-004 → 接受（sidecar 默认主干不变）；正式接受记录待补，补前门禁表该行保持 `accepted（owner 口头）`。
-2. 首批 grant → 一个公共邮箱 scope（非个人、非全员）；**具体是哪个邮箱待指定**，指定前该 grant 未落地。
-3. retention → 同意合同语义（撤权先隐藏后删除，失败重试+审计）；正式策略文档待批。
+1. ADR-004 → Accepted，记录在 `docs/decisions/ADR-004-optional-weknora-retrieval-proposed.md`。运行时开关仍关。
+2. 首批 grant → 一个公共邮箱 scope。现场状态 `account_ref=shared-aion`，`mail_refs` 含一条已有本地索引的 opaque locator（`folder#uid`）。正文未复制到 KB，邮箱地址不写入本文件。
+3. retention → [retention.md](retention.md)。撤权先隐藏后删除，失败保持不可见并可重试；不删 IMAP。
 4. 金标顺序 → mock 先行，真值等落盘后冻结。
 5. meetmail key → 已去 `manage_kbs`（2026-09-21 key 轮换验证），转纯 ingest。
 

@@ -1,0 +1,17 @@
+# Synthetic example only; not a real department policy or an ACL.
+id: delivery
+version: '1.0.0'
+classification:
+  event_types:
+    - id: delivery.review
+      label: 'delivery review'
+      priority: 10
+      when:
+        subject_regex: 'review request'
+      tags:
+        department: [delivery]
+      axes:
+        urgency: medium
+        sensitivity: normal
+  defaults:
+    broadcast: reference

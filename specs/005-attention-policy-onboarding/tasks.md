@@ -33,6 +33,17 @@ description: "Task list for attention policy and onboarding"
 
 - [x] T010 MCP 既有工具名不变；`tests/mcp-smoke.mjs`
 
+## Phase 6: 可选轴 - 等待方与截止时间
+
+- [x] T011 [US4] 投影项支持可选 `waiting party` 轴；分析或包提供的取值可携带 `evidence_refs`，缺省时不投影该轴
+- [x] T012 [US4] 投影项支持可选 `deadline` 轴；取值可携带 `evidence_refs`；复用既有分析产出，不新增分析 LLM 调用
+
+## Phase 7: 归纳分类草稿
+
+- [x] T013 归纳结果在确认前保持 draft；查询只读 live pack，不调用模型
+- [x] T014 类别默认不超过 12 加 other；停止条件为 stable / coverage / budget；漂移只记注记
+- [x] T015 7→30→90 归纳窗；`taxonomy induce|confirm|drift` CLI；onboard 后写草稿；nightly-full 后记漂移
+
 ## Dependencies
 
 - T002 依赖 `003` T003 pack 校验

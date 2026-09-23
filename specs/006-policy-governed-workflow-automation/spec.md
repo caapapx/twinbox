@@ -4,11 +4,11 @@
 
 **Created**: 2026-09-04
 
-**Status**: Draft / Planned（依赖 [ADR-002](../../docs/decisions/ADR-002-read-only-to-policy-governed-execution.md)、[ADR-003](../../docs/decisions/ADR-003-retrieval-spine-and-external-services.md) 与 constitution I 1.2.0）
+**Status**: Local implementation verified（dry-run + HITL token；未部署、未操作真实邮箱；依赖 [ADR-002](../../docs/decisions/ADR-002-read-only-to-policy-governed-execution.md)、[ADR-003](../../docs/decisions/ADR-003-retrieval-spine-and-external-services.md) 与 constitution I 1.2.0）
 
-**This increment (v0.3 dry-run)**: 提案引擎 + 审计 jsonl + 确认卡片 payload。**无 SMTP、无写邮箱**。FR-007 保持只读默认。通道由宿主 webhook 承担。完整自动执行仍是后续增量。
+**Implemented local increment (v0.3 dry-run + HITL)**: 提案引擎、审计 jsonl、确认卡片 payload 与短时 confirmation token。**无 SMTP、无写邮箱**；FR-007 只读默认保持。通道仍由宿主 webhook 承担，TwinBox 不投递。
 
-**Next increment (Draft / HITL confirmation token — Planned, Phase 4)**: Reuse existing proposal JSON; issue short-lived confirmation tokens (ctk-style); stop the agent turn after presenting the token; payload hash change invalidates the token; state machine `draft → awaiting_confirmation → confirmed/rejected/expired → executing → …`. Confirmed without policy still MUST NOT SMTP. Implementation tasks live in tasks.md Phase 6+.
+**HITL confirmation token (implemented locally)**: 复用 proposal JSON，生成短时单次 `ctk_` token；token 只存 hash，card 返回原 token；返回 token 的工具回合必须停止，等待后续人类消息；payload hash 改变、过期、重放或篡改均不能确认。状态机到 `confirmed` 后明确落入 `execution.status=blocked_read_only`，本增量**没有** `executing` 转移、没有 SMTP 或真实邮箱副作用。
 
 **Input**: 管理员预授权范围内的全自动流转（转发/推进）；未命中策略转人工；审计与幂等。
 
@@ -38,7 +38,7 @@
 
 **Acceptance Scenarios**:
 
-1. **Given** 确认请求已发出，**When** 收到「无问题」，**Then** 按策略推进下一步。
+1. **Given** 确认请求已发出，**When** 后续人类回合带回有效 token，**Then** 仅将本地 proposal 转为 `confirmed` + `blocked_read_only`，不推进真实邮箱步骤。
 2. **Given** 通道超时，**When** 到达超时阈值，**Then** 升级或人工接管，不自动假装确认。
 
 ### User Story 3 - 目标解析失败停机 (Priority: P1)
@@ -70,7 +70,9 @@
 - **FR-004**: System MUST enforce idempotency keys for side effects.
 - **FR-005**: On target ambiguity, policy miss, or dependency failure, System MUST stop auto-progress and expose recovery.
 - **FR-006**: Confirmation channel failures MUST NOT be treated as positive confirmation.
-- **FR-007**: Until this feature is implemented and verified, runtime MUST keep read-only default behavior.
+- **FR-007**: Runtime MUST keep read-only default behavior for this increment.
+- **FR-008**: A confirmation token MUST be short-lived, single-use, bound to the canonical draft-payload hash, and stored only as a hash in local proposal state/audit.
+- **FR-009**: Token issuance MUST emit a machine-readable stop-turn instruction. Expiry, replay, invalid token, and payload tamper MUST NOT transition to `confirmed` or `executing`; this increment has no `executing` transition.
 
 ### Key Entities
 

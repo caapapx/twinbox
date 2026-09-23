@@ -45,6 +45,15 @@ runtime/audit/actions.jsonl   # state root, not tracked
 
 ## Phase 1: Design
 
-提案字段：`proposal_id`、`idempotency_key`、`policy_id`/`policy_version`、`action_type`、`target_scope`、`thread_key`、`evidence_refs`、`card_payload`、`status`（proposed/confirmed/rejected/expired）。
+提案字段：`proposal_id`、`idempotency_key`、`policy_id`/`policy_version`、`action_type`、`target_scope`、`thread_key`、`evidence_refs`、`draft_payload`、`draft_payload_hash`、`confirmation`、`card_payload`、`status`（`draft` / `awaiting_confirmation` / `needs_human` / `confirmed` / `rejected` / `expired`）。
 
 `twinbox_action_review` 只改本地状态。确认卡片不在 Twinbox 内投递。策略外扫描结果必须是空列表，不得「建议用户手动转发」冒充策略命中。
+
+## Phase 2: HITL confirmation token (implemented locally)
+
+- `scan_proposals()` 以 canonical、bounded `draft_payload` 计算 SHA-256，并把原 token 仅放进 card；持久 proposal/audit 只保存 token hash。
+- 有唯一 policy target 时依次审计 `draft_created → confirmation_issued`，状态为 `awaiting_confirmation`；目标歧义保持 `needs_human`，不发 token。
+- `twinbox_action_review(confirm)` 必须带 token；缺失、无效、重放、过期、payload hash 不匹配均返回结构化错误且不确认。payload 变化会先审计旧 token 过期，再原地重发新的 draft/token。
+- `card_payload.interaction` 明确 `must_stop_agent_turn` 与禁止同回合确认；根 `SKILL.md` 把它设为 Agent 级指令。MCP 不承担身份验证，宿主必须只在后续人类消息中转交 token。
+- `confirmed` 仅记录本地审计与 `execution.status=blocked_read_only`；不实现 `executing`、SMTP、IMAP 写入或 webhook 投递。
+- `tests/test_actions.py` 覆盖 TTL、token hash、缺 token、重放、payload 变化、篡改、CLI 参数转发及无执行状态；`tests/mcp-smoke.mjs` 固化 MCP 参数 schema。

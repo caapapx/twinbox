@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "decision_id": "example-decision-001",
+  "scope_id": "example-scope-a",
+  "case_ref": "example-case-001",
+  "expected_revision": 1,
+  "actor_ref": "synthetic-reviewer",
+  "kind": "correction_proposal",
+  "evidence_refs": [
+    "example-mail-001:excerpt-1"
+  ],
+  "decision": {
+    "field": "action_target",
+    "proposed_values": [
+      "synthetic-owner-b"
+    ],
+    "reason": "合成用例：收件人位置不构成责任证据。"
+  }
+}

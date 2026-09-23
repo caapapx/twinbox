@@ -34,7 +34,7 @@ Phase 0/1设计满足全文边界、默认只读邮箱、分类留TwinBox、工�
 4. **W3 验证再启用**：现场swagger/version/capabilities、专用key/KB、保留策略与解析状态通过gate后，才做授权小样本；三十查询过门再按account启用。
 
 ### Local implementation status — 2026-09-21
-W0–W2 仍只在 fake-provider 合同下验证。W3 接线（`HttpWeKnoraProvider` + 三重门 factory + `weknora revoke`）已落地且测试零真实网络；`weknora.enabled` / `adr_004_accepted` 默认关闭，sidecar 主干不变。ADR-004 仅有 owner 口头接受，正式记录与公共邮箱 grant / 正式 retention 仍缺，不勾 T008–T010。
+W0–W2 仍只在 fake-provider 合同下验证。W3 接线（`HttpWeKnoraProvider` + 三重门 factory + `weknora revoke`）已落地且测试零真实网络；`weknora.enabled` / `adr_004_accepted` 默认关闭，sidecar 主干不变。ADR-004 接受记录与 retention 策略已写入；现场 grant 的 `mail_refs` 仍空，不勾 T008–T010。
 
 ## Identity, Search & Failure Policy
 Message-ID不是全局唯一，也不是ACL。规范身份算法与冲突规则见合同；locator包含account/folder/UIDVALIDITY/UID，原thread_key只作导航。

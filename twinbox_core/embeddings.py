@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 from typing import Any
 from urllib import error, request
+from urllib.parse import quote
 
 
 def cosine(a: list[float], b: list[float]) -> float:
@@ -26,8 +27,9 @@ def _embed_dir(state_root: Path) -> Path:
 
 
 def sidecar_path(state_root: Path, folder: str, uid: str) -> Path:
-    safe_folder = folder.replace("/", "_")
-    return _embed_dir(state_root) / f"{safe_folder}_{uid}.json"
+    safe_folder = quote(folder, safe="._-")
+    safe_uid = quote(uid, safe="._-")
+    return _embed_dir(state_root) / f"{safe_folder}_{safe_uid}.json"
 
 
 def resolve_embedding_config() -> dict[str, Any] | None:
@@ -73,7 +75,48 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
     return out
 
 
-def embed_new_messages(state_root: Path, envelopes: list[dict[str, Any]], body_map: dict[str, Any]) -> dict[str, Any]:
+def prune_stale_sidecars(
+    state_root: Path,
+    envelopes: list[dict[str, Any]],
+    *,
+    reset_folders: set[str] | None = None,
+) -> dict[str, Any]:
+    """Delete sidecars outside the window or invalidated by UIDVALIDITY."""
+    folder = _embed_dir(state_root)
+    if not folder.is_dir():
+        return {"ok": True, "pruned": 0}
+    invalid_folders = {str(name) for name in (reset_folders or set())}
+    active = {
+        sidecar_path(
+            state_root,
+            str(env.get("folder", "INBOX") or "INBOX"),
+            str(env.get("id", "") or ""),
+        ).name
+        for env in envelopes
+        if isinstance(env, dict)
+        and str(env.get("id", "") or "")
+        and str(env.get("folder", "INBOX") or "INBOX") not in invalid_folders
+    }
+    removed = 0
+    for path in folder.glob("*.json"):
+        if path.name in active:
+            continue
+        try:
+            path.unlink()
+            removed += 1
+        except OSError:
+            continue
+    return {"ok": True, "pruned": removed}
+
+
+def embed_new_messages(
+    state_root: Path,
+    envelopes: list[dict[str, Any]],
+    body_map: dict[str, Any],
+    *,
+    reset_folders: set[str] | None = None,
+) -> dict[str, Any]:
+    prune = prune_stale_sidecars(state_root, envelopes, reset_folders=reset_folders)
     pending: list[tuple[str, str, str]] = []
     for env in envelopes:
         folder = str(env.get("folder", "INBOX") or "INBOX")
@@ -91,11 +134,11 @@ def embed_new_messages(state_root: Path, envelopes: list[dict[str, Any]], body_m
         text = f"{env.get('subject', '')}\n{body[:800]}"
         pending.append((folder, uid, text))
     if not pending:
-        return {"ok": True, "embedded": 0}
+        return {"ok": True, "embedded": 0, "pruned": prune.get("pruned", 0)}
     try:
         vectors = embed_texts([t for _f, _u, t in pending])
     except Exception:
-        return {"ok": False, "embedded": 0, "degraded": True}
+        return {"ok": False, "embedded": 0, "degraded": True, "pruned": prune.get("pruned", 0)}
     _embed_dir(state_root).mkdir(parents=True, exist_ok=True)
     cfg = resolve_embedding_config() or {}
     for (folder, uid, text), vec in zip(pending, vectors):
@@ -110,7 +153,7 @@ def embed_new_messages(state_root: Path, envelopes: list[dict[str, Any]], body_m
             }, ensure_ascii=False),
             encoding="utf-8",
         )
-    return {"ok": True, "embedded": len(vectors)}
+    return {"ok": True, "embedded": len(vectors), "pruned": prune.get("pruned", 0)}
 
 
 def load_vector(state_root: Path, folder: str, uid: str) -> list[float] | None:

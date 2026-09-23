@@ -156,6 +156,16 @@ def run_due(state_root: Path, *, now: datetime | None = None, sync_fn=None, code
                     "analysis_error": analysis.get("error"),
                 },
             })
+            if job["job"] == "nightly-full" and (ok or result.get("degraded")):
+                try:
+                    from .taxonomy import record_drift
+                    drift = record_drift(state_root)
+                    ran[-1]["taxonomy_drift"] = {
+                        "ok": drift.get("ok"),
+                        "path": drift.get("path"),
+                    }
+                except Exception as exc:
+                    ran[-1]["taxonomy_drift"] = {"ok": False, "error": type(exc).__name__}
             if not result.get("ok") and not result.get("degraded"):
                 continue
         _last_run_path(state_root).write_text(json.dumps(last, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

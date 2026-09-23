@@ -1,0 +1,90 @@
+{
+  "schema_version": "twinbox.adapter-event-fixture/v1",
+  "synthetic_only": true,
+  "purpose": "Deterministic adapter-event contract examples; never an owner-signed quality, recall, or ROI corpus.",
+  "pack": {
+    "id": "adapter-event-fixture",
+    "version": "1.0.0",
+    "classification": {
+      "event_types": [
+        {
+          "id": "weekly_report",
+          "label": "Weekly report",
+          "priority": 30,
+          "when": {"subject_regex": "weekly status"},
+          "tags": {"fixture_domain": ["delivery"]},
+          "axes": {"attention": "watch"}
+        },
+        {
+          "id": "risk",
+          "label": "Risk",
+          "priority": 30,
+          "when": {"subject_regex": "risk escalation"},
+          "tags": {"fixture_domain": ["operations"]},
+          "axes": {"attention": "action_required"}
+        },
+        {
+          "id": "plan_change",
+          "label": "Plan change",
+          "priority": 30,
+          "when": {"subject_regex": "plan change"},
+          "tags": {"fixture_domain": ["commercial"]},
+          "axes": {"attention": "watch"}
+        }
+      ]
+    }
+  },
+  "cases": [
+    {
+      "case_id": "AEF-01",
+      "envelope": {
+        "id": "fixture-weekly-01",
+        "folder": "INBOX",
+        "message_id": "<fixture-weekly-01@example.invalid>",
+        "subject": "Weekly status: project alpha",
+        "from_addr": "delivery-lead@example.invalid",
+        "recipient_role": "to",
+        "date": "2026-09-20T09:00:00+08:00"
+      },
+      "expected": {
+        "event_type": "weekly_report",
+        "tags": {"fixture_domain": ["delivery"]},
+        "axes": {"attention": "watch"}
+      }
+    },
+    {
+      "case_id": "AEF-02",
+      "envelope": {
+        "id": "fixture-risk-01",
+        "folder": "INBOX",
+        "message_id": "<fixture-risk-01@example.invalid>",
+        "subject": "Risk escalation: dependency review",
+        "from_addr": "ops-lead@example.invalid",
+        "recipient_role": "to",
+        "date": "2026-09-20T09:15:00+08:00"
+      },
+      "expected": {
+        "event_type": "risk",
+        "tags": {"fixture_domain": ["operations"]},
+        "axes": {"attention": "action_required"}
+      }
+    },
+    {
+      "case_id": "AEF-03",
+      "envelope": {
+        "id": "fixture-plan-change-01",
+        "folder": "INBOX",
+        "message_id": "<fixture-plan-change-01@example.invalid>",
+        "subject": "Plan change: delivery milestone",
+        "from_addr": "commercial-lead@example.invalid",
+        "recipient_role": "cc",
+        "date": "2026-09-20T09:30:00+08:00"
+      },
+      "expected": {
+        "event_type": "plan_change",
+        "tags": {"fixture_domain": ["commercial"]},
+        "axes": {"attention": "watch"}
+      }
+    }
+  ]
+}

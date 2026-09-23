@@ -1,0 +1,8 @@
+# Reply / forward subject prefixes stripped before thread keys.
+prefixes:
+  - re
+  - fw
+  - fwd
+  - 回复
+  - 转发
+  - 答复

@@ -1,0 +1,53 @@
+{
+  "schema_version": "1.0",
+  "observation_id": "example-observation-001",
+  "event_id": "example-event-001",
+  "case_ref": "example-case-001",
+  "source": {
+    "system": "twinbox",
+    "scope_id": "example-scope-a",
+    "account_ref": "example-account-a",
+    "mail_refs": [
+      "example-mail-001"
+    ],
+    "thread_key": "example-thread-001"
+  },
+  "source_revision": 1,
+  "observed_at": "2026-09-18T00:00:00Z",
+  "change": "upsert",
+  "metadata": {
+    "subject": "合成样例：项目验收待确认",
+    "sender": "sender@example.invalid",
+    "date": "2026-09-17T00:00:00Z",
+    "excerpt": "这是完全合成的验收材料片段，不含真实邮件内容。",
+    "excerpt_truncated": false
+  },
+  "semantics": {
+    "primary_event_type": "acceptance_review",
+    "tags": {
+      "project": [
+        "synthetic-project-a"
+      ],
+      "department": [
+        "synthetic-delivery"
+      ]
+    },
+    "axes": {
+      "actionability": "needs_confirmation"
+    },
+    "pack": {
+      "id": "synthetic-delivery",
+      "version": "1",
+      "fingerprint": "example-only-fingerprint"
+    },
+    "evidence_basis": "insufficient"
+  },
+  "evidence_refs": [
+    "example-mail-001:excerpt-1"
+  ],
+  "coverage": {
+    "since": "2026-08-19T00:00:00Z",
+    "until": "2026-09-18T00:00:00Z",
+    "state": "partial"
+  }
+}

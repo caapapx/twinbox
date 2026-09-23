@@ -140,12 +140,113 @@ class TestExtractAccount(unittest.TestCase):
             from pathlib import Path
             import tempfile
             with tempfile.TemporaryDirectory() as tmp:
-                run_extract(
+                result = run_extract(
                     Path(tmp),
                     ExtractCriteria(since=date(2026, 9, 1), folders=["INBOX"], fetch_bodies=False),
                     account_id="acct-b",
                 )
         self.assertEqual(seen["account_id"], "acct-b")
+        self.assertEqual(result["result"], "no_match")
+        self.assertEqual(result["matched_count"], 0)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["source_used"], "imap")
+
+
+class TestLocalSource(unittest.TestCase):
+    def test_plain_since_leaves_weekdays_unset(self) -> None:
+        criteria = merge_criteria(ExtractCriteria(), {"since": "2026-09-01"})
+        self.assertIsNone(criteria.weekdays)
+        self.assertEqual(criteria.source, "auto")
+
+    def test_auto_in_retention_skips_imap(self) -> None:
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+        from twinbox_core.extract import run_extract
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            raw = root / "runtime" / "validation" / "phase-1" / "raw"
+            raw.mkdir(parents=True)
+            (raw / "envelopes-merged.json").write_text(json.dumps([
+                {
+                    "id": "9",
+                    "folder": "INBOX",
+                    "subject": "上周周报",
+                    "date": "2026-09-15T10:00:00+08:00",
+                    "from_addr": "a@x",
+                }
+            ]), encoding="utf-8")
+            with mock.patch("twinbox_core.extract.fetch_by_query") as fetch, \
+                 mock.patch("twinbox_core.extract.owner_email", return_value=""):
+                result = run_extract(
+                    root,
+                    ExtractCriteria(
+                        since=date(2026, 9, 15),
+                        until=date(2026, 9, 22),
+                        folders=["INBOX"],
+                        subject_contains=["周报"],
+                        fetch_bodies=False,
+                        source="auto",
+                    ),
+                )
+            fetch.assert_not_called()
+            self.assertEqual(result["source_used"], "local")
+            self.assertEqual(result["matched_count"], 1)
+
+    def test_local_outside_retention_still_skips_imap(self) -> None:
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+        from twinbox_core.extract import run_extract
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            raw = root / "runtime" / "validation" / "phase-1" / "raw"
+            raw.mkdir(parents=True)
+            (raw / "envelopes-merged.json").write_text(json.dumps([
+                {
+                    "id": "9",
+                    "folder": "INBOX",
+                    "subject": "近期",
+                    "date": "2026-09-15T10:00:00+08:00",
+                    "from_addr": "a@x",
+                }
+            ]), encoding="utf-8")
+            with mock.patch("twinbox_core.extract.fetch_by_query") as fetch, \
+                 mock.patch("twinbox_core.extract.owner_email", return_value=""):
+                result = run_extract(
+                    root,
+                    ExtractCriteria(
+                        since=date(2026, 1, 1),
+                        folders=["INBOX"],
+                        fetch_bodies=False,
+                        source="local",
+                    ),
+                )
+            fetch.assert_not_called()
+            self.assertEqual(result["source_used"], "local")
+            self.assertEqual(result["matched_count"], 1)
+            self.assertNotIn("result", result)
+
+    def test_imap_source_calls_fetch(self) -> None:
+        from pathlib import Path
+        import tempfile
+        from unittest import mock
+        from twinbox_core.extract import run_extract
+
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch("twinbox_core.extract.resolve_imap_config", return_value={"host": "h", "login": "a", "password": "x"}), \
+             mock.patch("twinbox_core.extract.fetch_by_query", return_value=([], [])) as fetch, \
+             mock.patch("twinbox_core.extract.owner_email", return_value=""):
+            result = run_extract(
+                Path(tmp),
+                ExtractCriteria(since=date(2026, 9, 1), folders=["INBOX"], fetch_bodies=False, source="imap"),
+            )
+        fetch.assert_called_once()
+        self.assertEqual(result["source_used"], "imap")
 
 
 if __name__ == "__main__":

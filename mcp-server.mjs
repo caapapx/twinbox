@@ -63,11 +63,120 @@ function runCli(args) {
   });
 }
 
-function formatResult({ code, stdout, stderr }) {
-  const text =
-    stdout.trim() ||
-    (stderr.trim() ? `exit=${code}\n${stderr.trim()}` : `exit=${code} (no output)`);
-  return { content: [{ type: "text", text }] };
+// The MCP boundary is platform-visible.  CLI contracts should already avoid
+// source bodies, but a defensive serializer keeps a future CLI regression from
+// becoming a cross-platform disclosure.  Keep this list to raw-content shapes;
+// structured summaries, evidence references, and ordinary error codes remain
+// usable by clients.
+const PRIVATE_CONTENT_FIELDS = new Set([
+  "attachment",
+  "attachments",
+  "body",
+  "body_text",
+  "bodytext",
+  "content",
+  "email_body",
+  "emailbody",
+  "full_text",
+  "fulltext",
+  "html",
+  "message",
+  "mime",
+  "mime_body",
+  "original_text",
+  "originaltext",
+  "raw",
+  "raw_body",
+  "rawbody",
+  "rendered_body",
+  "source_text",
+  "sourcetext",
+  "text",
+]);
+const MAX_PLATFORM_RESPONSE_BYTES = 64 * 1024;
+const SAFE_ERROR_CODE = /^[a-z0-9][a-z0-9_.:-]{0,159}$/i;
+
+function normalizedFieldName(key) {
+  return String(key).trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function sanitizePlatformPayload(value, state) {
+  if (Array.isArray(value)) return value.map((item) => sanitizePlatformPayload(item, state));
+  if (!value || typeof value !== "object") return value;
+
+  const safe = {};
+  for (const [key, child] of Object.entries(value)) {
+    const normalized = normalizedFieldName(key);
+    if (PRIVATE_CONTENT_FIELDS.has(normalized)) {
+      state.redactedFields += 1;
+      continue;
+    }
+    // Python exception messages are not an API contract and can include the
+    // provider input.  Let only stable error/recovery codes cross this boundary.
+    if (normalized === "error" && (typeof child !== "string" || !SAFE_ERROR_CODE.test(child))) {
+      state.redactedFields += 1;
+      safe[key] = "cli_error";
+      continue;
+    }
+    safe[key] = sanitizePlatformPayload(child, state);
+  }
+  return safe;
+}
+
+function safeCliText({ code, stdout }) {
+  const raw = stdout.trim();
+  if (!raw) {
+    return {
+      text: JSON.stringify({ ok: false, error: "cli_no_structured_output", exit_code: code }, null, 2),
+      safetyFailure: true,
+    };
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(raw);
+  } catch {
+    // stderr and non-JSON stdout may include a source fragment from a failed
+    // provider; never relay them through the platform boundary.
+    return {
+      text: JSON.stringify({ ok: false, error: "cli_unstructured_output", exit_code: code }, null, 2),
+      safetyFailure: true,
+    };
+  }
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return {
+      text: JSON.stringify({ ok: false, error: "cli_invalid_envelope", exit_code: code }, null, 2),
+      safetyFailure: true,
+    };
+  }
+
+  const state = { redactedFields: 0 };
+  let safe = sanitizePlatformPayload(payload, state);
+  let safetyFailure = state.redactedFields > 0;
+  if (safetyFailure) {
+    safe = {
+      ...safe,
+      ok: false,
+      error: "platform_output_redacted",
+      redacted_field_count: state.redactedFields,
+    };
+  }
+
+  let text = JSON.stringify(safe, null, 2);
+  if (Buffer.byteLength(text, "utf8") > MAX_PLATFORM_RESPONSE_BYTES) {
+    text = JSON.stringify(
+      { ok: false, error: "platform_response_too_large", max_bytes: MAX_PLATFORM_RESPONSE_BYTES },
+      null,
+      2,
+    );
+    safetyFailure = true;
+  }
+  return { text, safetyFailure };
+}
+
+function formatResult(procResult) {
+  const safe = safeCliText(procResult);
+  return { content: [{ type: "text", text: safe.text }], safetyFailure: safe.safetyFailure };
 }
 
 function isError({ code, stdout }) {
@@ -81,7 +190,11 @@ function isError({ code, stdout }) {
 }
 
 function makeResult(procResult) {
-  return { ...formatResult(procResult), isError: isError(procResult) };
+  const formatted = formatResult(procResult);
+  return {
+    content: formatted.content,
+    isError: isError(procResult) || formatted.safetyFailure,
+  };
 }
 
 /** If latest-mail says pulse is missing, auto-sync then retry. */
@@ -131,18 +244,20 @@ async function withAutoSync(cliArgs, label) {
   if (!needsSync(r1.stdout)) return makeResult(r1);
 
   const rSync = await runCli(recoverySyncArgs(cliArgs));
-  if (recoveryFailed(rSync, cliArgs)) {
+  const syncFormatted = formatResult(rSync);
+  if (recoveryFailed(rSync, cliArgs) || syncFormatted.safetyFailure) {
     return {
       content: [
         {
           type: "text",
-          text: `=== auto sync failed (${label}) ===\n${formatResult(rSync).content[0].text}`,
+          text: `=== auto sync failed (${label}) ===\n${syncFormatted.content[0].text}`,
         },
       ],
       isError: true,
     };
   }
   const r2 = await runCli(cliArgs);
+  const resultFormatted = formatResult(r2);
   const stillMissing = needsSync(r2.stdout);
   return {
     content: [
@@ -150,15 +265,15 @@ async function withAutoSync(cliArgs, label) {
         type: "text",
         text: [
           `=== auto sync (${label}) ===`,
-          formatResult(rSync).content[0].text,
+          syncFormatted.content[0].text,
           stillMissing
             ? `=== ${cliArgs[0]} still missing after recovery ===`
             : `=== ${cliArgs[0]} (after sync) ===`,
-          formatResult(r2).content[0].text,
+          resultFormatted.content[0].text,
         ].join("\n\n"),
       },
     ],
-    isError: stillMissing || isError(r2),
+    isError: stillMissing || isError(r2) || resultFormatted.safetyFailure,
   };
 }
 
@@ -183,6 +298,7 @@ const TOOLS = [
       "NEVER call for latest-mail requests; call twinbox_latest_mail instead. Chinese: 同步邮件、重新分析待办/紧急度.",
     inputSchema: {
       type: "object",
+      additionalProperties: false,
       properties: {
         job: {
           type: "string",
@@ -204,6 +320,7 @@ const TOOLS = [
       "Return only the newest thread's sender, subject, time, and a brief summary.",
     inputSchema: {
       type: "object",
+      additionalProperties: false,
       properties: {
         unread_only: {
           type: "boolean",
@@ -216,12 +333,12 @@ const TOOLS = [
   {
     name: "twinbox_todo",
     description: "Urgent / pending queue snapshot (read-only). Chinese: 待办、待回复.",
-    inputSchema: { type: "object", properties: { account_id: ACCOUNT_ID_PROP } },
+    inputSchema: { type: "object", additionalProperties: false, properties: { account_id: ACCOUNT_ID_PROP } },
   },
   {
     name: "twinbox_weekly",
     description: "Weekly brief. Chinese: 周报、每周简报.",
-    inputSchema: { type: "object", properties: { account_id: ACCOUNT_ID_PROP } },
+    inputSchema: { type: "object", additionalProperties: false, properties: { account_id: ACCOUNT_ID_PROP } },
   },
   {
     name: "twinbox_thread_inspect",
@@ -230,6 +347,7 @@ const TOOLS = [
       "Chinese: 查看线程、某个事进展如何.",
     inputSchema: {
       type: "object",
+      additionalProperties: false,
       properties: {
         query: {
           type: "string",
@@ -247,6 +365,7 @@ const TOOLS = [
       "MUST call when user confirms a thread is done — chat-only marks do not persist.",
     inputSchema: {
       type: "object",
+      additionalProperties: false,
       properties: {
         action: {
           type: "string",
@@ -274,6 +393,7 @@ const TOOLS = [
       "Chinese: 抽取周报、按关键词拉历史邮件、extract weekly reports.",
     inputSchema: {
       type: "object",
+      additionalProperties: false,
       properties: {
         profile: {
           type: "string",
@@ -326,6 +446,13 @@ const TOOLS = [
           type: "number",
           description: "Local-hour end filter (exclusive)",
         },
+        source: {
+          type: "string",
+          enum: ["auto", "local", "imap"],
+          description:
+            "Where to read mail: auto uses local retention when the range is covered, else IMAP; " +
+            "local never calls IMAP; imap always hits the mailbox. Default auto.",
+        },
         account_id: ACCOUNT_ID_PROP,
       },
     },
@@ -335,20 +462,21 @@ const TOOLS = [
     description:
       "Mailbox health + setup status (IMAP preflight, LLM validation, artifact check). " +
       "Chinese: 邮箱状态、检查连接.",
-    inputSchema: { type: "object", properties: { account_id: ACCOUNT_ID_PROP } },
+    inputSchema: { type: "object", additionalProperties: false, properties: { account_id: ACCOUNT_ID_PROP } },
   },
   {
     name: "twinbox_setup",
     description:
       "Initial setup: validate IMAP from env vars, import LLM from OpenClaw host. " +
       "Call once after deployment. Chinese: 初始化、配置邮箱.",
-    inputSchema: { type: "object", properties: {} },
+    inputSchema: { type: "object", additionalProperties: false, properties: {} },
   },
   {
     name: "twinbox_onboard",
     description: "Write a user Semantic Pack from ≤5 questionnaire answers. Chinese: 初始化关注点.",
     inputSchema: {
       type: "object",
+      additionalProperties: false,
       properties: {
         approvals: { type: "string" },
         watch: { type: "string" },
@@ -361,16 +489,22 @@ const TOOLS = [
   {
     name: "twinbox_action_proposals",
     description: "Dry-run policy proposals (no SMTP). Chinese: 动作提案.",
-    inputSchema: { type: "object", properties: {} },
+    inputSchema: { type: "object", additionalProperties: false, properties: {} },
   },
   {
     name: "twinbox_action_review",
-    description: "Confirm or reject a local dry-run proposal. Does not write the mailbox.",
+    description:
+      "Review a local dry-run proposal. Confirm requires a short-lived, single-use confirmation_token from a prior human-confirmation turn; after a proposal issues a token, stop the agent turn and wait for the human. Never writes the mailbox.",
     inputSchema: {
       type: "object",
+      additionalProperties: false,
       properties: {
         proposal_id: { type: "string" },
         action: { type: "string", enum: ["confirm", "reject", "expire"] },
+        confirmation_token: {
+          type: "string",
+          description: "Required only for confirm; issued by twinbox_action_proposals and must come from a later human-confirmation turn.",
+        },
         reason: { type: "string" },
       },
       required: ["proposal_id", "action"],
@@ -382,6 +516,7 @@ const TOOLS = [
       "List/add/remove/set-default mailbox accounts. Credentials stay in local vault; outputs only password_set booleans. Chinese: 邮箱账号管理.",
     inputSchema: {
       type: "object",
+      additionalProperties: false,
       properties: {
         action: {
           type: "string",
@@ -406,6 +541,7 @@ const TOOLS = [
       "Reference-only ingest envelopes (no full bodies). Chinese: 引用式邮件摄取.",
     inputSchema: {
       type: "object",
+      additionalProperties: false,
       properties: {
         account_id: { type: "string" },
         since: { type: "string", description: "Opaque cursor from prior ingest" },
@@ -419,14 +555,61 @@ const TOOLS = [
       "Structured event records derived from local analysis (references only). Chinese: 事件抽取.",
     inputSchema: {
       type: "object",
+      additionalProperties: false,
       properties: {
         account_id: { type: "string" },
         limit: { type: "number" },
       },
     },
   },
+  {
+    name: "twinbox_semantics",
+    description:
+      "Dynamic semantic catalog and case projections; evidence refs are opt-in. Chinese: 分类目录、事项分类与证据展开.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        account_id: { type: "string" },
+        action: { type: "string", enum: ["catalog", "list", "get"] },
+        case_ref: { type: "string" },
+        include_evidence: { type: "boolean" },
+      },
+    },
+  },
+  {
+    name: "twinbox_feedback",
+    description:
+      "Submit an authorized v1 correction proposal, human confirmation, or execution receipt. Never changes mailbox state.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        account_id: { type: "string" },
+        payload: { type: "object", description: "feedback.schema.json v1 payload" },
+      },
+      required: ["payload"],
+    },
+  },
+  {
+    name: "twinbox_case_ledger",
+    description:
+      "Read-only current view of the append-only case lifecycle ledger: " +
+      "for each case_ref + attribute, the line with the latest valid_from, skipping needs_confirmation lines. " +
+      "Chinese: 案例生命周期账本当前视图.",
+    inputSchema: { type: "object", additionalProperties: false, properties: { account_id: ACCOUNT_ID_PROP } },
+  },
 
 ];
+
+function undeclaredToolArguments(name, args) {
+  const tool = TOOLS.find((item) => item.name === name);
+  if (!tool) return `Unknown tool: ${name}`;
+  const allowed = new Set(Object.keys(tool.inputSchema?.properties || {}));
+  const extra = Object.keys(args || {}).filter((key) => !allowed.has(key));
+  if (!extra.length) return "";
+  return `undeclared_argument:${extra.sort().join(",")}`;
+}
 
 function pushAccountId(cliArgs, args) {
   if (args?.account_id) cliArgs.push("--account-id", String(args.account_id));
@@ -435,6 +618,13 @@ function pushAccountId(cliArgs, args) {
 
 async function handleToolCall(request) {
   const { name, arguments: args = {} } = request.params;
+  const undeclared = undeclaredToolArguments(name, args);
+  if (undeclared) {
+    return {
+      content: [{ type: "text", text: undeclared }],
+      isError: true,
+    };
+  }
 
   switch (name) {
     case "twinbox_sync": {
@@ -491,6 +681,7 @@ async function handleToolCall(request) {
       if (args?.bucket) cliArgs.push("--bucket", args.bucket);
       if (args?.from_hour !== undefined) cliArgs.push("--from-hour", String(args.from_hour));
       if (args?.to_hour !== undefined) cliArgs.push("--to-hour", String(args.to_hour));
+      if (args?.source) cliArgs.push("--source", String(args.source));
       pushAccountId(cliArgs, args);
       const r = await runCli(cliArgs);
       return makeResult(r);
@@ -528,6 +719,7 @@ async function handleToolCall(request) {
         args.action,
         "--json",
       ];
+      if (args.confirmation_token) cliArgs.push("--confirmation-token", String(args.confirmation_token));
       if (args.reason) cliArgs.push("--reason", args.reason);
       const r = await runCli(cliArgs);
       return makeResult(r);
@@ -568,6 +760,27 @@ async function handleToolCall(request) {
     case "twinbox_events": {
       const cliArgs = pushAccountId(["events", "--json"], args);
       if (args?.limit !== undefined) cliArgs.push("--limit", String(args.limit));
+      const r = await runCli(cliArgs);
+      return makeResult(r);
+    }
+
+    case "twinbox_case_ledger": {
+      const r = await runCli(pushAccountId(["case-ledger", "--json"], args));
+      return makeResult(r);
+    }
+
+    case "twinbox_semantics": {
+      const action = args?.action ?? "list";
+      const cliArgs = pushAccountId(["semantics", action, "--json"], args);
+      if (args?.case_ref) cliArgs.push("--case-ref", String(args.case_ref));
+      if (args?.include_evidence) cliArgs.push("--include-evidence");
+      const r = await runCli(cliArgs);
+      return makeResult(r);
+    }
+
+    case "twinbox_feedback": {
+      const cliArgs = pushAccountId(["feedback", "--json"], args);
+      cliArgs.push("--payload-json", JSON.stringify(args.payload));
       const r = await runCli(cliArgs);
       return makeResult(r);
     }

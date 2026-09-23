@@ -1,7 +1,7 @@
 # T010 小样本验收 runbook（准备稿，不执行）
 
 **日期**：2026-09-21 | **性质**：准备稿。所有步骤缺前置即停，不降级执行。
-**前置**（缺一即停）：公共邮箱已指定 + source-grant 落地 + retention 正式记录 + ADR-004 正式记录。
+**前置**（缺一即停）：一条已批准摘录的 opaque `mail_ref` 已写入现场 source grant。账号 grant、ADR-004 接受记录、retention 策略已经在位；`weknora.enabled` 与 `adr_004_accepted` 仍须在演练前显式打开，缺一即停。
 
 ## 0. 门禁确认（只读）
 

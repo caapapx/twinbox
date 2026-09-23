@@ -42,10 +42,10 @@ description: "Task list for policy-governed workflow automation (dry-run)"
 - 真实 SMTP / 写邮箱不在本任务列表
 
 
-## Phase 6: Draft / HITL confirmation token (Planned — enterprise Phase 4)
+## Phase 6: Draft / HITL confirmation token (implemented locally; no deployment/execution)
 
-- [ ] T013 Reuse `runtime/actions/proposals.json`; add draft payload + confirmation token fields
-- [ ] T014 Token TTL (~5m), single-use; payload hash mismatch → expire
-- [ ] T015 Agent turn MUST stop after issuing token (no same-turn self-confirm)
-- [ ] T016 State machine transitions + audit events
-- [ ] T017 Tests: replay / expire / tamper cannot enter executing; still no SMTP
+- [x] T013 Reuse `runtime/actions/proposals.json`; add draft payload + confirmation token fields
+- [x] T014 Token TTL (~5m), single-use; payload hash mismatch → expire
+- [x] T015 Agent turn MUST stop after issuing token (no same-turn self-confirm)
+- [x] T016 State machine transitions + audit events
+- [x] T017 Tests: replay / expire / tamper cannot enter executing; still no SMTP

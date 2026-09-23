@@ -250,6 +250,13 @@ def _legacy_account_from_mailbox(cfg: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def _stamp_is_default(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    current = default_account_id()
+    for item in rows:
+        item["is_default"] = str(item.get("account_id") or "") == current
+    return rows
+
+
 def list_accounts(*, include_secrets_flags: bool = True) -> list[dict[str, Any]]:
     """Public account metadata only (password_set boolean, never password)."""
     from . import vault
@@ -280,7 +287,7 @@ def list_accounts(*, include_secrets_flags: bool = True) -> list[dict[str, Any]]
             if include_secrets_flags:
                 item["password_set"] = vault.has_secret(aid, "password") or bool(imap.get("password"))
             rows.append(item)
-        return rows
+        return _stamp_is_default(rows)
 
     legacy = _legacy_account_from_mailbox(cfg)
     if legacy:
@@ -289,7 +296,7 @@ def list_accounts(*, include_secrets_flags: bool = True) -> list[dict[str, Any]]
             public["password_set"] = bool(legacy.get("_legacy_password")) or vault.has_secret(
                 DEFAULT_ACCOUNT_ID, "password"
             )
-        return [public]
+        return _stamp_is_default([public])
     return []
 
 
@@ -385,22 +392,44 @@ def upsert_account(
     cfg["accounts"] = accounts
     if make_default or not cfg.get("default_account_id"):
         cfg["default_account_id"] = aid if make_default else cfg.get("default_account_id") or aid
-    # Keep legacy mailbox mirror for default account (password-less).
     if aid == (cfg.get("default_account_id") or DEFAULT_ACCOUNT_ID):
-        row = next(r for r in accounts if isinstance(r, dict) and r.get("account_id") == aid)
-        imap = row.get("imap") if isinstance(row.get("imap"), dict) else {}
-        cfg["mailbox"] = {
-            "email": row.get("email") or "",
-            "imap": {
-                "host": imap.get("host") or "",
-                "port": int(imap.get("port") or 993),
-                "encryption": imap.get("encryption") or "tls",
-                "login": imap.get("login") or "",
-            },
-        }
+        _mirror_mailbox(cfg, aid)
     save_config(cfg)
     public = get_account(aid) or {"account_id": aid}
     return {"ok": True, "account": public}
+
+
+def _mirror_mailbox(cfg: dict[str, Any], aid: str) -> None:
+    """Keep legacy mailbox{} in sync with the default account (password-less)."""
+    accounts = cfg.get("accounts")
+    if not isinstance(accounts, list):
+        return
+    row = next((r for r in accounts if isinstance(r, dict) and r.get("account_id") == aid), None)
+    if not row:
+        return
+    imap = row.get("imap") if isinstance(row.get("imap"), dict) else {}
+    cfg["mailbox"] = {
+        "email": row.get("email") or "",
+        "imap": {
+            "host": imap.get("host") or "",
+            "port": int(imap.get("port") or 993),
+            "encryption": imap.get("encryption") or "tls",
+            "login": imap.get("login") or "",
+        },
+    }
+
+
+def set_default_account(account_id: str) -> dict[str, Any]:
+    """Persist default_account_id and refresh the mailbox{} mirror."""
+    aid = _safe_account_id(account_id)
+    if get_account(aid) is None:
+        return {"ok": False, "error": "account not found"}
+    cfg = load_config()
+    cfg["default_account_id"] = aid
+    _mirror_mailbox(cfg, aid)
+    save_config(cfg)
+    public = get_account(aid) or {"account_id": aid}
+    return {"ok": True, "default_account_id": aid, "account": public}
 
 
 def remove_account(account_id: str) -> dict[str, Any]:
@@ -418,10 +447,17 @@ def remove_account(account_id: str) -> dict[str, Any]:
         return {"ok": False, "error": "account not found"}
     cfg["accounts"] = new_rows
     if cfg.get("default_account_id") == aid:
-        cfg["default_account_id"] = DEFAULT_ACCOUNT_ID
+        next_id = ""
+        for row in new_rows:
+            if isinstance(row, dict) and str(row.get("account_id") or "").strip():
+                next_id = str(row["account_id"]).strip()
+                break
+        cfg["default_account_id"] = next_id or DEFAULT_ACCOUNT_ID
+        if next_id:
+            _mirror_mailbox(cfg, next_id)
     save_config(cfg)
     vault.delete_account_secrets(aid)
-    return {"ok": True, "removed": aid}
+    return {"ok": True, "removed": aid, "default_account_id": cfg.get("default_account_id")}
 
 
 def resolve_imap_config(account_id: str | None = None) -> dict[str, Any]:

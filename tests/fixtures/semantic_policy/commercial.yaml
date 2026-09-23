@@ -1,0 +1,17 @@
+# Synthetic example only; not a real department policy or an ACL.
+id: commercial
+version: '1.0.0'
+classification:
+  event_types:
+    - id: commercial.review
+      label: 'commercial review'
+      priority: 10
+      when:
+        subject_regex: 'review request'
+      tags:
+        department: [commercial]
+      axes:
+        urgency: medium
+        sensitivity: normal
+  defaults:
+    broadcast: reference

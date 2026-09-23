@@ -223,12 +223,90 @@ def _classification(data: dict[str, Any]) -> None:
         _hint(hint)
 
 
+_WHO_MATTERS_MAX = 64
+_PAIRWISE_MAX = 10
+_TAXONOMY_CAP = 13
+_TAXONOMY_POLICY = {"watch", "reference"}
+_PAIRWISE_FIELDS = {"left_ref", "right_ref", "choice"}
+_VALUE_FACTORS = {"recent_window", "urgent", "pending", "sla_risk", "sla_aging_48h", "action_verb"}
+
+
+def _value_ranking(data: dict[str, Any]) -> None:
+    """Validate pack-declared pulse score factors, if supplied.
+
+    Each factor is an integer weight on the pulse score.  Missing or empty
+    factors resolve to the engine defaults at build time, so this only rejects
+    malformed declarations and never forbids omission.
+    """
+    ranking = data.get("value_ranking")
+    if ranking is None:
+        return
+    if not isinstance(ranking, dict) or set(ranking) - {"factors"}:
+        raise PackError("invalid value_ranking")
+    factors = ranking.get("factors", {})
+    if not isinstance(factors, dict):
+        raise PackError("invalid value_ranking factors")
+    for key, value in factors.items():
+        _text(key, "value ranking factor", 64)
+        if key not in _VALUE_FACTORS:
+            raise PackError("unsupported value ranking factor")
+        if type(value) is not int:
+            raise PackError("value ranking factor must be an integer")
+
+
+def _who_matters(data: dict[str, Any]) -> None:
+    who = data.get("who_matters")
+    if who is None:
+        return
+    if not isinstance(who, list) or len(who) > _WHO_MATTERS_MAX:
+        raise PackError("who_matters must be a bounded list")
+    for addr in who:
+        _text(addr, "who_matters address", 320)
+
+
+def _pairwise(data: dict[str, Any]) -> None:
+    pairs = data.get("pairwise")
+    if pairs is None:
+        return
+    if not isinstance(pairs, list) or len(pairs) > _PAIRWISE_MAX:
+        raise PackError("pairwise must be a bounded list")
+    for pair in pairs:
+        if not isinstance(pair, dict):
+            raise PackError("pairwise entry must be a mapping")
+        if set(pair) - _PAIRWISE_FIELDS:
+            raise PackError("unsupported pairwise field")
+        _text(pair.get("left_ref"), "pairwise left_ref", 64)
+        _text(pair.get("right_ref"), "pairwise right_ref", 64)
+        _text(pair.get("choice"), "pairwise choice", 512)
+
+
+def _taxonomy(data: dict[str, Any]) -> None:
+    tax = data.get("taxonomy")
+    if tax is None:
+        return
+    if not isinstance(tax, dict) or tax.get("status") not in {"draft", "live"}:
+        raise PackError("invalid taxonomy")
+    categories = tax.get("categories")
+    if not isinstance(categories, list) or len(categories) > _TAXONOMY_CAP:
+        raise PackError("taxonomy categories must be a bounded list")
+    for item in categories:
+        if not isinstance(item, dict):
+            raise PackError("taxonomy category must be a mapping")
+        _text(item.get("id"), "taxonomy id", 64)
+        if item.get("value_policy") not in _TAXONOMY_POLICY:
+            raise PackError("unsupported taxonomy value policy")
+
+
 def validate_pack(data: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise PackError("pack must be a mapping")
     _walk_forbidden(data)
     _classification(data)
     _output_policy(data)
+    _value_ranking(data)
+    _who_matters(data)
+    _pairwise(data)
+    _taxonomy(data)
     data = copy.deepcopy(data)
     if not str(data.get("id") or "").strip():
         raise PackError("pack.id is required")

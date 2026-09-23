@@ -39,6 +39,10 @@ commands.
 | 账号管理 | `twinbox_accounts`（list/add/remove/`set-default`；vault 凭据；仅 `password_set`） |
 | 引用式 ingest | `twinbox_ingest` |
 | 事件记录 | `twinbox_events` |
+| 动态分类目录 / 事项分类 / 按需证据 | `twinbox_semantics`（`catalog/list/get`；证据默认不展开） |
+| 策略动作提案 / 取得人工确认 token | `twinbox_action_proposals`（只生成本地 dry-run draft；不写邮箱） |
+| 拒绝 / 过期 / 确认某条动作提案 | `twinbox_action_review`（`confirm` 必须带上一轮人工给出的 `confirmation_token`；仅改变本地状态） |
+| 分类纠正、人工确认、执行回执 | `twinbox_feedback`（需本地管理员 source grant；不修改邮箱） |
 
 ## 规则
 
@@ -52,7 +56,9 @@ commands.
 6. 未读状态跟随**上次 sync** 的 IMAP FLAGS；Outlook/手机标已读后，用
    `twinbox_sync(job="quick-refresh")` 回刷，不要为开箱体感跑 daytime LLM。
 7. 卡片上的 `evidence_basis=insufficient` 表示责任未证实，不要说成「你必须回复」；点开 `twinbox_thread_inspect` 才看证据。
-8. 不要使用 MCP 改造前的旧 CLI 命令体系；在 `master` 上只调用 `twinbox_*` MCP 工具。
+8. `twinbox_feedback` 只接受本地 `config/source-grant.json` 已绑定的 actor/kind/evidence；聊天参数不能自报授权，回执成功也不等于业务完成或邮件已归档。
+9. `twinbox_action_proposals` 返回 `card_payload.interaction.must_stop_agent_turn=true` 时，**必须结束当前 Agent 工具回合**，向人说明 draft、风险和短时 token；不得在同一回合调用 `twinbox_action_review(confirm)`，不得猜测、生成或代填 token。仅收到后续人类消息中的原样 token 时，才可调用 confirm。token 过期、重放、与 draft hash 不匹配时保持不确认；确认也只会得到本地 `blocked_read_only` 状态，绝不写邮箱或外发。
+10. 不要使用 MCP 改造前的旧 CLI 命令体系；在 `master` 上只调用 `twinbox_*` MCP 工具。
 
 ## extract 示例
 

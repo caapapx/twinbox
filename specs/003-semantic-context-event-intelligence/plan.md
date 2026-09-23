@@ -6,7 +6,7 @@
 
 ## Summary
 
-声明式 Semantic Pack（routing-rules 超集）驱动事件理解与候选选择。入库时对每封新邮件做自托管 embedding（ADR-003），分析用结构信号 + `attention_hints` 相似度选 30–40 线程。硬条件可 `skip_llm`；语义条件三段余弦。材料导入为可选 extras。关键词不进核心。
+声明式 Semantic Pack（routing-rules 超集）驱动事件理解与候选选择。入库时对每封新邮件做自托管 embedding（ADR-003），分析用结构信号 + `attention_hints` 相似度选 30–40 线程。硬条件可 `skip_llm`；语义条件三段余弦。分析 prompt 采用有界字符预算，保留 opaque 证据引用并优先最新正文，避免数百封邮件直接耗尽上下文。材料导入为可选 extras。关键词不进核心。
 
 ## Technical Context
 
@@ -22,7 +22,7 @@
 
 **Project Type**: library + MCP tool server
 
-**Performance Goals**: ~5k 封纯 Python 余弦可接受；embedding 失败不得阻塞 fetch。
+**Performance Goals**: ~5k 封纯 Python 余弦可接受；embedding 失败不得阻塞 fetch；单次分析 prompt 默认不超过 1,000,000 字符，预算诊断不落正文。
 
 **Constraints**: 仅自托管 embedding/LLM；禁止公有云；禁止 numpy/torch/sentence-transformers/LangChain；平台 ingest 不带向量与正文。
 
@@ -65,5 +65,7 @@ Pack schema = archive `routing_rules.py` 超集：`entities` / `relations` / `cl
 ## Phase 1: Design
 
 `analyze.py` 改为消费 `select.choose_candidates()` 结果，不再盲切 `envelopes[:100]`。`search_threads` 增加语义路径（同一 sidecar）。Rerank 未配 `rerank.api_url` 时 identity（默认不接）。
+
+`analyze.py` 在组装候选线程后先写入 metadata 与 opaque `evidence_id`，再按“最新正文优先、历史正文稳定排序”的顺序填充预算。默认字符上限为 1,000,000，可由 `TWINBOX_ANALYSIS_PROMPT_MAX_CHARS` 调整但始终钳制在 512–4,000,000；`runtime/validation/phase-4/analysis-prompt-diagnostics.json` 仅保存字符数、估算 token 数、纳入/省略数量与线程统计。
 
 校验拒绝：`script` / `python` / `exec` / `!include` 可执行键、内嵌代码块。

@@ -28,7 +28,7 @@ from .recipient import apply_envelope_role
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 IMAP_TIMEOUT_SEC = int(os.environ.get("TWINBOX_IMAP_TIMEOUT", "90") or "90")
-HEADER_FIELDS = "SUBJECT FROM DATE MESSAGE-ID TO CC LIST-ID IN-REPLY-TO REFERENCES"
+HEADER_FIELDS = "SUBJECT FROM DATE MESSAGE-ID TO CC LIST-ID IN-REPLY-TO REFERENCES AUTO-SUBMITTED PRECEDENCE"
 MAX_THREAD_CANDIDATES = 45
 MAX_BODY_FETCH = 24
 BODY_FETCH_SPEC = "(BODY.PEEK[])"
@@ -315,6 +315,8 @@ def _decode_fetch_rows(fetch_data: list[Any], folder: str) -> list[dict[str, Any
                 "list_id": _header_text(msg, "list-id"),
                 "in_reply_to": _header_text(msg, "in-reply-to"),
                 "references": _header_text(msg, "references"),
+                "auto_submitted": _header_text(msg, "auto-submitted"),
+                "precedence": _header_text(msg, "precedence"),
                 "has_attachment": False,
                 "flags": flags,
             })
@@ -607,6 +609,8 @@ def _normalize_envelope_row(row: dict[str, Any], owner_addr: str = "") -> dict[s
         "list_id": str(row.get("list_id", "") or ""),
         "in_reply_to": str(row.get("in_reply_to", "") or ""),
         "references": str(row.get("references", "") or ""),
+        "auto_submitted": str(row.get("auto_submitted", "") or ""),
+        "precedence": str(row.get("precedence", "") or ""),
         "has_attachment": bool(row.get("has_attachment", False)),
         "flags": canonicalize_flags(row.get("flags") if isinstance(row.get("flags"), list) else []),
         "body": str(row.get("body", "") or ""),
@@ -693,6 +697,64 @@ def fetch_by_query(
             client.logout()
         except Exception:
             pass
+
+
+SENT_FOLDER_CANDIDATES = ("Sent Items", "Sent", "已发送", "已发送邮件")
+
+
+def sent_headers_path(state_root: Path) -> Path:
+    return state_root / "runtime" / "context" / "sent-headers.json"
+
+
+def capture_sent_headers(
+    state_root: Path,
+    imap_config: dict[str, Any],
+    *,
+    lookback_days: int = 30,
+) -> dict[str, Any]:
+    """Read-only Sent headers for reply pairing. Never fetches bodies."""
+    since = datetime.now(SHANGHAI).date() - timedelta(days=max(1, lookback_days))
+    client = _build_client(imap_config)
+    client.login(str(imap_config["login"]), str(imap_config["password"]))
+    chosen = ""
+    rows: list[dict[str, Any]] = []
+    try:
+        for folder in SENT_FOLDER_CANDIDATES:
+            status, _ = client.select(mailbox_for_wire(folder), readonly=True)
+            if status != "OK":
+                continue
+            chosen = folder
+            status, search_data = client.uid("SEARCH", None, "SINCE", _imap_date(since))
+            if status != "OK":
+                return {"ok": False, "error": "sent search failed", "folder": folder}
+            uids = _decode_uid_list(search_data)
+            raw = _fetch_envelope_headers(client, folder, uids) if uids else []
+            for row in raw:
+                rows.append({
+                    "folder": folder,
+                    "id": str(row.get("id", "") or ""),
+                    "date": str(row.get("date", "") or ""),
+                    "message_id": str(row.get("message_id", "") or ""),
+                    "in_reply_to": str(row.get("in_reply_to", "") or ""),
+                    "references": str(row.get("references", "") or ""),
+                    "to": str(row.get("to", "") or ""),
+                })
+            break
+    finally:
+        try:
+            client.logout()
+        except Exception:
+            pass
+    if not chosen:
+        return {"ok": False, "error": "sent folder not found", "count": 0}
+    _write_json(sent_headers_path(state_root), {
+        "generated_at": _now_iso(),
+        "folder": chosen,
+        "since": since.isoformat(),
+        "count": len(rows),
+        "headers": rows,
+    })
+    return {"ok": True, "folder": chosen, "count": len(rows)}
 
 
 # --- Incremental fetch ---
@@ -898,7 +960,9 @@ def fetch_incremental(
     embeddings_degraded = False
     try:
         from .embeddings import embed_new_messages
-        embed_new_messages(state_root, filtered, body_map)
+        embed_new_messages(
+            state_root, filtered, body_map, reset_folders=uv_reset_folders,
+        )
     except Exception:
         embeddings_degraded = True
     embed_ms = round((time.monotonic() - embedding_started) * 1000)
@@ -936,6 +1000,7 @@ def fetch_incremental(
         [str(row.get("folder", "INBOX") or "INBOX"), str(row.get("id", "") or "")]
         for row in normalized
         if str(row.get("id", "") or "")
+        and str(row.get("folder", "INBOX") or "INBOX") not in uv_reset_folders
         and (str(row.get("folder", "INBOX") or "INBOX"), str(row.get("id", "") or "")) in filtered_keys
     ]
 
@@ -945,6 +1010,7 @@ def fetch_incremental(
         # cmd_sync uses this so duplicate UID re-fetch (count>0, already in window) does not force full.
         "new_envelope_ids": new_envelope_ids,
         "flags_refreshed_count": flags_refreshed_count,
+        "uidvalidity_reset_folders": sorted(uv_reset_folders),
         "sampled_body_count": len(new_bodies),
         "total_envelopes": len(filtered),
         "embeddings_degraded": embeddings_degraded,

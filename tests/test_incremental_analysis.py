@@ -70,6 +70,32 @@ class TestIncrementalAnalysis(unittest.TestCase):
             self.assertEqual(result["analyzed_ids"], [["INBOX", "2"]])
             self.assertNotIn("无关", json.dumps(result))
 
+    def test_parse_failure_returns_no_analyzed_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ctx = root / "runtime" / "context" / "phase1-context.json"
+            ctx.parent.mkdir(parents=True)
+            ctx.write_text(
+                json.dumps({
+                    "envelopes": [{
+                        "subject": "待重试",
+                        "id": "2",
+                        "folder": "INBOX",
+                        "date": "2026-09-20T00:00:00+08:00",
+                    }],
+                }),
+                encoding="utf-8",
+            )
+            with mock.patch("twinbox_core.analyze.call_llm", return_value="not-json"), \
+                    mock.patch("twinbox_core.select.choose_candidates", return_value=(
+                        [{"subject": "待重试", "id": "2", "folder": "INBOX"}],
+                        {"embeddings_degraded": False},
+                    )):
+                result = run_analysis(root, only_ids={("INBOX", "2")})
+            self.assertFalse(result["ok"])
+            self.assertEqual(result["analyzed_ids"], [])
+            self.assertTrue((root / "runtime/validation/phase-4/last-analysis-error.json").is_file())
+
 
 if __name__ == "__main__":
     unittest.main()

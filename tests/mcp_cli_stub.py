@@ -38,8 +38,17 @@ def main(argv: list[str]) -> int:
             return _emit({"ok": True, "job": "stub", "degraded": ["analysis"]})
         return _emit({"ok": False, "error": "stub sync fail"}, 1)
 
-    if os.environ.get("TWINBOX_STUB_QUERY", "missing") == "ok":
+    query_mode = os.environ.get("TWINBOX_STUB_QUERY", "missing")
+    if query_mode == "ok":
         return _emit({"ok": True, "generated_at": "2026-09-18T00:00:00+08:00"})
+    if query_mode == "stale":
+        return _emit(
+            {
+                "ok": True,
+                "generated_at": "2000-01-01T00:00:00+08:00",
+                "stale": True,
+            }
+        )
 
     if cmd == "weekly":
         return _emit(

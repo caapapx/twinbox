@@ -64,6 +64,9 @@ fetch 后对新邮件做自托管 embedding。分析用结构信号 + pack `atte
 2. **Given** pack `attention_hints` 与某线程相似，**When** 选候选，**Then** 该线程进入 30–40 集合。
 3. **Given** embedding 端点不可用，**When** 分析，**Then** 回退结构采样并标记 `embeddings_degraded`。
 4. **Given** 候选线程含多封信封，**When** 构建分析 prompt，**Then** 该 `thread_key` 下全部消息均在，而不仅是最新一封。
+5. **Given** 邮件离开当前窗口或文件夹 UIDVALIDITY 变化，**When** fetch 维护 sidecar，**Then** 窗口外向量被清理，UID 复用不得沿用旧向量，且其他账号/文件夹的活跃向量不受影响。
+6. **Given** 选中线程的正文总量超过单次分析预算，**When** 构建分析 prompt，**Then** prompt 字符数不超过默认 1,000,000；先保留线程/消息 metadata 与 opaque `evidence_id`，优先保留最新消息正文，再按稳定顺序加入历史正文；诊断只记录统计字段，不记录正文。
+6. **Given** 选中线程的正文总量超过单次分析预算，**When** 构建分析 prompt，**Then** prompt 字符数不超过默认 1,000,000；先保留线程/消息 metadata 与 opaque `evidence_id`，优先保留最新消息正文，再按稳定顺序加入历史正文；诊断只记录统计字段，不记录正文。
 
 ---
 
@@ -89,6 +92,9 @@ fetch 后对新邮件做自托管 embedding。分析用结构信号 + pack `atte
 - **FR-009**: Semantic routing conditions MUST use three-band cosine (high hit / low miss / middle → one LLM call). Thresholds live in the pack.
 - **FR-010**: `thread_inspect` / `search_threads` MUST offer a semantic path over the same index. Rerank is reserved (phase 2).
 - **FR-011**: A material importer MAY ingest spreadsheets/docs into pack fragments via optional extras (`openpyxl` / `python-docx`); core MUST run without those packages.
+- **FR-012**: Embedding sidecars MUST be bounded to the current account window. Folder identity MUST be collision-safe; UIDVALIDITY changes MUST invalidate reused UIDs in that folder before re-embedding without deleting active sidecars from other folders or account roots.
+- **FR-013**: Analysis prompt construction MUST enforce a bounded character budget (default 1,000,000; environment override clamped to 512–4,000,000). Truncation MUST preserve opaque evidence references and metadata before body previews, prefer latest-message bodies, and expose only aggregate diagnostics (never prompt text) in validation artifacts.
+- **FR-013**: Analysis prompt construction MUST enforce a bounded character budget (default 1,000,000; environment override clamped to 512–4,000,000). Truncation MUST preserve opaque evidence references and metadata before body previews, prefer latest-message bodies, and expose only aggregate diagnostics (never prompt text) in validation artifacts.
 
 ### Key Entities
 

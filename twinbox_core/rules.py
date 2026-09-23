@@ -83,3 +83,11 @@ def semantic_band(
     if llm_probe is not None:
         return "llm" if llm_probe(env) else "miss"
     return "llm"
+
+
+def event_semantic_band(condition: dict[str, Any], env: dict[str, Any], state_root) -> str:
+    """Evaluate only this event rule's semantic hints, never pack attention hints."""
+    semantic = condition.get("semantic")
+    if not isinstance(semantic, dict) or not semantic.get("utterances"):
+        return "skip"
+    return semantic_band({"attention_hints": [semantic]}, env, state_root)

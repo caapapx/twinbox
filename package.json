@@ -8,7 +8,8 @@
   },
   "scripts": {
     "mcp": "node ./mcp-server.mjs",
-    "test:mcp": "node ./tests/mcp-smoke.mjs"
+    "test:mcp": "node ./tests/mcp-smoke.mjs",
+    "test:mcp-output-safety": "node ./tests/mcp-output-safety.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

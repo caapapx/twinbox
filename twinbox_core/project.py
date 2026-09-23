@@ -16,12 +16,18 @@ def _axes(item: dict[str, Any]) -> dict[str, str]:
         actionability = "low"
     interest = "high" if item.get("recipient_role") in {"direct", "to"} else "medium"
     sensitivity = "flagged" if "sensitive" in str(item.get("why", "")).lower() else "normal"
-    return {
+    axes = {
         "urgency": urgency,
         "actionability": actionability,
         "interest": interest,
         "sensitivity": sensitivity,
     }
+
+    # Semantic axes are descriptive only. They do not grant data or execution access.
+    supplied = (item.get("semantics") or {}).get("axes", {})
+    if isinstance(supplied, dict):
+        axes.update({k: v for k, v in supplied.items() if isinstance(k, str) and isinstance(v, str)})
+    return axes
 
 
 def project_item(item: dict[str, Any], pack: dict[str, Any] | None) -> str:
@@ -41,6 +47,13 @@ def project_item(item: dict[str, Any], pack: dict[str, Any] | None) -> str:
     return broadcast_default if broadcast_default in {"action_required", "watch", "reference"} else "reference"
 
 
+def _optional_axis(value: object, evidence_refs: object) -> dict[str, Any]:
+    axis: dict[str, Any] = {"value": value}
+    if isinstance(evidence_refs, list) and evidence_refs:
+        axis["evidence_refs"] = list(evidence_refs)
+    return axis
+
+
 def attach_projections(pulse: dict[str, Any], state_root: Path) -> dict[str, Any]:
     pack = load_active_pack(state_root)
     buckets = {"action_required": [], "watch": [], "reference": []}
@@ -57,13 +70,18 @@ def attach_projections(pulse: dict[str, Any], state_root: Path) -> dict[str, Any
             if not item.get("why"):
                 item["why"] = f"projection={bucket}"
             if key == "needs_attention":
-                buckets[bucket].append({
+                entry: dict[str, Any] = {
                     "thread_key": item.get("thread_key"),
                     "why": item.get("why"),
                     "projection": bucket,
                     "axes": item["axes"],
                     "action_hint": item.get("action_hint"),
                     "recipient_role": item.get("recipient_role"),
-                })
+                }
+                if item.get("waiting_on"):
+                    entry["waiting_on"] = _optional_axis(item.get("waiting_on"), item.get("evidence_refs"))
+                if item.get("deadline"):
+                    entry["deadline"] = _optional_axis(item.get("deadline"), item.get("evidence_refs"))
+                buckets[bucket].append(entry)
     pulse["projections"] = {k: v[:20] for k, v in buckets.items()}
     return pulse

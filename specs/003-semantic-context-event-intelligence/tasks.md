@@ -33,6 +33,10 @@ description: "Task list for semantic context and event intelligence"
 
 **2026-09-18 双向加固注记（T007/T010）**：补齐非正 `limit` 零工作返回、无 hints 的结构模式不误报降级、空/不完整 hint embedding 响应与 sidecar 读取异常的结构回退；召回托底与结构分按线程内任意消息聚合，而不是只读取最新代表信封。以上均为既有合同的健壮性加固，不改变 pack 阈值、rerank、skip_llm 或 IMAP 语义。
 
+**2026-09-20 sidecar 生命周期注记（T005/T006）**：补齐窗口外 GC、账号/文件夹隔离与 UIDVALIDITY 复用失效；文件夹名采用无碰撞编码，fetch 仅把本轮 UIDVALIDITY 重置文件夹传给 embedding 层，不改变 IMAP 水位或抓取语义。
+
+**2026-09-21 prompt 预算注记（T008/T010）**：`analyze.py` 已增加默认 1,000,000 字符的单次 prompt 硬上限（`TWINBOX_ANALYSIS_PROMPT_MAX_CHARS` 仅可在 512–4,000,000 内覆盖），保留 metadata/opaque `evidence_id`，最新正文优先，历史正文按稳定顺序补入；超限只省略低优先级正文。新增 `tests/test_analysis_prompt_budget.py` 覆盖上限、优先级、证据引用、诊断统计与环境变量钳制；诊断文件只写统计信息。该项已通过本地 TwinBox 全量回归，但不替代真实邮箱或业务金标门禁。
+
 ## Phase 4: User Story 2 - 声明式规则 (P1)
 
 - [x] T011 [US2] `twinbox_core/rules.py`：硬条件（sender/folder/recipient_role/header）可 `skip_llm`；语义三段余弦

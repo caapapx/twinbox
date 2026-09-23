@@ -29,7 +29,7 @@
 
 ## Open
 
-- [ ] T017 MCP exposure of ledger append / current-view queries.
+- [x] T017 MCP exposure of ledger append / current-view queries.
 
 ## Verification
 

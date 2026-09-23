@@ -6,6 +6,7 @@ Replaces the original 4-phase pipeline with one LLM call.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -95,50 +96,211 @@ def _body_for(env: dict[str, Any], body_map: dict[str, Any], *, latest: bool) ->
     return body[:limit]
 
 
+PROMPT_DEFAULT_MAX_CHARS = 1_000_000
+PROMPT_MIN_MAX_CHARS = 512
+PROMPT_HARD_MAX_CHARS = 4_000_000
+PROMPT_CHARS_PER_ESTIMATED_TOKEN = 4
+
+
+def _prompt_max_chars() -> int:
+    """Return the hard character budget for one analysis prompt.
+
+    The default is intentionally below a typical million-token model window:
+    email bodies are untrusted input and Twinbox must bound the amount sent to
+    the model even when a mailbox contains hundreds of messages.  The
+    environment override is useful for controlled local benchmarks, but is
+    still clamped so a typo cannot remove the safety bound.
+    """
+    raw = os.environ.get("TWINBOX_ANALYSIS_PROMPT_MAX_CHARS", "")
+    try:
+        value = int(raw) if raw.strip() else PROMPT_DEFAULT_MAX_CHARS
+    except (TypeError, ValueError):
+        value = PROMPT_DEFAULT_MAX_CHARS
+    return max(PROMPT_MIN_MAX_CHARS, min(value, PROMPT_HARD_MAX_CHARS))
+
+
+def _message_header(
+    tk: str,
+    env: dict[str, Any],
+    *,
+    latest: bool,
+    body_available: bool | None = None,
+) -> str:
+    flags = env.get("flags", [])
+    if isinstance(flags, (list, tuple, set)):
+        flags_str = ", ".join(str(flag) for flag in flags)
+    else:
+        flags_str = str(flags or "")
+    evid = _evidence_id(env)
+    return (
+        f"evidence_id={evid} thread_key={tk} is_latest={str(latest).lower()} "
+        f"recipient_role={env.get('recipient_role', 'unknown')} "
+        f"body_available={str(bool(body_available if body_available is not None else env.get('body'))).lower()} "
+        f"subject={env.get('subject', '')} | "
+        f"from={env.get('from_name', '')} <{env.get('from_addr', '')}> | "
+        f"to={env.get('to', '')} | cc={env.get('cc', '')} | "
+        f"date={env.get('date', '')} | folder={env.get('folder', 'INBOX')} | "
+        f"flags=[{flags_str}]"
+    )
+
+
+def _compact_message_header(tk: str, env: dict[str, Any], *, latest: bool) -> str:
+    """Small fallback header that still gives the model a valid evidence ref."""
+    return (
+        f"evidence_id={_evidence_id(env)} thread_key={tk} "
+        f"is_latest={str(latest).lower()} subject={str(env.get('subject', ''))[:160]}"
+    )
+
+
+def _append_with_budget(parts: list[str], text: str, remaining: int) -> tuple[int, bool]:
+    if remaining <= 0 or not text:
+        return remaining, bool(text)
+    if len(text) <= remaining:
+        parts.append(text)
+        return remaining - len(text), False
+    if remaining > 0:
+        parts.append(text[:remaining])
+    return 0, True
+
+
+def _prompt_stats(context: dict[str, Any], prompt: str) -> dict[str, Any]:
+    stats = context.setdefault("stats", {})
+    if not isinstance(stats, dict):
+        stats = {}
+        context["stats"] = stats
+    value = {
+        "prompt_chars": len(prompt),
+        "prompt_estimated_tokens": (len(prompt) + PROMPT_CHARS_PER_ESTIMATED_TOKEN - 1)
+        // PROMPT_CHARS_PER_ESTIMATED_TOKEN,
+        "prompt_char_limit": _prompt_max_chars(),
+    }
+    stats.update(value)
+    return value
+
+
 def _build_prompt(context: dict[str, Any], human_context: dict[str, Any] | None = None) -> str:
-    """Build the user prompt from Phase 1 context + optional human context."""
+    """Build a deterministic, bounded prompt from the selected mail context.
+
+    Headers (including opaque evidence IDs) are retained before body previews.
+    Latest-message previews are preferred, then historical previews are added
+    in stable thread/date order until the hard budget is exhausted.  This
+    keeps the analysis useful for a large mailbox without ever passing an
+    unbounded concatenation of email text to the LLM.
+    """
     from .pulse import normalize_thread_key
 
+    limit = _prompt_max_chars()
     envelopes = [e for e in context.get("envelopes", []) if isinstance(e, dict)]
     body_map = context.get("sampled_bodies", {})
     grouped: dict[str, list[dict[str, Any]]] = {}
     for env in envelopes:
         grouped.setdefault(normalize_thread_key(env.get("subject")), []).append(env)
 
-    lines = [f"## Mailbox data (lookback={context.get('lookback_days', 7)} days, "
-             f"owner_domain={context.get('owner_domain', 'unknown')}):\n"]
-
-    idx = 0
+    prefix = (
+        f"## Mailbox data (lookback={context.get('lookback_days', 7)} days, "
+        f"owner_domain={context.get('owner_domain', 'unknown')}):\n"
+    )
+    thread_rows: list[tuple[str, list[dict[str, Any]]]] = []
+    header_lines: list[str] = []
+    detail_chunks: list[tuple[int, str]] = []
+    total_body_messages = 0
     for tk, rows in grouped.items():
         rows_sorted = sorted(rows, key=lambda r: str(r.get("date", "")), reverse=True)
-        lines.append(f"### thread_key={tk} messages={len(rows_sorted)}")
+        thread_rows.append((tk, rows_sorted))
+        header_lines.append(f"### thread_key={tk} messages={len(rows_sorted)}")
         for i, env in enumerate(rows_sorted):
             latest = i == 0
             body_preview = _body_for(env, body_map, latest=latest)
-            flags_str = ", ".join(env.get("flags", []))
-            evid = _evidence_id(env)
-            lines.append(
-                f"[{idx}] evidence_id={evid} thread_key={tk} is_latest={str(latest).lower()} "
-                f"recipient_role={env.get('recipient_role', 'unknown')} "
-                f"body_available={str(bool(body_preview)).lower()} "
-                f"subject={env.get('subject', '')} | "
-                f"from={env.get('from_name', '')} <{env.get('from_addr', '')}> | "
-                f"to={env.get('to', '')} | cc={env.get('cc', '')} | "
-                f"date={env.get('date', '')} | folder={env.get('folder', 'INBOX')} | "
-                f"flags=[{flags_str}]"
+            header_lines.append(
+                f"[{len(header_lines)}] "
+                f"{_message_header(tk, env, latest=latest, body_available=bool(body_preview))}"
             )
             if body_preview:
-                lines.append(f"  body_preview: {body_preview}")
-            idx += 1
+                total_body_messages += 1
+                detail_chunks.append(
+                    (
+                        0 if latest else 1,
+                        f"body_preview evidence_id={_evidence_id(env)}: {body_preview}",
+                    )
+                )
 
+    # A compact mandatory section retains every thread/message evidence ID.  In
+    # normal operation it is far below the 1M-character default.  If a local
+    # benchmark deliberately sets a tiny budget, fall back to compact headers
+    # rather than slicing through a full metadata line.
+    mandatory = "\n".join(header_lines)
+    human_lines: list[str] = []
     if human_context:
-        lines.append("\n## Human context:")
+        human_lines.append("\n## Human context:")
         if human_context.get("profile_notes"):
-            lines.append(f"profile_notes: {human_context['profile_notes']}")
+            human_lines.append(f"profile_notes: {human_context['profile_notes']}")
         if human_context.get("calibration_notes"):
-            lines.append(f"calibration_notes: {human_context['calibration_notes']}")
+            human_lines.append(f"calibration_notes: {human_context['calibration_notes']}")
+    human_text = "\n".join(human_lines)
 
-    return "\n".join(lines)
+    parts: list[str] = []
+    remaining = limit
+    truncated = False
+    remaining, cut = _append_with_budget(parts, prefix, remaining)
+    truncated = truncated or cut
+    remaining, cut = _append_with_budget(parts, mandatory, remaining)
+    truncated = truncated or cut
+
+    # If the full mandatory metadata did not fit, rebuild it using compact
+    # per-message refs.  This is only reachable for intentionally tiny limits.
+    if cut:
+        compact_lines: list[str] = []
+        for tk, rows_sorted in thread_rows:
+            compact_lines.append(f"### thread_key={tk} messages={len(rows_sorted)}")
+            for i, env in enumerate(rows_sorted):
+                compact_lines.append(
+                    f"[{len(compact_lines)}] "
+                    f"{_compact_message_header(tk, env, latest=i == 0)}"
+                )
+        parts = []
+        remaining = limit
+        remaining, cut_prefix = _append_with_budget(parts, prefix, remaining)
+        remaining, cut_compact = _append_with_budget(parts, "\n".join(compact_lines), remaining)
+        truncated = True or cut_prefix or cut_compact
+
+    # Human context outranks historical body previews.
+    if human_text and remaining:
+        remaining, cut = _append_with_budget(parts, human_text, remaining)
+        truncated = truncated or cut
+
+    omitted_body_messages = 0
+    included_body_messages = 0
+    body_section_added = False
+    for _priority, chunk in sorted(enumerate(detail_chunks), key=lambda item: (item[1][0], item[0])):
+        _chunk_priority, body_text = chunk
+        if not remaining:
+            omitted_body_messages += 1
+            continue
+        if not body_section_added:
+            remaining, cut = _append_with_budget(parts, "\n\n## Message previews:\n", remaining)
+            body_section_added = True
+            truncated = truncated or cut
+        before = remaining
+        remaining, cut = _append_with_budget(parts, body_text + "\n", remaining)
+        if before != remaining:
+            included_body_messages += 1
+        if cut:
+            truncated = True
+            omitted_body_messages += 1
+            break
+
+    prompt = "".join(parts)
+    _prompt_stats(context, prompt)
+    stats = context["stats"]
+    stats.update({
+        "prompt_truncated": bool(truncated or omitted_body_messages),
+        "prompt_body_messages_available": total_body_messages,
+        "prompt_body_messages_included": included_body_messages,
+        "prompt_body_messages_omitted": omitted_body_messages,
+        "prompt_threads": len(thread_rows),
+        "prompt_messages": len(envelopes),
+    })
+    return prompt
 
 
 def _load_human_context(state_root: Path) -> dict[str, Any] | None:
@@ -193,6 +355,19 @@ def _select_payload(select_diag: dict[str, Any]) -> dict[str, Any]:
         "envelope_llm": select_diag.get("envelope_llm"),
         "candidate_threads": select_diag.get("candidate_threads"),
     }
+    for key in (
+        "prompt_chars",
+        "prompt_estimated_tokens",
+        "prompt_char_limit",
+        "prompt_truncated",
+        "prompt_body_messages_available",
+        "prompt_body_messages_included",
+        "prompt_body_messages_omitted",
+        "prompt_threads",
+        "prompt_messages",
+    ):
+        if key in select_diag:
+            out[key] = select_diag[key]
     if select_diag.get("select_error"):
         out["select_error"] = select_diag["select_error"]
     return out
@@ -401,6 +576,18 @@ def run_analysis(
     except Exception as exc:
         _merge_stats(context, {"events_error": type(exc).__name__})
     prompt = _build_prompt(context, human_context)
+    prompt_stats = {
+        key: value
+        for key, value in (context.get("stats") or {}).items()
+        if str(key).startswith("prompt_")
+    }
+    select_diag = {**select_diag, **prompt_stats}
+    prompt_diag_dir = state_root / "runtime" / "validation" / "phase-4"
+    prompt_diag_dir.mkdir(parents=True, exist_ok=True)
+    (prompt_diag_dir / "analysis-prompt-diagnostics.json").write_text(
+        json.dumps(prompt_stats, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
     raw = ""
     try:
@@ -504,6 +691,17 @@ def run_analysis(
         if isinstance(weekly, dict):
             weekly["generated_at"] = _now_iso()
             _write_json(phase4_dir / "weekly-brief-raw.json", weekly)
+
+    # Keep the case-lifecycle ledger a derived projection of the rewritten window:
+    # a once-closed case stays closed unless the new mail is a valid reopen
+    # (guarded inside sync_derived_states).  Fail open so ledger problems never
+    # fail an already-successful analysis.
+    if not merge_mode:
+        try:
+            from .case_ledger import sync_derived_states
+            sync_derived_states(state_root)
+        except Exception:
+            pass
 
     return {
         "ok": True,

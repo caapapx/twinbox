@@ -2,7 +2,7 @@
 
 **Branch**: `001-everything-mail-adapter` | **Date**: 2026-08-26 | **Spec**: [spec.md](./spec.md)
 
-> **2026-09-15 Phase 0/1 gate**: multi-account vault + accounts/ingest/events + min observability landed on `master`. Remaining open tasks are axes/LLM schema/event recall (see tasks.md footer).
+> **2026-09-20 reconciliation**: multi-account vault + accounts/ingest/events + min observability landed on `master`. The fixed-six-axis/`llm.py`/three-type implementation path is superseded by `013` Semantic Packs; only evidence-backed quality/recall work remains open here (see `tasks.md` disposition).
 
 **Input**: Feature specification from `/specs/001-everything-mail-adapter/spec.md`
 
@@ -14,9 +14,9 @@
 
 **Language/Version**: Python 3.10+（`twinbox_core/`），Node.js 18+（`mcp-server.mjs` 工具层）
 
-**Primary Dependencies**: 现有依赖（imaplib 生态的 `imap_fetch.py`、`llm.py` 的 LLM 通路、PyYAML）；凭据加密优先使用系统 keyring 或 Python `cryptography`（Fernet 对称加密），选定前确认项目已依赖情况，否则以 stdlib + 本地密钥文件兜底并标注限制
+**Primary Dependencies**: 现有依赖（imaplib 生态的 `imap_fetch.py`、PyYAML、`013` 的 Semantic Pack/分类快照）；凭据加密优先使用系统 keyring 或 Python `cryptography`（Fernet 对称加密）。任何外部分类 provider 都必须保持可选、默认关闭，并不能成为 envelope 契约的必备条件。
 
-**Storage**: 本地文件/SQLite 于 `~/.twinbox/`（沿用现有 queue 与配置约定，git-ignored）；归类轴配置在受追踪的 `config/extract-profiles.yaml`
+**Storage**: 本地文件/SQLite 于 `~/.twinbox/`（沿用现有 queue 与配置约定，git-ignored）；归类轴与事件类型在受追踪、版本化的 `config/packs/*.yaml` Semantic Pack 中声明。
 
 **Testing**: `pytest`（`tests/test_extract.py` 现有套件扩展）+ `tests/mcp-smoke.mjs` 工具层冒烟
 
@@ -24,7 +24,7 @@
 
 **Project Type**: library + MCP tool server（单仓双语言薄封装）
 
-**Performance Goals**: 单邮箱 1000 封批量 ingest ≤ 5 分钟（含 LLM 归类，可分页）
+**Performance Goals**: 单邮箱 1000 封批量 ingest ≤ 5 分钟（含本地 Pack 分类/分页）；任何可选 provider 的耗时、成本和失败必须独立记录，不能挤占此读取基线。
 
 **Constraints**: 全文不出 twinbox 边界；单次工具输出 ≤ 可配置条数上限；IMAP 全程只读
 
@@ -62,11 +62,10 @@ twinbox_core/
 ├── analyze.py           # 线程分析（复用）
 ├── extract.py           # 历史抽取（复用，扩展事件抽取）
 ├── pulse.py             # 周期同步调度（复用，多账号循环）
-├── llm.py               # LLM 通路（复用，新增 envelope/event 输出 schema）
 ├── queue.py             # 本地队列（复用）
 ├── config.py            # 配置加载（扩展：多账号 + vault 引用）
-├── adapter.py           # 新增：ingest envelope 组装、六轴归类映射、游标分页
-├── events.py            # 新增：事件抽取（weekly_report / risk / plan_change）与去重
+├── adapter.py           # ingest envelope 组装、版本化 opaque attributes 投影、游标分页
+├── events.py            # Pack 声明事件类型的引用式事件投影与去重
 ├── vault.py             # 新增：凭据加密存储（加解密、存在性布尔查询）
 └── cli.py               # 扩展：ingest / events / accounts 子命令
 
@@ -74,7 +73,7 @@ mcp-server.mjs           # 扩展：注册 twinbox_ingest / twinbox_events / twi
                          # 复用既有 spawn CLI 模式与 ok/data/error/recovery_tool 封装
 
 config/
-└── extract-profiles.yaml # 扩展：六轴归类定义与取值规则（受追踪、无秘密）
+└── packs/*.yaml          # 版本化 Semantic Pack：动态轴、事件类型与取值规则（受追踪、无秘密）
 
 tests/
 ├── test_extract.py      # 复用扩展
@@ -83,7 +82,7 @@ tests/
 └── mcp-smoke.mjs        # 扩展：新工具冒烟
 ```
 
-**Structure Decision**: 单仓结构不变。所有新逻辑进入 `twinbox_core/` 新增模块（adapter / events / vault），CLI 新增子命令，`mcp-server.mjs` 只做薄封装注册新工具——与现有「Node 薄壳 + Python 核心」模式一致。归类规则属于配置（`config/extract-profiles.yaml`），不硬编码进任何下游。
+**Structure Decision**: 单仓结构不变。所有新逻辑进入 `twinbox_core/` 模块（adapter / events / vault），CLI 提供子命令，`mcp-server.mjs` 只做薄封装注册工具——与现有「Node 薄壳 + Python 核心」模式一致。归类规则与事件类型属于版本化 Semantic Pack（`config/packs/*.yaml`），不硬编码进 Agent OS、adapter 或固定下游枚举。
 
 ## Design Notes
 
@@ -101,7 +100,7 @@ tests/
 ```
 
 - envelope 无 body / html / attachment 字段，schema 层面杜绝全文外泄。
-- `attributes` 轴值由 `config/extract-profiles.yaml` 定义，平台按 opaque string 消费。
+- `attributes` 轴值由版本化 Semantic Pack 定义，平台按 opaque map/list 消费，不得假定六个固定键或固定类型。
 - `cursor` 为不透明字符串，内部编码账号 + UID 水位，支持重放与幂等。
 
 ### 凭据加密
@@ -116,4 +115,4 @@ tests/
 
 ### 事件抽取
 
-- `events.py` 基于 `extract.py` 的 LLM 通路，输出固定 schema 的 EventRecord（稳定事件 ID = hash(account_id, message_id, event_type, 周期/键字段)），二次抽取按 ID 去重。
+- `events.py` 从 `013` Semantic Pack 的声明式规则/分类快照投影引用式 EventRecord（稳定事件 ID = hash(account_id, message_id, event_type, 周期/键字段)），二次投影按 ID 去重；不以外部 LLM 作为必经读取路径。

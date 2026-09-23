@@ -44,6 +44,12 @@ class FakeProvider:
         self.updates: list[tuple[str, str, str, dict[str, object]]] = []
         self.deletes: list[tuple[str, str]] = []
         self.searches: list[tuple[str, str, dict[str, object]]] = []
+        self.parse_status: dict[str, str] = {"parse_state": "pending"}
+        self.parse_calls: list[tuple[str, str]] = []
+
+    def get_parse_status(self, scope: str, knowledge_ref: str) -> dict[str, str]:
+        self.parse_calls.append((scope, knowledge_ref))
+        return deepcopy(self.parse_status)
 
     def lookup_by_source_key(self, scope: str, stable_key: str) -> dict[str, str]:
         self.lookups.append((scope, stable_key))
@@ -163,6 +169,22 @@ def test_same_content_skips_and_changed_content_updates(tmp_path: Path):
     assert entry["knowledge_ref"] == "knowledge-1"
     assert entry["sync_state"] == "parsing"
     assert entry["parse_state"] == "pending"
+
+
+def test_search_promotes_parsing_mapping_when_provider_reports_ready(tmp_path: Path):
+    provider = FakeProvider()
+    assert sync_excerpt(tmp_path, provider, _grant(), _source())["status"] == "created"
+    provider.parse_status = {"parse_state": "ready"}
+    provider.search_result = {"status": "ok", "coverage": "complete", "hits": []}
+
+    result = search_excerpts(tmp_path, provider, _grant(), "synthetic query")
+
+    entry = next(iter(load_sync_state(tmp_path)["mappings"].values()))
+    assert entry["sync_state"] == "searchable"
+    assert entry["parse_state"] == "ready"
+    assert result["status"] != "no_authorized_sources"
+    assert provider.parse_calls
+    assert provider.searches
 
 
 def test_create_timeout_is_uncertain_then_lookup_reconciles_without_second_create(tmp_path: Path):

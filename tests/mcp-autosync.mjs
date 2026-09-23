@@ -17,6 +17,10 @@ function client(stateRoot, extraEnv = {}) {
       ...process.env,
       TWINBOX_CODE_ROOT: repoRoot,
       TWINBOX_STATE_ROOT: stateRoot,
+      // This regression must never fall through to a real CLI/IMAP account,
+      // regardless of the caller's shell environment. Individual scenarios
+      // may override the stub only with another explicit test double.
+      TWINBOX_PYTHON: stubPath,
       ...extraEnv,
     },
     stdio: ["pipe", "pipe", "pipe"],
@@ -88,7 +92,7 @@ try {
   await mkdir(dirname(pulse), { recursive: true });
   await writeFile(pulse, JSON.stringify({ generated_at: "2000-01-01T00:00:00+08:00", summary: {} }));
 
-  const stale = textOf(await invoke(root, "twinbox_latest_mail"));
+  const stale = textOf(await invoke(root, "twinbox_latest_mail", {}, { TWINBOX_STUB_QUERY: "stale" }));
   assert(stale.includes('"stale": true'), `stale pulse missing staleness: ${stale}`);
   assert(!stale.includes("auto sync"), `stale pulse unexpectedly synced: ${stale}`);
 
@@ -164,8 +168,8 @@ try {
     `still-missing weekly lacked recovery banner: ${stillText}`,
   );
   assert(
-    stillText.includes("Missing weekly-brief-raw.json"),
-    `still-missing weekly dropped CLI error: ${stillText}`,
+    stillText.includes('"error": "platform_output_redacted"'),
+    `still-missing weekly did not fail closed on non-contract CLI error text: ${stillText}`,
   );
   assert(!stillText.includes("auto sync failed"), `successful stub sync should not use failed banner: ${stillText}`);
 

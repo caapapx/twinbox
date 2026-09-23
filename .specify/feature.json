@@ -1,7 +1,14 @@
 {
-  "feature_directory": "specs/002-analysis-correctness",
+  "feature_directory": "specs/013-semantic-policy-projections",
   "notes": {
     "active_correctness": "specs/002-analysis-correctness (converged)",
     "enterprise_slice_2026_09_15": "specs/001 Partial + 008/009/010 contracts"
-  }
+  },
+  "previous_feature_directory": "specs/002-analysis-correctness",
+  "plan_entry": "docs/plans/2026-09-18-twinbox-agentos-codex-plan.md",
+  "status": "in_progress",
+  "updated_at": "2026-09-18",
+  "related_features": [
+    "specs/014-weknora-retrieval-adapter"
+  ]
 }

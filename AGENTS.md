@@ -151,6 +151,8 @@ G5 在 `proposals=0` 时 **skip**，不是失败。
 | G4 | §2.2 | 今天有什么待办和待回复？按紧急程度排一下，每条给主题 + 为什么紧急。 | `todo` |
 | G5 | §8 | 把某条提案 reject，原因写「策略过宽」。然后再拉提案列表看状态变化。 | `action_review`；无提案则 skip |
 | G6 | §2.1 | 我刚打开电脑，先别同步。立刻告诉我最新邮件是谁发的——这是在测查询延迟，请报一下你调用了哪个工具、大概多久返回。 | `latest_mail`；禁止 sync |
+| G7 | §6 | 只在本地已保留的信封里，按日期范围抽出邮件。不要同步，不要为了空结果去翻邮箱。 | `extract`；禁止 sync |
+| G8 | §5 | 列出案例账本的当前状态。这是只读查询，不要追加或改写账本，也不要同步。 | `case_ledger`；禁止 sync |
 
 CLI 金标 argv：C1 `status`；C2 `accounts list`；C3 `todo`；C4 `weekly`；C5 `events --limit 20`；C6 `ingest --limit 10`；C7 `actions proposals`；C8 `latest-mail`；C9 `latest-mail --unread-only`；C10 `thread --query 部署`。
 

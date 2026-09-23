@@ -8,3 +8,5 @@
 - [x] T006 Fix R8: `new_count>0` + empty `new_ids` → skip not full; fetch returns `new_envelope_ids`
 - [x] T007 Pending analysis ids: quick-refresh enqueue; daytime consumes leftover after fetch noop; failure/budget/UIDVALIDITY/FLAGS-only/account isolation (`tests/test_quick_refresh.py`)
 - [x] T008 Lookback 7→30 SINCE backfill; UIDVALIDITY mismatch refetches; extract passes account_id (`tests/test_imap_fetch.py`, `tests/test_extract.py`)
+
+**2026-09-20 回归注记**：按 B02-03 重新验证全部既有完成项，并补齐缺产物 full fallback、skipped 不 ack、真实 parse failure 三个显式用例；实现无需重写。相关定向、全仓与 MCP stale-read 回归均通过。

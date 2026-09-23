@@ -738,7 +738,9 @@ def _classification_index(
     """Join the active 013 snapshot without treating it as an authorization grant."""
     try:
         from .classification_store import ClassificationStoreError, load_classifications
-
+    except ImportError:
+        return "unknown", {}
+    try:
         stored = load_classifications(state_root, scope_id)
     except (ClassificationStoreError, OSError):
         return "unknown", {}
@@ -1018,6 +1020,70 @@ def _fallback_result(
     }
 
 
+def _refresh_parsing_mappings(state_root: Path, provider: WeKnoraProvider, grant: SourceGrant) -> None:
+    """Promote local rows once the provider reports parse ready or failed.
+
+    Sync stores ``parsing`` while the remote job is still pending. Search must
+    poll that status before building the allowlist, or a ready copy stays invisible.
+    Hidden and deleted rows are left alone.
+    """
+    getter = getattr(provider, "get_parse_status", None)
+    if getter is None:
+        return
+    root = Path(state_root)
+    with _sync_lock(root):
+        state = load_sync_state(root)
+        mappings = state.get("mappings")
+        if not isinstance(mappings, dict):
+            return
+        pending: list[tuple[str, str]] = []
+        for map_id, raw in mappings.items():
+            if not isinstance(raw, dict) or raw.get("sync_state") != "parsing":
+                continue
+            if raw.get("visibility", "visible") != "visible":
+                continue
+            if raw.get("scope_id") != grant.scope_id or raw.get("account_ref") != grant.account_ref:
+                continue
+            if raw.get("mail_ref") not in grant.mail_refs:
+                continue
+            knowledge_ref = raw.get("knowledge_ref")
+            if isinstance(map_id, str) and isinstance(knowledge_ref, str) and knowledge_ref:
+                pending.append((map_id, knowledge_ref))
+    updates: list[tuple[str, str]] = []
+    for map_id, knowledge_ref in pending:
+        try:
+            result = getter(grant.scope_id, knowledge_ref)
+        except (TimeoutError, WeKnoraSyncError, OSError):
+            continue
+        if not isinstance(result, Mapping):
+            continue
+        parse_state = _parse_state(result)
+        if parse_state == "ready":
+            updates.append((map_id, "searchable"))
+        elif parse_state == "failed":
+            updates.append((map_id, "failed"))
+    if not updates:
+        return
+    with _sync_lock(root):
+        state = load_sync_state(root)
+        mappings = state.get("mappings")
+        if not isinstance(mappings, dict):
+            return
+        changed = False
+        for map_id, sync_state in updates:
+            entry = mappings.get(map_id)
+            if not isinstance(entry, dict) or entry.get("sync_state") != "parsing":
+                continue
+            if entry.get("visibility", "visible") != "visible":
+                continue
+            entry["sync_state"] = sync_state
+            entry["parse_state"] = "ready" if sync_state == "searchable" else "failed"
+            entry["updated_at"] = _now()
+            changed = True
+        if changed:
+            _save_state(root, state)
+
+
 def search_excerpts(
     state_root: Path,
     provider: WeKnoraProvider,
@@ -1040,6 +1106,7 @@ def search_excerpts(
     """
     text = _validate_search_request(grant, query, limit=limit, timeout_seconds=timeout_seconds)
     filter_spec = _normalize_classification_filter(classification_filter)
+    _refresh_parsing_mappings(Path(state_root), provider, grant)
     mappings = _searchable_mappings(Path(state_root), grant)
     coverage_state, classifications = _classification_index(Path(state_root), grant.scope_id)
 

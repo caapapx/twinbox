@@ -4,9 +4,9 @@
 
 **Created**: 2026-08-26
 
-**Status**: Partial — multi-account vault + accounts/ingest/events tools landed; full ingest axes / pack event types still open
+**Status**: Partial — multi-account vault + accounts/ingest/events tools landed; semantic axes and event types are now supplied by `013` Semantic Packs, while live business-quality/recall validation remains open.
 
-> 代码事实：当前 `master` 已落地多账号 vault、`twinbox_accounts` / `twinbox_ingest` / `twinbox_events` 与最小可观测性；六轴归类与完整事件类型仍未收敛。不要把它描述为已实现能力。权威顺序：代码 > constitution > 本契约。As-built 见 [`specs/000-as-built-mcp-baseline`](../000-as-built-mcp-baseline/spec.md)。本契约是**数据平面**（账号接入、引用式 ingest、事件记录输出），不承担周报运营 UI（`004`）、注意力 onboarding（`005`）或邮箱写操作/流程执行（`006`）。事件类型与归类轴的领域含义由 [`003`](../003-semantic-context-event-intelligence/spec.md) 语义包声明；此处只约束 envelope 与隔离。
+> 代码事实：当前 `master` 已落地多账号 vault、`twinbox_accounts` / `twinbox_ingest` / `twinbox_events` 与最小可观测性；动态语义轴和事件类型由 `013` Semantic Pack 声明，不能再按本 feature 的固定六轴/三个事件类型表述为硬编码能力。真实人工金标、召回与现场运行态仍未收敛，不能表述为已实现业务效果。权威顺序：代码 > constitution > 本契约。As-built 见 [`specs/000-as-built-mcp-baseline`](../000-as-built-mcp-baseline/spec.md)。本契约是**数据平面**（账号接入、引用式 ingest、事件记录输出），不承担周报运营 UI（`004`）、注意力 onboarding（`005`）或邮箱写操作/流程执行（`006`）。事件类型与归类轴的领域含义由 [`003`](../003-semantic-context-event-intelligence/spec.md) 语义包声明；此处只约束 envelope 与隔离。
 
 **Input**: User description: "twinbox 作为 Agent OS Everything 过程数据层的邮件 adapter：公共邮箱接入、多用户集中管理与凭据加密、邮件数据以 ingest.attributes（版本化 opaque 归类轴）形式输出给平台、OS 侧只收引用不收全文、按可配置事件类型抽取（样例：周报/风险/计划变更）。"
 
@@ -34,7 +34,7 @@ Agent OS 平台调用 twinbox 的 ingest 工具，得到一批 ingest envelope�
 
 **Why this priority**: 这是 adapter 对平台的核心价值契约；在公共邮箱接入就绪后即可独立交付与验证（可先用个人测试邮箱产出 envelope）。
 
-**Independent Test**: 对一封已知内容的测试邮件调用 ingest 输出工具，断言返回结构包含引用与 attributes map、不含正文字段、摘要长度受控。
+**Independent Test**: 对声明式合成 envelope 调用 ingest 输出工具，断言返回结构包含引用与版本化 opaque attributes map、不含正文字段、摘要长度受控；真实邮件质量另走人工金标 gate。
 
 **Acceptance Scenarios**:
 
@@ -90,7 +90,7 @@ twinbox 在 ingest envelope 之上提供事件抽取：按 Semantic Pack / 配�
 - **FR-001**: System MUST support registering shared/public mailboxes alongside personal accounts, all accessed via read-only IMAP.
 - **FR-002**: System MUST produce ingest envelopes containing a stable reference (account ID + message/thread ID), bounded metadata, and a versioned `attributes` object as an opaque map/list of classification axes defined in twinbox-side config/Semantic Packs (illustrative starter axes may include person, thing, intent, urgency, sensitivity, thread — not a frozen consumer enum).
 - **FR-003**: System MUST NOT include email full text or attachment content in any platform-facing output; summaries/excerpts MUST be length-bounded.
-- **FR-004**: Classification axes and their value rules MUST be defined in twinbox-side configuration (e.g. `config/extract-profiles.yaml`) and changeable without platform-side code changes.
+- **FR-004**: Classification axes and their value rules MUST be declared in twinbox-side versioned Semantic Pack configuration (currently `config/packs/*.yaml`) and changeable without platform-side code changes or a frozen consumer enum.
 - **FR-005**: System MUST store all credentials encrypted at rest in a local vault under `~/.twinbox/`; plaintext credentials MUST NOT appear in outputs, logs, or tracked files.
 - **FR-006**: System MUST support centralized multi-account management (add/list/remove accounts) with outputs exposing only presence booleans for credentials.
 - **FR-007**: System MUST provide incremental ingest via a stable cursor (since-token), replayable and idempotent.
@@ -103,7 +103,7 @@ twinbox 在 ingest envelope 之上提供事件抽取：按 Semantic Pack / 配�
 - **MailboxAccount**: 一个已登记的邮箱（个人或公共）。属性：账号 ID、类型（personal/shared）、服务器连接参数、凭据引用（指向 vault，不含值）、同步状态。
 - **MailReference**: 平台可用的稳定引用。属性：账号 ID、message ID、thread ID、subject、sender、date、有界摘要。
 - **IngestEnvelope**: 输出给 Agent OS 的记录单元。属性：reference（MailReference）、attributes（版本化 opaque 归类图）、extracted events 链接、cursor。
-- **ClassificationAxes**: twinbox 侧配置的归类轴与取值规则集合，版本化管理；键对平台透明。
+- **ClassificationAxes**: twinbox 侧版本化 Semantic Pack 声明的归类轴与取值规则集合；键和值对平台透明，starter 示例不能演化成固定消费者枚举。
 - **CredentialVault**: 本地加密凭据存储。属性：账号 ID → 密文条目；主密钥不入库、不入追踪文件。
 - **EventRecord**: 结构化事件（类型由包声明；样例含 weekly_report / risk / plan_change）。属性：稳定事件 ID、类型、引用、抽取字段摘要、去重键。
 
@@ -122,7 +122,7 @@ twinbox 在 ingest envelope 之上提供事件抽取：按 Semantic Pack / 配�
 
 - Agent OS 侧已有 ingest 接收端，契约以 envelope 结构为准；平台不反向调用 twinbox 内部模块。
 - 公共邮箱支持 IMAP 且允许只读访问（应用专用密码或 OAuth 均可，v1 先支持应用专用密码）。
-- 归类与抽取继续复用现有 LLM 通路（`twinbox_core/llm.py`），不引入新的模型供应商。
+- 归类与抽取优先由本地 Semantic Pack 的声明式规则/分类快照驱动；任何后续 provider 必须作为 TwinBox 内部可选实现，不能改变平台的 opaque contract、授权边界或默认关闭策略。
 - v1 数据平面不包含邮箱写回；策略约束的自动转发/推进见 `006` 与 [ADR-002](../../docs/decisions/ADR-002-read-only-to-policy-governed-execution.md)，不在本契约范围。
 - 多用户集中管理的「用户」指部门管理员视角的账号管理，不含面向终端用户的权限系统。
 - 组织级周报缺交运营与注意力三投影分别见 `004` / `005`，不在本 adapter 内实现完整产品面。
