@@ -358,3 +358,107 @@ class TestLookbackAndUidvalidity(unittest.TestCase):
             self.assertEqual(result["new_envelope_ids"], [])
             self.assertEqual(embed.call_args.kwargs.get("reset_folders"), {"INBOX"})
 
+
+class _QueryImap:
+    def __init__(self, folders: dict) -> None:
+        self.folders = folders
+        self.current = ""
+        self.searches: list[tuple[str, tuple]] = []
+
+    def login(self, _user: str, _password: str):
+        return "OK", []
+
+    def logout(self):
+        return "BYE", []
+
+    def select(self, folder: str, readonly: bool = True):
+        self.current = folder
+        spec = self.folders.get(folder, {"select": "NO"})
+        return spec.get("select", "OK"), [b""]
+
+    def uid(self, command: str, *args):
+        spec = self.folders[self.current]
+        if command == "SEARCH":
+            self.searches.append((self.current, args))
+            text = " ".join("" if part is None else str(part) for part in args)
+            payload = spec.get("subject", b"") if "HEADER" in text else spec.get("date", b"")
+            return spec.get("search_status", "OK"), [payload]
+        uid_set = str(args[0])
+        rows = []
+        for uid in uid_set.split(","):
+            raw = (
+                f"Subject: weekly {uid}\r\nFrom: a@x\r\n"
+                f"Date: Tue, 15 Jul 2025 10:00:00 +0800\r\n\r\n"
+            ).encode()
+            rows.append((f"1 (UID {uid} FLAGS ())".encode(), raw))
+        return "OK", rows
+
+
+class TestFetchByQuery(unittest.TestCase):
+    def test_empty_subject_search_falls_back_to_date_window(self) -> None:
+        from datetime import date
+        from unittest import mock
+
+        from twinbox_core import imap_fetch
+
+        client = _QueryImap({"INBOX": {"select": "OK", "subject": b"", "date": b"10 11"}})
+        with mock.patch.object(imap_fetch, "_build_client", return_value=client), \
+             mock.patch("twinbox_core.config.owner_email", return_value=""), \
+             mock.patch("twinbox_core.imap_fetch.fetch_bodies_imap", return_value={}):
+            rows, errors = imap_fetch.fetch_by_query(
+                {"host": "h", "login": "a", "password": "x"},
+                ["INBOX"],
+                since=date(2025, 7, 1),
+                until=date(2025, 8, 1),
+                fetch_bodies=False,
+                subject_terms=["周报"],
+            )
+        self.assertEqual(errors, [])
+        self.assertEqual(sorted(row["id"] for row in rows), ["10", "11"])
+        kinds = ["subject" if "HEADER" in " ".join(str(p) for p in args) else "date" for _, args in client.searches]
+        self.assertEqual(kinds, ["subject", "date"])
+
+    def test_subject_hits_do_not_expand_window(self) -> None:
+        from datetime import date
+        from unittest import mock
+
+        from twinbox_core import imap_fetch
+
+        client = _QueryImap({"INBOX": {"select": "OK", "subject": b"7", "date": b"7 8 9"}})
+        with mock.patch.object(imap_fetch, "_build_client", return_value=client), \
+             mock.patch("twinbox_core.config.owner_email", return_value=""), \
+             mock.patch("twinbox_core.imap_fetch.fetch_bodies_imap", return_value={}):
+            rows, errors = imap_fetch.fetch_by_query(
+                {"host": "h", "login": "a", "password": "x"},
+                ["INBOX"],
+                since=date(2025, 7, 1),
+                until=date(2025, 8, 1),
+                fetch_bodies=False,
+                subject_terms=["weekly"],
+            )
+        self.assertEqual(errors, [])
+        self.assertEqual([row["id"] for row in rows], ["7"])
+        self.assertTrue(all("HEADER" in " ".join(str(p) for p in args) for _, args in client.searches))
+
+    def test_partial_folder_failure_keeps_successful_folder(self) -> None:
+        from datetime import date
+        from unittest import mock
+
+        from twinbox_core import imap_fetch
+
+        client = _QueryImap({
+            "Sent": {"select": "NO"},
+            "INBOX": {"select": "OK", "date": b"3"},
+        })
+        with mock.patch.object(imap_fetch, "_build_client", return_value=client), \
+             mock.patch("twinbox_core.config.owner_email", return_value=""), \
+             mock.patch("twinbox_core.imap_fetch.fetch_bodies_imap", return_value={}):
+            rows, errors = imap_fetch.fetch_by_query(
+                {"host": "h", "login": "a", "password": "x"},
+                ["Sent", "INBOX"],
+                since=date(2025, 7, 1),
+                fetch_bodies=False,
+            )
+        self.assertEqual([row["id"] for row in rows], ["3"])
+        self.assertEqual(errors, [{"folder": "Sent", "step": "select", "detail": "SELECT failed"}])
+

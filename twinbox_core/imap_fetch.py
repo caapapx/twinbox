@@ -629,9 +629,10 @@ def fetch_by_query(
 ) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     """Fetch envelopes in date range across folders; does not touch sync state.
 
-    When subject_terms is set, IMAP HEADER Subject searches are unioned first to
-    avoid fetching every message in the window (important for multi-month ranges).
-    Client-side regex/body filters still apply after headers are retrieved.
+    When subject_terms is set, IMAP HEADER Subject is an optional narrowing.
+    An empty or failed subject search falls back to the same SINCE/BEFORE window.
+    Coremail often returns no UIDs for CJK subjects even when those messages exist.
+    Callers that need reliable subject matching should omit subject_terms and filter locally.
     """
     if not folders:
         return [], [{"detail": "no folders specified"}]
@@ -661,7 +662,9 @@ def fetch_by_query(
                 for term in terms:
                     uid_set.update(_imap_search_uids(client, since=since, until=until, subject_term=term))
                 uids = sorted(uid_set)
-            else:
+            # ponytail: empty HEADER Subject re-fetches the date window (true zero-hit pays the same cost).
+            # Upgrade: trust server subject search only after a server is shown to return CJK hits.
+            if not uids:
                 status, search_data = client.uid("SEARCH", None, *criteria)
                 if status != "OK":
                     folder_errors.append({"folder": folder, "step": "search", "detail": "SEARCH failed"})

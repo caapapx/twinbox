@@ -23,6 +23,8 @@ Owners ask for mail in a past window (e.g. last week's weekly reports). Within t
 5. Empty local store is outside retention for `auto`.
 6. `until` stays exclusive. Existing result fields stay; responses add `source_used` (`local` or `imap`). Zero matches still set `result: "no_match"` with `ok: true`.
 7. `weekdays` remains a content filter. Only the `weekly_report` profile sets fri/sat/sun by default. A date-range query with no profile and no `weekdays` argument does not filter by weekday.
+8. IMAP recall for `twinbox_extract` is the date window (`SINCE` / exclusive `BEFORE`). `subject_contains` and `subject_regex` are applied locally after headers are retrieved.
+9. Server `HEADER Subject` search is not a recall path. Coremail often returns zero UIDs for CJK subjects even when matching mail exists in the window. A caller that still passes subject terms to the IMAP helper must fall back to the same date window when that search is empty or fails, without widening `until`.
 
 ## Acceptance
 
@@ -32,9 +34,12 @@ Owners ask for mail in a past window (e.g. last week's weekly reports). Within t
 - No profile and no weekdays argument leaves `weekdays` unset.
 - `weekly_report` still carries fri/sat/sun.
 - Zero matches include `result=no_match` and `ok=true`.
+- `subject_contains` on an IMAP extract does not narrow the IMAP UID search; local matching keeps only subjects that contain the term.
+- An empty IMAP `HEADER Subject` result falls back to the date window and does not drop candidates before local filtering.
 
 ## Boundaries
 
 - No new MCP tool names. No pulse refresh. No SMTP / IMAP STORE.
 - Does not invent bodies that were never sampled.
 - Does not change R1 reopen rules or pulse scoring.
+- Does not treat a server subject search as sufficient recall for CJK mail.

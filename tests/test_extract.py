@@ -248,6 +248,70 @@ class TestLocalSource(unittest.TestCase):
         fetch.assert_called_once()
         self.assertEqual(result["source_used"], "imap")
 
+    def test_imap_subject_filter_stays_local(self) -> None:
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+        from twinbox_core.extract import run_extract
+
+        rows = [
+            _env("个人周报", when=datetime(2025, 7, 15, 10, 0, tzinfo=SHANGHAI)),
+            _env("采购通知", when=datetime(2025, 7, 16, 10, 0, tzinfo=SHANGHAI)),
+        ]
+        rows[0]["folder"] = "INBOX"
+        rows[1]["folder"] = "INBOX"
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch("twinbox_core.extract.resolve_imap_config", return_value={"host": "h", "login": "a", "password": "x"}), \
+             mock.patch("twinbox_core.extract.fetch_by_query", return_value=(rows, [])) as fetch, \
+             mock.patch("twinbox_core.extract.owner_email", return_value=""):
+            result = run_extract(
+                Path(tmp),
+                ExtractCriteria(
+                    since=date(2025, 7, 1),
+                    until=date(2025, 8, 1),
+                    folders=["INBOX"],
+                    subject_contains=["周报"],
+                    fetch_bodies=False,
+                    source="imap",
+                ),
+            )
+        self.assertIsNone(fetch.call_args.kwargs.get("subject_terms"))
+        self.assertEqual(result["fetched_count"], 2)
+        self.assertEqual(result["matched_count"], 1)
+        self.assertEqual(result["reports"][0]["subject"], "个人周报")
+
+    def test_until_is_exclusive(self) -> None:
+        criteria = ExtractCriteria(since=date(2025, 7, 1), until=date(2025, 8, 1))
+        inside = _env("a", when=datetime(2025, 7, 31, 23, 0, tzinfo=SHANGHAI))
+        edge = _env("b", when=datetime(2025, 8, 1, 0, 0, tzinfo=SHANGHAI))
+        self.assertTrue(matches_envelope(inside, criteria))
+        self.assertFalse(matches_envelope(edge, criteria))
+
+    def test_empty_imap_is_no_match(self) -> None:
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+        from twinbox_core.extract import run_extract
+
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch("twinbox_core.extract.resolve_imap_config", return_value={"host": "h", "login": "a", "password": "x"}), \
+             mock.patch("twinbox_core.extract.fetch_by_query", return_value=([], [])) as fetch, \
+             mock.patch("twinbox_core.extract.owner_email", return_value=""):
+            result = run_extract(
+                Path(tmp),
+                ExtractCriteria(
+                    since=date(2025, 7, 1),
+                    folders=["INBOX"],
+                    subject_contains=["周报"],
+                    fetch_bodies=False,
+                    source="imap",
+                ),
+            )
+        fetch.assert_called_once()
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["result"], "no_match")
+        self.assertEqual(result["matched_count"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

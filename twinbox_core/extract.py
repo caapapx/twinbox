@@ -431,13 +431,14 @@ def run_extract(
         imap_cfg = resolve_imap_config(account_id)
         if not imap_cfg.get("host") or not imap_cfg.get("login"):
             return {"ok": False, "error": "IMAP not configured. Run setup first."}
+        # Date window recalls. subject_contains/regex stay in matches_envelope.
+        # IMAP HEADER Subject is not the recall path: Coremail often returns 0 for CJK.
         envelopes, folder_errors = fetch_by_query(
             imap_cfg,
             criteria.folders,
             since=criteria.since,
             until=criteria.until,
             fetch_bodies=criteria.fetch_bodies,
-            subject_terms=criteria.subject_contains or None,
         )
         if folder_errors and not envelopes:
             return {
