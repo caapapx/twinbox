@@ -27,7 +27,7 @@ from typing import Any, Callable
 from uuid import uuid4
 
 from .evidence_contract import SourceGrant
-from .weknora import MAX_EXCERPT_CHARS, WeKnoraSyncError
+from .weknora import ALLOWED_LABEL_KEYS, MAX_EXCERPT_CHARS, WeKnoraSyncError
 
 DEFAULT_TIMEOUT_SECONDS = 30.0
 _PUBLISH_STATUS = "publish"
@@ -35,6 +35,11 @@ _TWINBOX_CHANNEL = "twinbox"
 # 2026-09-21 probe: DELETE /knowledge/{id} returns 200 + task_id (async);
 # list is empty afterwards. Immediate GET may still 200.
 DEFAULT_DELETE_PATH = "/knowledge/{ref}"
+# Manual ingest historically accepts title/content/channel/status/tag_id.
+# Native multi-field metadata on manual is gated; enable only when the site
+# confirms it (env WEKNORA_METADATA_PROJECTION=true) so labels are never
+# smuggled into content.
+_METADATA_PROJECTION_ENV = "WEKNORA_METADATA_PROJECTION"
 
 # Only these parse states are admitted from the wire; anything else degrades
 # to unknown instead of inventing a ready/failed verdict.
@@ -95,7 +100,8 @@ class HttpWeKnoraProvider:
     def __init__(self, *, base_url: str, api_key: str, kb_id: str,
                  timeout: float = DEFAULT_TIMEOUT_SECONDS,
                  transport: Transport | None = None,
-                 delete_knowledge_path: str | None = None) -> None:
+                 delete_knowledge_path: str | None = None,
+                 metadata_projection: bool | None = None) -> None:
         self._base_url = base_url
         self._api_key = api_key
         self._kb_id = kb_id
@@ -103,10 +109,19 @@ class HttpWeKnoraProvider:
         self._transport = transport or _urllib_transport
         template = DEFAULT_DELETE_PATH if delete_knowledge_path is None else delete_knowledge_path
         self._delete_knowledge_path = template.strip() or DEFAULT_DELETE_PATH
+        if metadata_projection is None:
+            env = (os.environ.get(_METADATA_PROJECTION_ENV) or "").strip().lower()
+            metadata_projection = env in {"1", "true", "yes", "on"}
+        self._metadata_projection = bool(metadata_projection)
+
+    def supports_metadata_projection(self) -> bool:
+        """Whether native metadata/tag projection is enabled for this provider."""
+        return self._metadata_projection
 
     def __repr__(self) -> str:
         return (f"HttpWeKnoraProvider(base_url={self._base_url!r}, "
-                f"kb_id={self._kb_id!r}, timeout={self._timeout!r})")
+                f"kb_id={self._kb_id!r}, timeout={self._timeout!r}, "
+                f"metadata_projection={self._metadata_projection!r})")
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -147,7 +162,21 @@ class HttpWeKnoraProvider:
             return {"status": "conflict"}
         return {"status": "found", "knowledge_ref": matches[0]["id"]}
 
-    def _manual_body(self, stable_key: str, payload: Mapping[str, object]) -> dict[str, object]:
+    def _allowlisted_labels(self, payload: Mapping[str, object]) -> dict[str, str] | None:
+        raw = payload.get("labels")
+        if not isinstance(raw, Mapping):
+            return None
+        out: dict[str, str] = {}
+        for key, value in raw.items():
+            if key not in ALLOWED_LABEL_KEYS or not isinstance(value, str) or not value.strip():
+                continue
+            out[str(key)] = value.strip()[:128]
+        return out or None
+
+    def _manual_body(self, stable_key: str, payload: Mapping[str, object],
+                     *, attach_labels: bool) -> tuple[dict[str, object], list[str]]:
+        """Build the manual upsert body. Labels never enter content."""
+        diagnostics: list[str] = []
         excerpt = payload.get("excerpt")
         if isinstance(excerpt, str) and excerpt.strip():
             content: str = excerpt
@@ -159,31 +188,54 @@ class HttpWeKnoraProvider:
                 if isinstance(value, str) and value.strip():
                     lines.append(f"{field}: {value.strip()}")
             content = "\n".join(lines)
-        return {"title": stable_key, "content": content, "channel": _TWINBOX_CHANNEL,
-                "status": _PUBLISH_STATUS}
+        body: dict[str, object] = {
+            "title": stable_key,
+            "content": content,
+            "channel": _TWINBOX_CHANNEL,
+            "status": _PUBLISH_STATUS,
+        }
+        labels = self._allowlisted_labels(payload)
+        if labels is not None:
+            if attach_labels and self._metadata_projection:
+                # File ingest uses metadata as a JSON string; manual accepts the
+                # same optional field when the site has enabled projection.
+                body["metadata"] = json.dumps(labels, ensure_ascii=False, separators=(",", ":"))
+            else:
+                diagnostics.append("metadata_projection_unavailable")
+        return body, diagnostics
 
     def create_excerpt(self, scope: str, stable_key: str, payload: Mapping[str, object],
                        attempt_id: str) -> Mapping[str, object]:
-        body = self._manual_body(stable_key, payload)
-        created = self._ok("POST", f"/knowledge-bases/{self._kb_id}/knowledge/manual",
-                           {key: body[key] for key in ("title", "content", "channel")})
+        body, diagnostics = self._manual_body(stable_key, payload, attach_labels=True)
+        create_body = {key: body[key] for key in ("title", "content", "channel") if key in body}
+        if "metadata" in body:
+            create_body["metadata"] = body["metadata"]
+        created = self._ok("POST", f"/knowledge-bases/{self._kb_id}/knowledge/manual", create_body)
         ref = created.get("data", {}).get("id") if isinstance(created, Mapping) else None
         if not isinstance(ref, str) or not ref:
             raise WeKnoraSyncError("provider_response_invalid")
         published = self._ok("PUT", f"/knowledge/manual/{ref}", body)
         if not isinstance(published, Mapping):
             raise WeKnoraSyncError("provider_response_invalid")
-        return {"status": "accepted", "knowledge_ref": ref, "parse_state": "pending"}
+        result: dict[str, object] = {
+            "status": "accepted", "knowledge_ref": ref, "parse_state": "pending",
+        }
+        if diagnostics:
+            result["diagnostics"] = diagnostics
+        return result
 
     def update_excerpt(self, scope: str, knowledge_ref: str, expected_hash: str,
                        payload: Mapping[str, object]) -> Mapping[str, object]:
         title = payload.get("stable_title_key")
         stable_key = title if isinstance(title, str) and title else knowledge_ref
-        updated = self._ok("PUT", f"/knowledge/manual/{knowledge_ref}",
-                           self._manual_body(stable_key, payload))
+        body, diagnostics = self._manual_body(stable_key, payload, attach_labels=True)
+        updated = self._ok("PUT", f"/knowledge/manual/{knowledge_ref}", body)
         if not isinstance(updated, Mapping):
             raise WeKnoraSyncError("provider_response_invalid")
-        return {"status": "accepted", "parse_state": "pending"}
+        result: dict[str, object] = {"status": "accepted", "parse_state": "pending"}
+        if diagnostics:
+            result["diagnostics"] = diagnostics
+        return result
 
     def get_parse_status(self, scope: str, knowledge_ref: str) -> Mapping[str, object]:
         code, parsed = self._call("GET", f"/knowledge/{knowledge_ref}")
@@ -241,7 +293,8 @@ class HttpWeKnoraProvider:
 def build_http_provider(*, base_url: str | None = None, api_key: str | None = None,
                         kb_id: str | None = None, timeout: float = DEFAULT_TIMEOUT_SECONDS,
                         transport: Transport | None = None,
-                        delete_knowledge_path: str | None = None) -> HttpWeKnoraProvider:
+                        delete_knowledge_path: str | None = None,
+                        metadata_projection: bool | None = None) -> HttpWeKnoraProvider:
     """Build a live provider from explicit args or standard environment.
 
     Raises WeKnoraSyncError (never returns a half-configured provider) when
@@ -260,7 +313,8 @@ def build_http_provider(*, base_url: str | None = None, api_key: str | None = No
         resolved_delete = (os.environ.get("WEKNORA_DELETE_PATH") or "").strip() or None
     return HttpWeKnoraProvider(base_url=resolved_base, api_key=resolved_key, kb_id=resolved_kb,
                                timeout=timeout, transport=transport,
-                               delete_knowledge_path=resolved_delete)
+                               delete_knowledge_path=resolved_delete,
+                               metadata_projection=metadata_projection)
 
 
 def live_authorized(*, settings: Mapping[str, object], grant: SourceGrant,

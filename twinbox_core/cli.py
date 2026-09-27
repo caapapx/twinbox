@@ -186,11 +186,19 @@ def _recovery_hint(tool: str, msg: str) -> dict[str, Any]:
 
 # --- Commands ---
 
-def cmd_setup() -> dict[str, Any]:
-    from .config import resolve_imap_config, setup_from_env
+def cmd_setup(weknora_enabled: str | None = None) -> dict[str, Any]:
+    from .config import resolve_imap_config, set_weknora_enabled, setup_from_env, weknora_choice_required
     from .imap_fetch import preflight
 
     result = setup_from_env()
+    if weknora_enabled is not None:
+        choice = weknora_enabled.strip().lower()
+        if choice not in {"true", "false", "on", "off", "yes", "no"}:
+            return {"ok": False, "error": "weknora_choice_invalid"}
+        result["weknora"] = set_weknora_enabled(choice in {"true", "on", "yes"})
+    pending = weknora_choice_required()
+    if pending:
+        result["required_actions"] = [pending]
     imap_cfg = resolve_imap_config()
     pf = preflight(imap_cfg)
     result["preflight"] = pf
@@ -1182,6 +1190,9 @@ def cmd_weknora(
     root = _account_root(aid)
     action = remaining[0] if remaining and not remaining[0].startswith("--") else "status"
     args = remaining[1:] if remaining and not remaining[0].startswith("--") else remaining
+    if action in {"enable", "disable"}:
+        from .config import set_weknora_enabled
+        return {"ok": True, "data": set_weknora_enabled(action == "enable")}
     settings = get_weknora_config()
     if action == "status":
         diagnostics = sync_diagnostics(root)
@@ -1260,7 +1271,8 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         if cmd == "setup":
-            result = cmd_setup()
+            weknora_enabled, remaining = _parse_flag(remaining, "--weknora-enabled")
+            result = cmd_setup(weknora_enabled)
         elif cmd == "sync":
             job = "daytime-sync"
             for i, a in enumerate(remaining):

@@ -63,6 +63,32 @@ def get_weknora_config() -> dict[str, bool]:
     }
 
 
+def weknora_choice_required(cfg: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    """Return the init prompt when the owner has not chosen the retrieval switch."""
+    raw = (cfg if cfg is not None else load_config()).get("weknora")
+    if isinstance(raw, dict) and isinstance(raw.get("enabled"), bool):
+        return None
+    return {
+        "id": "weknora_enabled",
+        "required": True,
+        "prompt": "是否启用 WeKnora 检索副本？初始化必须选择开启或关闭，之后可用同一开关改。",
+        "enable": "weknora enable",
+        "disable": "weknora disable",
+    }
+
+
+def set_weknora_enabled(enabled: bool) -> dict[str, bool]:
+    """Persist the owner-controlled retrieval switch. This does not sync mail."""
+    cfg = load_config()
+    raw = cfg.get("weknora")
+    if not isinstance(raw, dict):
+        raw = {}
+    raw["enabled"] = bool(enabled)
+    cfg["weknora"] = raw
+    save_config(cfg)
+    return {"enabled": raw["enabled"]}
+
+
 def mask_secret(value: str) -> str:
     if len(value) < 6:
         return "***"

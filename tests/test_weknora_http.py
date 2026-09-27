@@ -121,6 +121,50 @@ def test_create_posts_manual_then_publishes():
     assert transport.calls[1]["body"]["title"] == "scope-a::account-a::mail-a"
 
 
+def test_labels_not_smuggled_into_content_when_projection_disabled():
+    transport = FakeTransport()
+    transport.routes[("POST", f"/knowledge-bases/{KB}/knowledge/manual")] = (200, {"data": {"id": "doc-9"}})
+    transport.routes[("PUT", "/knowledge/manual/doc-9")] = (200, {"data": {"id": "doc-9"}})
+    provider = _provider(transport, metadata_projection=False)
+    result = provider.create_excerpt(
+        "scope-a", "stable-key",
+        {"excerpt": "hello body", "labels": {
+            "schema_version": "1", "project_ref": "SZPT", "event_slot": "acceptance_report",
+            "source_kind": "email", "classification_coverage": "known",
+        }},
+        "attempt-1",
+    )
+    assert result["status"] == "accepted"
+    assert result["diagnostics"] == ["metadata_projection_unavailable"]
+    assert transport.calls[0]["body"]["content"] == "hello body"
+    assert "metadata" not in transport.calls[0]["body"]
+    assert "SZPT" not in transport.calls[0]["body"]["content"]
+    assert "metadata" not in transport.calls[1]["body"]
+
+
+def test_labels_sent_as_native_metadata_when_projection_enabled():
+    transport = FakeTransport()
+    transport.routes[("POST", f"/knowledge-bases/{KB}/knowledge/manual")] = (200, {"data": {"id": "doc-9"}})
+    transport.routes[("PUT", "/knowledge/manual/doc-9")] = (200, {"data": {"id": "doc-9"}})
+    provider = _provider(transport, metadata_projection=True)
+    labels = {
+        "schema_version": "1", "project_ref": "SZPT", "event_slot": "acceptance_report",
+        "source_kind": "email", "classification_coverage": "known", "waiting_on": "drop",
+    }
+    result = provider.create_excerpt(
+        "scope-a", "stable-key",
+        {"excerpt": "hello body", "labels": labels},
+        "attempt-1",
+    )
+    assert result == {"status": "accepted", "knowledge_ref": "doc-9", "parse_state": "pending"}
+    assert "diagnostics" not in result
+    meta = json.loads(transport.calls[1]["body"]["metadata"])
+    assert meta["project_ref"] == "SZPT"
+    assert meta["event_slot"] == "acceptance_report"
+    assert "waiting_on" not in meta
+    assert transport.calls[1]["body"]["content"] == "hello body"
+
+
 def test_create_timeout_and_forbidden_mapping():
     transport = FakeTransport()
     transport.routes[("POST", f"/knowledge-bases/{KB}/knowledge/manual")] = TimeoutError("provider_timeout")

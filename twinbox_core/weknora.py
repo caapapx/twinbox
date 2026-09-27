@@ -28,8 +28,29 @@ from uuid import uuid4
 from .evidence_contract import MAX_PAYLOAD_BYTES, SourceGrant
 
 SCHEMA_VERSION = "1.0"
+LABEL_SCHEMA_VERSION = "1"
 MAX_EXCERPT_CHARS = 512
 MAX_JOURNAL_ENTRIES = 200
+ALLOWED_LABEL_KEYS = frozenset({
+    "schema_version",
+    "project_ref",
+    "event_slot",
+    "source_kind",
+    "date",
+    "classification_coverage",
+})
+_FORBIDDEN_LABEL_KEYS = frozenset({
+    "waiting_on",
+    "status",
+    "queue_tags",
+    "axes",
+    "tags",
+    "why",
+    "action_hint",
+    "projection",
+    "inferred_excerpt",
+    "primary_event_type",  # mapped to event_slot; raw key must not leak
+})
 
 
 class WeKnoraSyncError(ValueError):
@@ -164,6 +185,51 @@ def _bounded_text(value: object, *, limit: int, reason: str) -> str:
     return value[:limit]
 
 
+def project_classification_labels(classification: object | None = None, *,
+                                  date: object = None,
+                                  source_kind: str = "email") -> dict[str, str]:
+    """Project TwinBox classification into versioned allowlisted retrieval labels.
+
+    TwinBox remains the classification authority.  Missing or unknown input
+    yields ``classification_coverage=unknown`` without guessing.  Forbidden
+    dynamic fields (waiting_on, queue state, LLM conclusions) are dropped.
+    """
+    labels: dict[str, str] = {
+        "schema_version": LABEL_SCHEMA_VERSION,
+        "source_kind": _bounded_text(source_kind, limit=32, reason="source_kind_invalid") or "email",
+        "classification_coverage": "unknown",
+    }
+    date_text = _bounded_text(date, limit=64, reason="date_invalid")
+    if date_text:
+        labels["date"] = date_text
+
+    if classification is None:
+        return labels
+    if not isinstance(classification, Mapping):
+        raise WeKnoraSyncError("classification_invalid")
+
+    projects = classification.get("project_ref")
+    if isinstance(projects, str) and projects.strip():
+        labels["project_ref"] = projects.strip()[:128]
+
+    slot = classification.get("event_slot")
+    if not (isinstance(slot, str) and slot.strip()):
+        slot = classification.get("primary_event_type")
+    if isinstance(slot, str) and slot.strip():
+        labels["event_slot"] = slot.strip()[:128]
+
+    coverage = classification.get("classification_coverage")
+    if coverage in {"known", "unknown"}:
+        labels["classification_coverage"] = coverage
+    elif labels.get("project_ref") or labels.get("event_slot"):
+        labels["classification_coverage"] = "known"
+
+    # Explicitly ignore forbidden keys even if a caller stuffed them in.
+    for key in _FORBIDDEN_LABEL_KEYS:
+        labels.pop(key, None)
+    return {key: value for key, value in labels.items() if key in ALLOWED_LABEL_KEYS}
+
+
 def _mapping_id(scope_id: str, mail_ref: str) -> str:
     digest = hashlib.sha256(f"{scope_id}\0{mail_ref}".encode("utf-8")).hexdigest()[:32]
     return f"map_{digest}"
@@ -210,8 +276,9 @@ def build_sync_payload(grant: SourceGrant, source: object) -> dict[str, Any]:
     """Build the strict, bounded outbound payload from trusted source content.
 
     ``original_excerpt`` is intentionally the only field eligible to become an
-    external excerpt.  Existing classification/LLM projection fields are not
-    copied, even when they are included by a caller.
+    external excerpt.  Existing LLM / queue / waiting_on fields are not copied.
+    Optional versioned ``labels`` come only from
+    :func:`project_classification_labels` and never alter the stable title key.
     """
     scope_id, account_ref, mail_ref = _source_identity(grant, source)
     assert isinstance(source, dict)  # narrowed by _source_identity
@@ -225,6 +292,18 @@ def build_sync_payload(grant: SourceGrant, source: object) -> dict[str, Any]:
         "thread_key": _bounded_text(source.get("thread_key"), limit=256, reason="thread_key_invalid"),
         "has_excerpt": bool(excerpt),
     }
+    raw_labels = source.get("labels")
+    if raw_labels is not None:
+        if not isinstance(raw_labels, Mapping):
+            raise WeKnoraSyncError("labels_invalid")
+        labels = project_classification_labels(raw_labels, date=raw_labels.get("date") or metadata["date"])
+    elif source.get("classification_labels") is not None:
+        labels = project_classification_labels(
+            source.get("classification_labels"),
+            date=metadata["date"],
+        )
+    else:
+        labels = None
     payload: dict[str, Any] = {
         "channel": "twinbox",
         "source": {"scope_id": scope_id, "mail_ref": mail_ref},
@@ -232,6 +311,8 @@ def build_sync_payload(grant: SourceGrant, source: object) -> dict[str, Any]:
         "metadata": metadata,
         "excerpt": excerpt or None,
     }
+    if labels is not None:
+        payload["labels"] = labels
     try:
         encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode("utf-8")
     except (TypeError, ValueError, UnicodeError):

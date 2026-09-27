@@ -11,7 +11,14 @@
 
 ## Ingest allowlist
 `channel=twinbox`、opaque source scope/mail_ref、稳定title key、subject/from/date、folder/thread_key定位、bounded original excerpt（<=512字符，且整个payload<=32KiB）。身份与修订hash可存在本地映射，远端仅必要identity字段。
-禁止queue_tags、projection、业务type/axes/tags、Pack内容、why/action_hint、LLM输出、full body、eml、MIME、附件、向量或密钥。运营“归档”只表示建立检索副本，不移动或标记邮箱。
+
+可选 **labels 投影**（版本化白名单，进 payload 的 `labels`，计入 hash，不进 stable title key）：
+- 允许：`project_ref`、`event_slot`、`source_kind`、`date`、`classification_coverage`（`known`|`unknown`）、`schema_version`
+- 禁止：queue_tags、waiting_on、status、axes 全量、业务 type/tags 任意扩张、Pack内容、why/action_hint、LLM输出、full body、eml、MIME、附件、向量或密钥
+- 映射：`scope_id`/`account_ref`/`mail_ref` = 身份与授权；labels = 可更新检索辅助；当前待办与 live_status 仍只在 TwinBox join
+- 现场 provider 须用原生 metadata/tag；不支持则 excerpt 仍可同步，但返回 `metadata_projection_unavailable`，**禁止**把标签拼进 content
+
+运营“归档”只表示建立检索副本，不移动或标记邮箱。
 源原文excerpt必须独立于旧ingest的推断excerpt构造，按授权过滤和字符边界截断；无授权原文则只传允许的元数据并标无excerpt，不以推断补造原文。
 
 ## Identity / Mapping

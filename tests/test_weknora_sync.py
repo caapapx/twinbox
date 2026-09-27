@@ -19,6 +19,7 @@ from twinbox_core.weknora import (
     WeKnoraSyncError,
     build_sync_payload,
     load_sync_state,
+    project_classification_labels,
     revoke_excerpt,
     search_excerpts,
     sync_excerpt,
@@ -377,3 +378,84 @@ def test_revoke_hides_before_delete_and_delete_failure_never_restores_visibility
     assert deleted == {"status": "deleted"}
     assert len(provider.deletes) == 2
     assert next(iter(load_sync_state(tmp_path)["mappings"].values()))["sync_state"] == "deleted"
+
+
+def test_weknora_switch_is_required_until_chosen(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("TWINBOX_STATE_ROOT", str(tmp_path))
+    from twinbox_core.config import set_weknora_enabled, weknora_choice_required
+
+    assert weknora_choice_required()["required"] is True
+    assert set_weknora_enabled(False) == {"enabled": False}
+    assert weknora_choice_required() is None
+    assert set_weknora_enabled(True) == {"enabled": True}
+
+
+def test_project_classification_labels_allowlist_and_unknown():
+    unknown = project_classification_labels(None)
+    assert unknown["classification_coverage"] == "unknown"
+    assert unknown["source_kind"] == "email"
+    assert set(unknown) <= {
+        "schema_version", "source_kind", "date", "project_ref", "event_slot", "classification_coverage",
+    }
+
+    labeled = project_classification_labels(
+        {
+            "project_ref": "SZPT",
+            "primary_event_type": "acceptance_report",
+            "waiting_on": "must-not-leave",
+            "queue_tags": ["watch"],
+            "axes": {"x": 1},
+            "why": "llm",
+        },
+        date="2026-09-23",
+    )
+    assert labeled["project_ref"] == "SZPT"
+    assert labeled["event_slot"] == "acceptance_report"
+    assert labeled["date"] == "2026-09-23"
+    assert labeled["classification_coverage"] == "known"
+    dumped = json.dumps(labeled, ensure_ascii=False)
+    assert "waiting_on" not in dumped
+    assert "queue_tags" not in dumped
+    assert "why" not in dumped
+    assert "primary_event_type" not in dumped
+
+
+def test_payload_labels_are_opt_in_and_hashed_for_update(tmp_path: Path):
+    base = _source()
+    without = build_sync_payload(_grant(), base)
+    assert "labels" not in without
+    assert "classification" not in json.dumps(without, ensure_ascii=False)
+
+    with_labels = build_sync_payload(
+        _grant(),
+        {
+            **base,
+            "classification_labels": {
+                "project_ref": "TG01",
+                "event_slot": "plan_final",
+                "waiting_on": "drop-me",
+            },
+        },
+    )
+    assert with_labels["labels"]["project_ref"] == "TG01"
+    assert with_labels["labels"]["event_slot"] == "plan_final"
+    assert "waiting_on" not in with_labels["labels"]
+    assert without["stable_title_key"] == with_labels["stable_title_key"]
+
+    provider = FakeProvider()
+    first = sync_excerpt(tmp_path, provider, _grant(), {
+        **base,
+        "classification_labels": {"project_ref": "TG01", "event_slot": "plan_final"},
+    })
+    assert first["status"] == "created"
+    assert provider.creates[0][2]["labels"]["project_ref"] == "TG01"
+
+    second = sync_excerpt(tmp_path, provider, _grant(), {
+        **base,
+        "classification_labels": {"project_ref": "TG01", "event_slot": "plan_change"},
+    })
+    assert second["status"] == "updated"
+    assert len(provider.creates) == 1
+    assert len(provider.updates) == 1
+    assert provider.updates[0][3]["labels"]["event_slot"] == "plan_change"
+    assert provider.updates[0][1] == "knowledge-1"

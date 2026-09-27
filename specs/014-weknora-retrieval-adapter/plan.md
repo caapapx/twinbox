@@ -5,7 +5,7 @@
 **Status**: 本地 W0–W2 已实现并经 fake-provider 验证（2026-09-20）；真实 WeKnora 对接、KB写入、人工金标评测与发布仍为独立 gate，未开始。
 
 ## Summary
-在现有 sidecar 检索外新增默认关闭的薄适配器。坚持专用KB、原文有界摘录、KB零业务派生字段、来源隔离、幂等对账和可回退。长期分类索引来自013，不依赖短期pulse代替长期档案。
+在现有 sidecar 检索外新增默认关闭的薄适配器。坚持专用KB、原文有界摘录、单 KB + 版本化白名单标签投影（非多库拆分）、来源隔离、幂等对账和可回退。长期分类索引来自013，不依赖短期pulse代替长期档案。动态待办/LLM 结论仍禁止入库；`project_ref`/`event_slot`/`source_kind`/`date`/`classification_coverage` 可作为可重算检索标签投影到同一文档。
 
 ## Technical Context
 - **Language/Version**: Python >=3.11；复用现有HTTP与配置习惯，不引入重型检索框架。
@@ -49,7 +49,7 @@ API 401/403/解析失败/超时分别诊断；同授权sidecar可继续，不能
 - **Rollback** 按账户关闭WeKnora开关，保留sidecar；暂停上传不等于清除既有数据，按批准保留策略另行执行带审计的删除。回滚演练必须验证原邮件分析可用。
 
 ## Complexity Tracking
-无新向量存储/服务编排。拒绝把queue_tags、业务标签、LLM结论复制进KB；拒绝因WeKnora引入第二分类真相源。新增运维工作必须计入ROI。
+无新向量存储/服务编排。拒绝把 queue_tags、waiting_on、LLM结论、pulse/queue 状态复制进KB；允许版本化白名单检索标签投影，拒绝因WeKnora引入第二分类真相源或多 KB 按槽位拆库。标签变化 update 同一 knowledge_ref；现场不支持原生 metadata/tag 时安全降级，不拼进正文。新增运维工作必须计入ROI。
 
 ## Independent delivery and value selection — 2026-09-18
 

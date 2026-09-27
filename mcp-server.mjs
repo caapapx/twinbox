@@ -468,8 +468,19 @@ const TOOLS = [
     name: "twinbox_setup",
     description:
       "Initial setup: validate IMAP from env vars, import LLM from OpenClaw host. " +
-      "Call once after deployment. Chinese: 初始化、配置邮箱.",
-    inputSchema: { type: "object", additionalProperties: false, properties: {} },
+      "Required choice: weknora_enabled true or false. Later calls with the same field change the switch. " +
+      "Chinese: 初始化、配置邮箱；必须选择是否启用 WeKnora 检索副本.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        weknora_enabled: {
+          type: "boolean",
+          description: "Required on first setup. true enables the WeKnora retrieval copy; false keeps it off. Pass again later to change the switch.",
+        },
+      },
+      required: ["weknora_enabled"],
+    },
   },
   {
     name: "twinbox_onboard",
@@ -693,7 +704,11 @@ async function handleToolCall(request) {
     }
 
     case "twinbox_setup": {
-      const r = await runCli(["setup", "--json"]);
+      const cliArgs = ["setup", "--json"];
+      if (typeof args?.weknora_enabled === "boolean") {
+        cliArgs.push("--weknora-enabled", args.weknora_enabled ? "true" : "false");
+      }
+      const r = await runCli(cliArgs);
       return makeResult(r);
     }
 
