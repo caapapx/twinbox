@@ -156,21 +156,78 @@ def _header_text(msg: Any, name: str) -> str:
         return ""
 
 
+_CHARSET_ALIASES = {
+    "gbk": "gb18030",
+    "gb2312": "gb18030",
+    "gb_2312": "gb18030",
+    "gb_2312-80": "gb18030",
+    "csgb2312": "gb18030",
+    "cs_gb2312": "gb18030",
+    "cp936": "gb18030",
+    "ms936": "gb18030",
+    "windows-936": "gb18030",
+    "x-gbk": "gb18030",
+}
+
+
+def _normalize_charset(charset: str | None) -> str | None:
+    if not charset:
+        return None
+    key = str(charset).strip().lower().strip("\"'")
+    if not key or key in {"unknown-8bit", "binary", "default"}:
+        return None
+    return _CHARSET_ALIASES.get(key, key)
+
+
+def _cjk_score(text: str) -> int:
+    """Prefer decodes that yield CJK over replacement-heavy mojibake."""
+    if not text:
+        return 0
+    cjk = sum(1 for ch in text if "\u4e00" <= ch <= "\u9fff")
+    bad = text.count("\ufffd") + sum(1 for ch in text if ch == "?")
+    return cjk * 4 - bad * 3
+
+
 def _decode_charset(raw: bytes, charset: str | None) -> tuple[str, str]:
+    """Decode body bytes to str; try declared charset then CJK-safe fallbacks.
+
+    ``imaplib`` / MIME often label GBK as gb2312/gbk/cp936; we normalize those to
+    gb18030. When the label is wrong (e.g. us-ascii/latin-1 on 8-bit Chinese
+    mail), pick the candidate with the best CJK score instead of mojibake.
+    """
+    if not raw:
+        return "", _normalize_charset(charset) or ""
+    declared = _normalize_charset(charset)
+    # latin-1/us-ascii always "succeed" on 8-bit bytes but yield mojibake for GBK.
+    weak_declared = declared in {"latin-1", "iso-8859-1", "us-ascii", "ascii", "ansi_x3.4-1968"}
     candidates: list[str] = []
-    if charset:
-        candidates.append(str(charset))
-    candidates.extend(["utf-8", "gb18030", "gb2312", "big5", "latin-1"])
+    if declared and not weak_declared:
+        candidates.append(declared)
+    if any(b >= 0x80 for b in raw):
+        candidates.extend(["utf-8", "gb18030", "big5", "latin-1"])
+    else:
+        candidates.extend(["utf-8", "ascii", "latin-1"])
+    if declared and weak_declared:
+        candidates.append(declared)
     seen: set[str] = set()
+    best: tuple[str, str, int] | None = None
     for enc in candidates:
         key = enc.lower().strip()
         if not key or key in seen:
             continue
         seen.add(key)
         try:
-            return raw.decode(key), key
+            text = raw.decode(key)
         except (LookupError, UnicodeDecodeError):
             continue
+        score = _cjk_score(text)
+        if best is None or score > best[2]:
+            best = (text, key, score)
+        # Trust a clean declared-charset hit (never for weak 8-bit labels).
+        if declared and key == declared and not weak_declared and "\ufffd" not in text:
+            return text, key
+    if best is not None:
+        return best[0], best[1]
     return raw.decode("utf-8", errors="replace"), "utf-8/replace"
 
 
@@ -471,22 +528,39 @@ def _imap_search_uids(
     until: date | None,
     subject_term: str | None = None,
 ) -> list[int]:
-    """Run UID SEARCH for date window, optionally narrowing by Subject header."""
+    """Run UID SEARCH for date window, optionally narrowing by Subject header.
+
+    stdlib ``imaplib`` defaults ``_encoding`` to ASCII, so a Chinese subject in
+    ``UID SEARCH`` raises ``UnicodeEncodeError`` even when CHARSET UTF-8 is set.
+    Temporarily switch the wire encoding for non-ASCII terms.
+    """
     criteria: list[str] = ["SINCE", _imap_date(since)]
     if until is not None:
         criteria.extend(["BEFORE", _imap_date(until)])
     if subject_term:
         criteria.extend(["HEADER", "Subject", subject_term])
 
+    needs_utf8 = bool(subject_term) and any(ord(ch) > 127 for ch in subject_term)
     # Prefer UTF-8 for CJK subject terms; fall back to default charset.
-    for charset in ("UTF-8", None):
+    attempts: list[str | None] = ["UTF-8", None] if needs_utf8 else [None, "UTF-8"]
+    previous = getattr(client, "_encoding", "ascii")
+    for charset in attempts:
         try:
+            if needs_utf8:
+                client._encoding = "utf-8"
             if charset:
                 status, search_data = client.uid("SEARCH", charset, *criteria)
             else:
                 status, search_data = client.uid("SEARCH", None, *criteria)
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            continue
         except Exception:
             continue
+        finally:
+            try:
+                client._encoding = previous
+            except Exception:
+                pass
         if status == "OK":
             return _decode_uid_list(search_data)
     return []

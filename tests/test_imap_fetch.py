@@ -394,6 +394,36 @@ class _QueryImap:
         return "OK", rows
 
 
+class TestImapSearchEncoding(unittest.TestCase):
+    def test_chinese_subject_does_not_crash_ascii_wire_encoding(self) -> None:
+        from datetime import date
+
+        from twinbox_core.imap_fetch import _imap_search_uids
+
+        class _Client:
+            def __init__(self) -> None:
+                self._encoding = "ascii"
+                self.seen_encodings: list[str] = []
+
+            def uid(self, command, *args):
+                self.seen_encodings.append(self._encoding)
+                for arg in args:
+                    if isinstance(arg, str):
+                        arg.encode(self._encoding)
+                return "OK", [b"1486"]
+
+        client = _Client()
+        uids = _imap_search_uids(
+            client,  # type: ignore[arg-type]
+            since=date(2025, 7, 1),
+            until=date(2025, 8, 1),
+            subject_term="周报",
+        )
+        self.assertEqual(uids, [1486])
+        self.assertIn("utf-8", client.seen_encodings)
+        self.assertEqual(client._encoding, "ascii")
+
+
 class TestFetchByQuery(unittest.TestCase):
     def test_empty_subject_search_falls_back_to_date_window(self) -> None:
         from datetime import date

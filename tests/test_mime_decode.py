@@ -30,6 +30,15 @@ class TestMimeDecode(unittest.TestCase):
         names = [a["filename"] for a in decoded["attachments"]]
         self.assertTrue(any("note" in n for n in names))
 
+    def test_gbk_mislabelled_as_latin1_still_readable(self) -> None:
+        from twinbox_core.imap_fetch import _decode_charset
+
+        raw = "请各位领导审阅同步方案。".encode("gbk")
+        text, enc = _decode_charset(raw, "latin-1")
+        self.assertIn("领导", text)
+        self.assertIn("同步", text)
+        self.assertEqual(enc, "gb18030")
+
     def test_html_only(self) -> None:
         msg = EmailMessage()
         msg["Subject"] = "html"
