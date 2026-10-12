@@ -148,6 +148,7 @@ The server listens on stdio and speaks MCP. Baseline tools stay stable; accounts
 | `twinbox_ingest`           | 引用式 ingest（无正文）              |
 | `twinbox_events`           | 事件记录                         |
 | `twinbox_draft_send`       | 起草待发邮件：本地 .eml + 预览 + 一次性 confirmation_token（不发送） |
+| `twinbox_save_draft`       | 把本地草稿 IMAP APPEND 到邮箱 `Drafts`（`\\Draft`，Message-ID 去重；不发送，不需 token） |
 | `twinbox_send`             | **真实发信**：需 confirm=true + token + `TWINBOX_SEND_ENABLED=1`；SMTP 后 APPEND 到 Sent Items 并按 Message-ID 去重校验 |
 
 ### Outbound mail（发信，默认关闭）

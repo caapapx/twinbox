@@ -143,8 +143,8 @@ async function main() {
     }
 
     const sendTool = tools.find((tool) => tool.name === "twinbox_send");
-    if (!tools.find((tool) => tool.name === "twinbox_draft_send") || !sendTool) {
-      throw new Error("twinbox_draft_send and twinbox_send must be listed");
+    if (!tools.find((tool) => tool.name === "twinbox_draft_send") || !tools.find((tool) => tool.name === "twinbox_save_draft") || !sendTool) {
+      throw new Error("twinbox_draft_send, twinbox_save_draft and twinbox_send must be listed");
     }
     if (!(sendTool.inputSchema?.required || []).includes("confirm") || !/REAL EMAIL/.test(sendTool.description)) {
       throw new Error("twinbox_send must require confirm and warn that it sends real email");

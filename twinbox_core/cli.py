@@ -21,6 +21,7 @@ Commands:
   semantics    — dynamic classification catalog/case projections
   feedback     — authorized correction/confirmation/execution receipt
   draft-send   — build a local RFC822 draft + preview (never sends)
+  draft-save   — IMAP APPEND a local draft to mailbox Drafts (never sends)
   send         — send a draft (requires --confirm + token + TWINBOX_SEND_ENABLED)
   weknora     — local diagnostics / gated sync / revoke (hide then delete)
 """
@@ -1279,6 +1280,8 @@ def cmd_send(cmd: str, remaining: list[str]) -> dict[str, Any]:
                 subject=one("--subject"), plain=text_arg("--text"), html=text_arg("--html"),
                 from_name=one("--from-name"),
             )
+        if cmd == "draft-save":
+            return outbound.save_draft_to_mailbox(one("--draft-id"))
         if cmd == "draft-get":
             return outbound.get_draft(one("--draft-id"))
         return outbound.send_draft(
@@ -1355,7 +1358,7 @@ def main(argv: list[str] | None = None) -> int:
             result = cmd_feedback(remaining, account_id=account_id)
         elif cmd == "weknora":
             result = cmd_weknora(remaining, account_id=account_id)
-        elif cmd in ("draft-send", "send", "draft-get"):
+        elif cmd in ("draft-send", "send", "draft-get", "draft-save"):
             result = cmd_send(cmd, remaining)
         elif cmd == "schedule":
             sub = remaining[0] if remaining else ""

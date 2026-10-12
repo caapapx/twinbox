@@ -183,3 +183,17 @@ def test_cli_send_requires_confirm_flag(env, capsys):
     d = _draft()
     rc = cli.main(["send", "--json", "--draft-id", d["draft_id"], "--confirmation-token", d["confirmation_token"]])
     assert rc == 1 and json.loads(capsys.readouterr().out)["error"] == "confirmation_required"
+
+
+def test_save_draft_appends_to_drafts_and_never_sends(env, monkeypatch):
+    monkeypatch.delenv("TWINBOX_SEND_ENABLED", raising=False)
+    d = _draft()
+    r = outbound.save_draft_to_mailbox(d["draft_id"])
+    assert r["ok"], r
+    assert FakeSMTP.instances == []
+    folder, flags, _date, raw = FakeIMAP.appends[0]
+    assert folder == '"Drafts"' and flags == r"(\Draft)" and raw == Path(d["eml_path"]).read_bytes()
+    assert r["data"]["drafts"]["verified"] is True
+    again = outbound.save_draft_to_mailbox(d["draft_id"])
+    assert again["data"]["drafts"]["already_present"] is True and len(FakeIMAP.appends) == 1
+    assert outbound.save_draft_to_mailbox("nope")["error"] == "draft_not_found"

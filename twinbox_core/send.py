@@ -40,6 +40,7 @@ from .config import load_config, state_root
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 TOKEN_TTL_SECONDS = 30 * 60
 DEFAULT_SENT_FOLDER = "Sent Items"
+DEFAULT_DRAFTS_FOLDER = "Drafts"
 _DRAFT_ID_RE = re.compile(r"^d[0-9a-f]{20}$")
 
 
@@ -340,9 +341,23 @@ def _imap_has_message_id(conn, folder: str, message_id: str) -> bool:
     return typ == "OK" and bool(data and data[0] and data[0].split())
 
 
+def drafts_folder() -> str:
+    return str(os.environ.get("TWINBOX_DRAFTS_FOLDER") or _send_settings().get("drafts_folder") or DEFAULT_DRAFTS_FOLDER)
+
+
 def append_to_sent(creds: dict[str, Any], raw: bytes, message_id: str, date_hdr: str) -> dict[str, Any]:
+    return _imap_append(creds, raw, message_id, date_hdr, sent_folder(), r"(\Seen)")
+
+
+def _date_header(raw: bytes) -> str:
+    for line in raw.split(b"\r\n\r\n", 1)[0].replace(b"\r\n", b"\n").split(b"\n"):
+        if line.lower().startswith(b"date:"):
+            return line[5:].decode().strip()
+    return ""
+
+
+def _imap_append(creds: dict[str, Any], raw: bytes, message_id: str, date_hdr: str, folder: str, flags: str) -> dict[str, Any]:
     imap = creds["imap"]
-    folder = sent_folder()
     conn = _imap_connect(imap)
     try:
         conn.login(imap["login"], _resolve_secret(imap["auth"]))
@@ -353,17 +368,35 @@ def append_to_sent(creds: dict[str, Any], raw: bytes, message_id: str, date_hdr:
                 internal = imaplib.Time2Internaldate(parsedate_to_datetime(date_hdr).timestamp())
             except Exception:
                 internal = imaplib.Time2Internaldate(time.time())
-            typ, _ = conn.append(_mailbox_arg(folder), r"(\Seen)", internal, raw)
+            typ, _ = conn.append(_mailbox_arg(folder), flags, internal, raw)
             if typ != "OK":
-                raise SendError("sent_append_failed")
+                raise SendError("imap_append_failed")
             appended = True
         verified = _imap_has_message_id(conn, folder, message_id)
-        return {"sent_folder": folder, "appended": appended, "already_present": already, "verified": verified}
+        return {"folder": folder, "sent_folder": folder, "appended": appended, "already_present": already, "verified": verified}
     finally:
         try:
             conn.logout()
         except Exception:
             pass
+
+
+def save_draft_to_mailbox(draft_id: str) -> dict[str, Any]:
+    """IMAP APPEND a local draft to the mailbox Drafts folder (\\Draft). Never sends mail."""
+    if not _DRAFT_ID_RE.match(draft_id or "") or not _meta_path(draft_id).exists():
+        return {"ok": False, "error": "draft_not_found"}
+    meta = json.loads(_meta_path(draft_id).read_text(encoding="utf-8"))
+    raw = Path(meta["eml_path"]).read_bytes()
+    creds = load_mail_credentials(meta.get("from_addr"))
+    try:
+        info = _imap_append(creds, raw, meta["message_id"], _date_header(raw), drafts_folder(), r"(\Draft)")
+    except (imaplib.IMAP4.error, OSError, SendError) as exc:
+        return {"ok": False, "error": str(exc) if isinstance(exc, SendError) else "imap_error:" + type(exc).__name__}
+    info.pop("sent_folder", None)
+    meta["mailbox_draft_saved"] = bool(info.get("verified"))
+    meta["mailbox_drafts_folder"] = info.get("folder")
+    _write_meta(meta)
+    return {"ok": True, "data": _public(meta, {"drafts": info})}
 
 
 def send_draft(draft_id: str, *, confirm: bool, confirmation_token: str) -> dict[str, Any]:
@@ -419,13 +452,9 @@ def send_draft(draft_id: str, *, confirm: bool, confirmation_token: str) -> dict
     meta["smtp_accepted"] = [r for r in recipients if r not in refused]
     _write_meta(meta)
 
-    date_hdr = ""
-    for line in raw.split(b"\r\n\r\n", 1)[0].replace(b"\r\n", b"\n").split(b"\n"):
-        if line.lower().startswith(b"date:"):
-            date_hdr = line[5:].decode().strip()
     sent_info: dict[str, Any]
     try:
-        sent_info = append_to_sent(creds, raw, meta["message_id"], date_hdr)
+        sent_info = append_to_sent(creds, raw, meta["message_id"], _date_header(raw))
     except (imaplib.IMAP4.error, OSError, SendError) as exc:
         sent_info = {"verified": False, "sent_append_error": str(exc) if isinstance(exc, SendError) else type(exc).__name__}
     meta["sent_items_verified"] = bool(sent_info.get("verified"))

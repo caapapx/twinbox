@@ -633,6 +633,18 @@ const TOOLS = [
     },
   },
   {
+    name: "twinbox_save_draft",
+    description:
+      "Save a twinbox_draft_send draft into the mailbox Drafts folder via IMAP APPEND (\\Draft flag, dedup by Message-ID). " +
+      "Never sends mail and needs no confirmation token or TWINBOX_SEND_ENABLED. Chinese: 把本地草稿存进邮箱草稿箱（不发送）.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { draft_id: { type: "string" } },
+      required: ["draft_id"],
+    },
+  },
+  {
     name: "twinbox_send",
     description:
       "SENDS A REAL EMAIL AS THE USER via SMTP, then appends the identical message to Sent Items (\\Seen) and verifies by Message-ID. " +
@@ -860,6 +872,10 @@ async function handleToolCall(request) {
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
+    }
+
+    case "twinbox_save_draft": {
+      return makeResult(await runCli(["draft-save", "--json", "--draft-id", String(args.draft_id ?? "")]));
     }
 
     case "twinbox_send": {

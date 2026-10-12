@@ -23,6 +23,7 @@ const REQUIRED_ARGUMENTS = {
   twinbox_feedback: { payload: { kind: "correction_proposal", actor_ref: "safe-probe" } },
   // Stub CLI only: these never reach SMTP in this test.
   twinbox_draft_send: { to: ["probe@example.invalid"], subject: "safe-probe", text_body: "probe" },
+  twinbox_save_draft: { draft_id: "safe-probe" },
   twinbox_send: { draft_id: "safe-probe", confirm: true, confirmation_token: "safe-probe" },
 };
 
