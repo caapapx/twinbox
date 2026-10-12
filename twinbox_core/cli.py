@@ -20,6 +20,8 @@ Commands:
   actions      — dry-run proposals / review
   semantics    — dynamic classification catalog/case projections
   feedback     — authorized correction/confirmation/execution receipt
+  draft-send   — build a local RFC822 draft + preview (never sends)
+  send         — send a draft (requires --confirm + token + TWINBOX_SEND_ENABLED)
   weknora     — local diagnostics / gated sync / revoke (hide then delete)
 """
 
@@ -1254,7 +1256,38 @@ def cmd_weknora(
         return {"ok": False, "error": str(exc), "recovery_tool": "twinbox_status"}
 
 
-# --- Main ---
+def cmd_send(cmd: str, remaining: list[str]) -> dict[str, Any]:
+    from . import send as outbound
+
+    def multi(flag: str) -> list[str]:
+        return [remaining[i + 1] for i, a in enumerate(remaining) if a == flag and i + 1 < len(remaining)]
+
+    def one(flag: str) -> str:
+        vals = multi(flag)
+        return vals[-1] if vals else ""
+
+    def text_arg(flag: str) -> str:
+        path = one(flag + "-file")
+        if path:
+            return Path(path).expanduser().read_text(encoding="utf-8")
+        return one(flag)
+
+    try:
+        if cmd == "draft-send":
+            return outbound.create_draft(
+                to=multi("--to"), cc=multi("--cc"), bcc=multi("--bcc"),
+                subject=one("--subject"), plain=text_arg("--text"), html=text_arg("--html"),
+                from_name=one("--from-name"),
+            )
+        if cmd == "draft-get":
+            return outbound.get_draft(one("--draft-id"))
+        return outbound.send_draft(
+            one("--draft-id"), confirm="--confirm" in remaining,
+            confirmation_token=one("--confirmation-token"),
+        )
+    except outbound.SendError as exc:
+        return {"ok": False, "error": str(exc)}
+
 
 # --- Main ---
 
@@ -1322,6 +1355,8 @@ def main(argv: list[str] | None = None) -> int:
             result = cmd_feedback(remaining, account_id=account_id)
         elif cmd == "weknora":
             result = cmd_weknora(remaining, account_id=account_id)
+        elif cmd in ("draft-send", "send", "draft-get"):
+            result = cmd_send(cmd, remaining)
         elif cmd == "schedule":
             sub = remaining[0] if remaining else ""
             if sub == "run-due":

@@ -147,6 +147,15 @@ The server listens on stdio and speaks MCP. Baseline tools stay stable; accounts
 | `twinbox_accounts`         | 多账号 list / add / remove / 设默认 |
 | `twinbox_ingest`           | 引用式 ingest（无正文）              |
 | `twinbox_events`           | 事件记录                         |
+| `twinbox_draft_send`       | 起草待发邮件：本地 .eml + 预览 + 一次性 confirmation_token（不发送） |
+| `twinbox_send`             | **真实发信**：需 confirm=true + token + `TWINBOX_SEND_ENABLED=1`；SMTP 后 APPEND 到 Sent Items 并按 Message-ID 去重校验 |
+
+### Outbound mail（发信，默认关闭）
+
+`twinbox_draft_send` 只写 `~/.twinbox/runtime/outbox/<draft_id>.{eml,json}`（0600），返回预览和 30 分钟一次性 `confirmation_token`（本地只存 sha256）。
+宿主必须把预览给人看并停下；人明确同意后才调用 `twinbox_send(draft_id, confirm=true, confirmation_token)`。
+护栏：`TWINBOX_SEND_ENABLED=1`（或 `twinbox.json` `send.enabled: true`）才放行；可选 `TWINBOX_SEND_ALLOWED_DOMAINS=a.com,b.com`（或 `send.allowed_domains`）；
+已发/发送中的草稿拒绝重发；Sent 文件夹默认 `Sent Items`（`TWINBOX_SENT_FOLDER` / `send.sent_folder`）。凭据读 Himalaya config（`auth.raw` / `password` / `cmd`），从不输出。
 
 ### Extract CLI
 

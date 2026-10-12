@@ -142,6 +142,13 @@ async function main() {
       throw new Error(`Missing tools: ${missing.join(", ")}`);
     }
 
+    const sendTool = tools.find((tool) => tool.name === "twinbox_send");
+    if (!tools.find((tool) => tool.name === "twinbox_draft_send") || !sendTool) {
+      throw new Error("twinbox_draft_send and twinbox_send must be listed");
+    }
+    if (!(sendTool.inputSchema?.required || []).includes("confirm") || !/REAL EMAIL/.test(sendTool.description)) {
+      throw new Error("twinbox_send must require confirm and warn that it sends real email");
+    }
     const actionReview = tools.find((tool) => tool.name === "twinbox_action_review");
     if (!actionReview?.inputSchema?.properties?.confirmation_token) {
       throw new Error("twinbox_action_review must expose confirmation_token for confirm");

@@ -8,8 +8,8 @@
  * No Go binary, no daemon, no himalaya.
  */
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -610,6 +610,46 @@ const TOOLS = [
       "Chinese: 案例生命周期账本当前视图.",
     inputSchema: { type: "object", additionalProperties: false, properties: { account_id: ACCOUNT_ID_PROP } },
   },
+  {
+    name: "twinbox_draft_send",
+    description:
+      "Prepare an outgoing email as a LOCAL draft (RFC822 .eml under ~/.twinbox/runtime/outbox). Never sends. " +
+      "Returns draft_id, a preview (from/to/cc/bcc/subject/body_excerpt) and a single-use confirmation_token (30 min). " +
+      "Show the full preview to the human and STOP the turn; sending real mail as the user requires their explicit approval. " +
+      "Chinese: 起草待发邮件（只落本地草稿，不发送）.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        to: { type: "array", items: { type: "string" }, description: "To addresses" },
+        cc: { type: "array", items: { type: "string" } },
+        bcc: { type: "array", items: { type: "string" }, description: "Envelope-only; not written as a header" },
+        subject: { type: "string" },
+        text_body: { type: "string", description: "Plain-text body (utf-8)" },
+        html_body: { type: "string", description: "HTML body (utf-8); with text_body becomes multipart/alternative" },
+        from_name: { type: "string", description: "Optional From display name" },
+      },
+      required: ["to", "subject"],
+    },
+  },
+  {
+    name: "twinbox_send",
+    description:
+      "SENDS A REAL EMAIL AS THE USER via SMTP, then appends the identical message to Sent Items (\\Seen) and verifies by Message-ID. " +
+      "Only call after the human has explicitly approved the twinbox_draft_send preview in a later turn. " +
+      "Requires confirm=true and the draft's confirmation_token; refuses missing/already-sent drafts, and refuses unless " +
+      "TWINBOX_SEND_ENABLED=1 (or twinbox.json send.enabled=true). Chinese: 发送已确认的草稿（真实发信）.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        draft_id: { type: "string" },
+        confirm: { type: "boolean", description: "Must be true; set only after explicit human approval" },
+        confirmation_token: { type: "string", description: "Token returned by twinbox_draft_send" },
+      },
+      required: ["draft_id", "confirm", "confirmation_token"],
+    },
+  },
 
 ];
 
@@ -798,6 +838,37 @@ async function handleToolCall(request) {
       cliArgs.push("--payload-json", JSON.stringify(args.payload));
       const r = await runCli(cliArgs);
       return makeResult(r);
+    }
+
+    case "twinbox_draft_send": {
+      const dir = mkdtempSync(join(tmpdir(), "twinbox-draft-"));
+      try {
+        const cliArgs = ["draft-send", "--json", "--subject", String(args.subject ?? "")];
+        for (const [flag, key] of [["--to", "to"], ["--cc", "cc"], ["--bcc", "bcc"]]) {
+          const v = args?.[key];
+          for (const a of Array.isArray(v) ? v : v ? [v] : []) cliArgs.push(flag, String(a));
+        }
+        for (const [flag, key] of [["--text-file", "text_body"], ["--html-file", "html_body"]]) {
+          if (typeof args?.[key] === "string" && args[key]) {
+            const f = join(dir, key);
+            writeFileSync(f, args[key], { encoding: "utf8", mode: 0o600 });
+            cliArgs.push(flag, f);
+          }
+        }
+        if (args?.from_name) cliArgs.push("--from-name", String(args.from_name));
+        return makeResult(await runCli(cliArgs));
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+
+    case "twinbox_send": {
+      if (args?.confirm !== true) {
+        return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "confirmation_required" }) }], isError: true };
+      }
+      const cliArgs = ["send", "--json", "--confirm", "--draft-id", String(args.draft_id ?? ""),
+        "--confirmation-token", String(args.confirmation_token ?? "")];
+      return makeResult(await runCli(cliArgs));
     }
 
     default:

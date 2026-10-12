@@ -21,6 +21,9 @@ const REQUIRED_ARGUMENTS = {
   twinbox_queue_action: { action: "complete", thread_key: "safe-probe" },
   twinbox_action_review: { proposal_id: "safe-probe", action: "reject" },
   twinbox_feedback: { payload: { kind: "correction_proposal", actor_ref: "safe-probe" } },
+  // Stub CLI only: these never reach SMTP in this test.
+  twinbox_draft_send: { to: ["probe@example.invalid"], subject: "safe-probe", text_body: "probe" },
+  twinbox_send: { draft_id: "safe-probe", confirm: true, confirmation_token: "safe-probe" },
 };
 
 function assert(condition, message) {
