@@ -181,7 +181,7 @@ CLI 金标 argv：C1 `status`；C2 `accounts list`；C3 `todo`；C4 `weekly`；C
 
 环境与凭证以**当前磁盘配置**（`~/.twinbox/`、现场 state、skill `.credentials`）为准，禁止用对话记忆另起一套主机/密钥。
 
-**Outbound mail**：唯一发信路径是 `twinbox_draft_send` → 人工确认 → `twinbox_send`（`twinbox_core/send.py`）。默认关闭（`TWINBOX_SEND_ENABLED`）；必须 confirm=true + 一次性 token；同草稿不可重发；发后 APPEND Sent Items（`\\Seen`，Message-ID 去重）。只存草稿用 `twinbox_save_draft`（APPEND 到 Drafts，`\\Draft`，不发信）。测试一律 mock smtplib/imaplib（`tests/test_send.py`），禁止真实发信。
+**Outbound mail**：唯一发信路径是 `twinbox_draft_send` → 人工确认 → `twinbox_send`（`twinbox_core/send.py`）。禁止旁路（smtplib / curl / himalaya CLI / 临时 Shell SMTP）——旁路会跳过 Sent APPEND。默认关闭（`TWINBOX_SEND_ENABLED`）；必须 confirm=true + 一次性 token；同草稿不可重发；发后 APPEND Sent Items（`\\Seen`，Message-ID 去重）。只存草稿用 `twinbox_save_draft`（APPEND 到 Drafts，`\\Draft`，不发信）。测试一律 mock smtplib/imaplib（`tests/test_send.py`），禁止真实发信。MCP 安装时工具 description 已写死这条；Toolbox / skill 再强调一次即可，代码挡不住智能体另开 Shell。
 
 ## 误判（换现场仍成立再追加；不改已有 ID）
 

@@ -616,7 +616,10 @@ const TOOLS = [
       "Prepare an outgoing email as a LOCAL draft (RFC822 .eml under ~/.twinbox/runtime/outbox). Never sends. " +
       "Returns draft_id, a preview (from/to/cc/bcc/subject/body_excerpt) and a single-use confirmation_token (30 min). " +
       "Show the full preview to the human and STOP the turn; sending real mail as the user requires their explicit approval. " +
-      "Chinese: 起草待发邮件（只落本地草稿，不发送）.",
+      "OUTBOUND HARD RULE: this is the ONLY allowed first step for any email the agent sends as the user. " +
+      "Do NOT bypass with smtplib, curl, himalaya, Outlook/Apple Mail automation, ad-hoc SMTP, or shell one-liners — " +
+      "those skip Sent Items APPEND. After approval, call twinbox_send (not twinbox_save_draft unless the user only wants a mailbox draft). " +
+      "Chinese: 起草待发邮件（只落本地草稿，不发送；禁止旁路 SMTP）.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -648,9 +651,11 @@ const TOOLS = [
     name: "twinbox_send",
     description:
       "SENDS A REAL EMAIL AS THE USER via SMTP, then appends the identical message to Sent Items (\\Seen) and verifies by Message-ID. " +
+      "This is the ONLY allowed real-send path; agents must not invent alternate SMTP/IMAP send scripts. " +
       "Only call after the human has explicitly approved the twinbox_draft_send preview in a later turn. " +
       "Requires confirm=true and the draft's confirmation_token; refuses missing/already-sent drafts, and refuses unless " +
-      "TWINBOX_SEND_ENABLED=1 (or twinbox.json send.enabled=true). Chinese: 发送已确认的草稿（真实发信）.",
+      "TWINBOX_SEND_ENABLED=1 (or twinbox.json send.enabled=true). " +
+      "If sent_items_verified=false, report it and do NOT resend. Chinese: 发送已确认的草稿（真实发信并写入已发送）.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
